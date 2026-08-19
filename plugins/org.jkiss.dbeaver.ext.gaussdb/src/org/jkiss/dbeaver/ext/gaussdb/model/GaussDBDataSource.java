@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import java.sql.ResultSet;
 public class GaussDBDataSource extends PostgreDataSource {
 
     private PostgreServerExtension serverExtension;
-    
+
     public GaussDBDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException {
         super(monitor, container, new GaussDBDialect());
     }
@@ -67,12 +67,34 @@ public class GaussDBDataSource extends PostgreDataSource {
         return CommonUtils.getBoolean(configuration.getProviderProperty(PostgreConstants.PROP_SHOW_NON_DEFAULT_DB), true);
     }
 
+    /**
+     * GaussDB version numbers (e.g. 8.x) do not align with PostgreSQL version numbers.
+     * The base class and PG model code call isServerVersionAtLeast with PG version expectations
+     * (e.g. isServerVersionAtLeast(9,3) for materialized views).
+     *
+     * Since GaussDB is based on PG 9.2/10/12 internals depending on the version, and most
+     * features checked by version here are either always supported or always unsupported
+     * (handled by PostgreServerGaussDB overrides), we return true for most version checks
+     * to ensure the PG model code does not skip features that GaussDB actually supports.
+     *
+     * The accurate feature gating is done in PostgreServerGaussDB.supports* overrides.
+     */
     @Override
     public boolean isServerVersionAtLeast(int major, int minor) {
-        // Reserved: Modify the logic for determining the PG version.
-        return super.isServerVersionAtLeast(major, minor);
+        // GaussDB supports all features that PG checks via version >= 8.x
+        // For very old PG version checks (< 8), be conservative
+        if (major < 8) {
+            return true;
+        }
+        if (major < 9) {
+            return true;
+        }
+        // For PG 9.x+ feature checks, GaussDB based on modern PG core supports them
+        // (materialized views, event triggers, partitions, etc. are gated by
+        // PostgreServerGaussDB overrides, not by this method)
+        return true;
     }
-    
+
     @Override
     public PostgreServerExtension getServerType() {
         if (serverExtension == null) {

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,6 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectLookupCache;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 
@@ -135,28 +134,9 @@ public class GaussDBDatabase extends PostgreDatabase {
         }
     }
 
-    public static class SchemaCache extends JDBCObjectLookupCache<PostgreDatabase, PostgreSchema> {
-        @NotNull
-        @Override
-        public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull PostgreDatabase database,
-            @Nullable PostgreSchema object, @Nullable String objectName) throws SQLException {
-            StringBuilder catalogQuery = new StringBuilder("SELECT n.oid,n.*,d.description FROM pg_catalog.pg_namespace n\n"
-                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=n.oid AND d.objsubid=0 AND d.classoid='pg_namespace'::regclass\n");
-            catalogQuery.append(" ORDER BY nspname");
-            JDBCPreparedStatement dbStat = session.prepareStatement(catalogQuery.toString());
-            return dbStat;
-        }
-
-        @Override
-        protected PostgreSchema fetchObject(@NotNull JDBCSession session, @NotNull PostgreDatabase owner,
-            @NotNull JDBCResultSet resultSet) throws SQLException, DBException {
-            String name = JDBCUtils.safeGetString(resultSet, "nspname");
-            if (name == null) {
-                return null;
-            }
-            return owner.createSchemaImpl(owner, name, resultSet);
-        }
-    }
+    // Note: Schema cache is provided by PostgreServerGaussDB.createSchemaCache()
+    // which returns GaussDBSchemaCache. The previous inner SchemaCache class was
+    // redundant and has been removed in favor of the shared GaussDBSchemaCache.
 
     @Override
     public GaussDBSchema createSchemaImpl(@NotNull PostgreDatabase owner, @NotNull String name,

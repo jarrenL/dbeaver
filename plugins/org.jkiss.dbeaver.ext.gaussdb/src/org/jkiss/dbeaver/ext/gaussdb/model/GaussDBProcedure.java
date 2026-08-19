@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2025 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,11 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.ext.gaussdb.GaussDBConstants;
 import org.jkiss.dbeaver.ext.postgresql.PostgreUtils;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataType;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreLanguage;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedure;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.model.DBPScriptObject;
@@ -41,11 +44,12 @@ import java.util.List;
 import java.util.Map;
 
 public class GaussDBProcedure extends PostgreProcedure {
+
+    private static final Log log = Log.getLog(GaussDBProcedure.class);
+
     public long propackageid;
     public String prokind;
     public String procSrc;
-
-    public String body = getBody();
 
     public long getPropackageid() {
         return propackageid;
@@ -69,11 +73,13 @@ public class GaussDBProcedure extends PostgreProcedure {
         String procDDL = omitHeader || CommonUtils.getOption(options, OPTION_SKIP_DROPS) ?
             "" :
             "-- DROP " + getProcedureTypeName() + " " + getFullQualifiedSignature() + ";\n\n";
+
         if (isPersisted() && (!getDataSource().getServerType().supportsFunctionDefRead() || omitHeader) && !isAggregate()) {
-            procDDL = getObjectDefinitionTextWhenPersisted(monitor, omitHeader, procDDL);
+            procDDL = readProcedureSource(monitor, omitHeader, procDDL);
         } else {
-            procDDL = getObjectDefinitionTextWhenBodyNull(monitor, procDDL);
+            procDDL = readFunctionDefinition(monitor, procDDL);
         }
+
         if (this.isPersisted() && !omitHeader) {
             procDDL += ";\n";
 
@@ -92,40 +98,112 @@ public class GaussDBProcedure extends PostgreProcedure {
         return procDDL;
     }
 
-    private String getObjectDefinitionTextWhenPersisted(DBRProgressMonitor monitor, boolean omitHeader,
-        String procDDL) throws DBCException, DBException {
+    /**
+     * Read procedure body from prosrc column directly.
+     * Used when pg_get_functiondef() is not available or not reliable.
+     */
+    private String readProcedureSource(@NotNull DBRProgressMonitor monitor, boolean omitHeader, @NotNull String procDDL) throws DBCException, DBException {
         if (procSrc == null) {
             try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read procedure body")) {
-                procSrc = JDBCUtils.queryString(session, "SELECT prosrc FROM pg_proc where oid = ?", getObjectId());
+                procSrc = JDBCUtils.queryString(session, "SELECT prosrc FROM pg_proc WHERE oid = ?", getObjectId());
             } catch (SQLException e) {
                 throw new DBException("Error reading procedure body", e);
             }
         }
         PostgreDataType returnType = getReturnType();
         String returnTypeName = returnType == null ? null : returnType.getFullTypeName();
-        return (procDDL + (omitHeader ? procSrc : generateFunctionDeclaration(getLanguage(monitor), returnTypeName, procSrc)));
+        return procDDL + (omitHeader ? procSrc : generateGaussDBFunctionDeclaration(getLanguage(monitor), returnTypeName, procSrc));
     }
 
-    private String getObjectDefinitionTextWhenBodyNull(DBRProgressMonitor monitor, String procDDL) throws DBException, DBCException {
+    /**
+     * Read function definition via pg_get_functiondef() or fall back to prosrc.
+     */
+    private String readFunctionDefinition(@NotNull DBRProgressMonitor monitor, @NotNull String procDDL) throws DBException, DBCException {
         if (body == null) {
             if (!isPersisted()) {
                 PostgreDataType returnType = getReturnType();
                 String returnTypeName = returnType == null ? null : returnType.getFullTypeName();
-                body = generateFunctionDeclaration(getLanguage(monitor), returnTypeName, "\n\t-- Enter function body here\n");
+                body = generateGaussDBFunctionDeclaration(getLanguage(monitor), returnTypeName, "\n\t-- Enter function body here\n");
             } else if (getObjectId() == 0) {
-                // No OID so let's use old (bad) way
                 body = this.procSrc;
             } else {
-                try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read procedure body")) {
-                    String res = JDBCUtils.queryString(session, "SELECT pg_get_functiondef(" + getObjectId() + ")");
-                    body = res == null ? this.procSrc : res.substring(4, res.length() - 2);
-                } catch (SQLException e) {
-                    throw new DBException("Error reading procedure body", e);
+                if (isAggregate) {
+                    // Delegate to base class for aggregate handling
+                    return super.getObjectDefinitionText(monitor, Map.of());
+                } else {
+                    try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read procedure body")) {
+                        String res = JDBCUtils.queryString(session, "SELECT pg_get_functiondef(" + getObjectId() + ")");
+                        if (res == null) {
+                            body = this.procSrc;
+                        } else {
+                            // pg_get_functiondef() returns the full CREATE OR REPLACE FUNCTION ... statement.
+                            // Use the full output as-is rather than fragile substring offsets.
+                            body = res;
+                        }
+                    } catch (SQLException e) {
+                        log.warn("Failed to read function definition via pg_get_functiondef(), falling back to prosrc", e);
+                        body = this.procSrc;
+                    }
                 }
             }
         }
-
-        return (procDDL + body);
+        return procDDL + body;
     }
 
+    /**
+     * Generate function/procedure declaration with GaussDB compatibility mode awareness.
+     * In Oracle compatibility mode, GaussDB uses AS/IS syntax instead of AS $$...$$.
+     */
+    protected String generateGaussDBFunctionDeclaration(PostgreLanguage language, String returnTypeName, String functionBody) {
+        GaussDBDatabase database = getDatabase();
+        String compatMode = database != null ? database.getDatabaseCompatibleMode() : null;
+        boolean isOracleMode = GaussDBConstants.GAUSSDB_ORACLE_COMPATIBLE_MODE.equalsIgnoreCase(compatMode);
+
+        if (isOracleMode) {
+            return generateOracleCompatDeclaration(language, returnTypeName, functionBody);
+        }
+        // For PG/MySQL/Teradata modes, use the standard PG declaration
+        return generateFunctionDeclaration(language, returnTypeName, functionBody);
+    }
+
+    /**
+     * Generate Oracle-compatible DDL for GaussDB in Oracle compatibility mode.
+     * Uses AS/IS and BEGIN...END syntax instead of AS $$...$$.
+     */
+    private String generateOracleCompatDeclaration(PostgreLanguage language, String returnTypeName, String functionBody) {
+        String lineSeparator = org.jkiss.dbeaver.utils.GeneralUtils.getDefaultLineSeparator();
+        StringBuilder decl = new StringBuilder();
+
+        String functionSignature = makeOverloadedName(getSchema(), getName(), params, true, true, true);
+        decl.append("CREATE OR REPLACE ").append(getProcedureTypeName()).append(" ")
+            .append(DBUtils.getQuotedIdentifier(getContainer())).append(".")
+            .append(functionSignature).append(lineSeparator);
+
+        if (getProcedureType().hasReturnValue() && !CommonUtils.isEmpty(returnTypeName)) {
+            decl.append("RETURN ").append(returnTypeName).append(lineSeparator);
+        }
+
+        if (language != null) {
+            decl.append("LANGUAGE ").append(language).append(lineSeparator);
+        }
+
+        if (isSecurityDefiner()) {
+            decl.append("SECURITY DEFINER").append(lineSeparator);
+        }
+
+        // Oracle mode uses AS keyword instead of AS $$
+        decl.append("AS").append(lineSeparator);
+        if (!CommonUtils.isEmpty(functionBody)) {
+            decl.append(functionBody).append(lineSeparator);
+        }
+        decl.append("END;").append(lineSeparator);
+
+        return decl.toString();
+    }
+
+    @Override
+    @NotNull
+    public GaussDBDatabase getDatabase() {
+        return (GaussDBDatabase) super.getDatabase();
+    }
 }

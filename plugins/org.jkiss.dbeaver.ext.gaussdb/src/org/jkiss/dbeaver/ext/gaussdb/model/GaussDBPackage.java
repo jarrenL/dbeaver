@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2025 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +27,7 @@ import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
-import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
-import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectLookupCache;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -45,28 +43,26 @@ import java.util.stream.Collectors;
 public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSystemInfoObject {
 
     private static final Log log = Log.getLog(GaussDBPackage.class);
-    private GaussDBSchema schema;
-    protected long ownerId;
+    private final GaussDBSchema schema;
     private long oid;
     private String name;
     private String description;
     private String sourceDeclaration = "";
     private String sourceDefinition = "";
 
-    private final ProceduresCache proceduresCache;
-
+    /**
+     * Reuses the schema's procedures cache instead of maintaining a separate copy.
+     */
     public GaussDBPackage(@NotNull JDBCSession session, @NotNull GaussDBSchema schema, @NotNull JDBCResultSet dbResult) {
         this.schema = schema;
         this.oid = JDBCUtils.safeGetLong(dbResult, "oid");
         this.name = JDBCUtils.safeGetString(dbResult, "name");
         initialize(session, oid);
-        this.proceduresCache = new ProceduresCache();
     }
 
-    public GaussDBPackage(GaussDBSchema schema, DBRProgressMonitor unusedMnitor, String name) {
+    public GaussDBPackage(GaussDBSchema schema, DBRProgressMonitor unusedMonitor, String name) {
         this.schema = schema;
         this.name = name;
-        this.proceduresCache = new ProceduresCache();
     }
 
     private void initialize(JDBCSession session, long objectId) {
@@ -96,7 +92,7 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
 
     @Override
     public DBSObject getParentObject() {
-        return null;
+        return schema;
     }
 
     @NotNull
@@ -176,58 +172,21 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
 
     @Association
     public List<GaussDBProcedure> getPackageProcedures(DBRProgressMonitor monitor) throws DBException {
-        List<GaussDBProcedure> list = new ArrayList<>();
-        if (oid != 0) {
-            list = getGaussDBProceduresCache().getAllObjects(monitor, this.schema).stream()
-                .filter(e -> e.getPropackageid() == oid && e.getKind() == PostgreProcedureKind.p).collect(Collectors.toList());
+        if (oid == 0) {
+            return new ArrayList<>();
         }
-        return list;
+        return schema.getGaussDBProceduresCache().getAllObjects(monitor, schema).stream()
+            .filter(e -> e.getPropackageid() == oid && e.getKind() == PostgreProcedureKind.p)
+            .collect(Collectors.toList());
     }
 
     @Association
     public List<GaussDBProcedure> getPackageFunctions(DBRProgressMonitor monitor) throws DBException {
-        List<GaussDBProcedure> list = new ArrayList<>();
-        if (oid != 0) {
-            list = getGaussDBProceduresCache().getAllObjects(monitor, this.schema).stream()
-                .filter(e -> e.getPropackageid() == oid && e.getKind() == PostgreProcedureKind.f).collect(Collectors.toList());
+        if (oid == 0) {
+            return new ArrayList<>();
         }
-        return list;
-    }
-
-    public ProceduresCache getGaussDBProceduresCache() {
-        return this.proceduresCache;
-    }
-
-    public static class ProceduresCache extends JDBCObjectLookupCache<PostgreSchema, GaussDBProcedure> {
-
-        public ProceduresCache() {
-            super();
-        }
-
-        @NotNull
-        @Override
-        public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull PostgreSchema owner,
-            @Nullable GaussDBProcedure object, @Nullable String objectName) throws SQLException {
-            PostgreServerExtension serverType = owner.getDataSource().getServerType();
-            String oidColumn = serverType.getProceduresOidColumn(); // Hack for Redshift SP support
-            JDBCPreparedStatement dbStat = session.prepareStatement("SELECT p." + oidColumn + " as poid,p.*,"
-                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
-                + " as arg_defaults,d.description\n" + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
-                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
-                + (session.getDataSource().isServerVersionAtLeast(7, 2) ? " AND d.objsubid = 0" : "") + // no links to
-                                                                                                        // columns
-                "\nWHERE p.pronamespace=?" + (object == null ? "" : " AND p." + oidColumn + "=?") + "\nORDER BY p.proname");
-            dbStat.setLong(1, owner.getObjectId());
-            if (object != null) {
-                dbStat.setLong(2, object.getObjectId());
-            }
-            return dbStat;
-        }
-
-        @Override
-        protected GaussDBProcedure fetchObject(@NotNull JDBCSession session, @NotNull PostgreSchema owner,
-            @NotNull JDBCResultSet dbResult) throws SQLException, DBException {
-            return new GaussDBProcedure(session.getProgressMonitor(), owner, dbResult);
-        }
+        return schema.getGaussDBProceduresCache().getAllObjects(monitor, schema).stream()
+            .filter(e -> e.getPropackageid() == oid && e.getKind() == PostgreProcedureKind.f)
+            .collect(Collectors.toList());
     }
 }

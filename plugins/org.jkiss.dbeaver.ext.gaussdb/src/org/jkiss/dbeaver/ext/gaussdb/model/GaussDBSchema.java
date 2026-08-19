@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,15 +62,28 @@ public class GaussDBSchema extends PostgreSchema {
 
     @Override
     public boolean isSystem() {
-        return this.oid < 16384 && !this.name.toLowerCase(Locale.ENGLISH).contains("public");
+        String lowerName = this.name.toLowerCase(Locale.ENGLISH);
+        if ("public".equals(lowerName)) {
+            return false;
+        }
+        if ("dbe_perf".equals(lowerName) || "dbe_pldeveloper".equals(lowerName) || "mls".equals(lowerName)) {
+            return true;
+        }
+        return this.oid < 16384;
     }
-    
+
+    @Override
     public boolean isUtility() {
-        return false;
+        String lowerName = this.name.toLowerCase(Locale.ENGLISH);
+        return "information_schema".equals(lowerName) || "dbe_perf".equals(lowerName);
     }
 
     public static boolean isUtilitySchema(String schema) {
-        return false;
+        if (schema == null) {
+            return false;
+        }
+        String lower = schema.toLowerCase(Locale.ENGLISH);
+        return "information_schema".equals(lower) || "dbe_perf".equals(lower);
     }
 
     public ProceduresCache getGaussDBProceduresCache() {
@@ -88,16 +101,47 @@ public class GaussDBSchema extends PostgreSchema {
 
     @Association
     public List<GaussDBProcedure> getGaussDBProcedures(DBRProgressMonitor monitor) throws DBException {
-        List<GaussDBProcedure> list = getGaussDBProceduresCache().getAllObjects(monitor, this).stream()
-            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.p).collect(Collectors.toList());
-        return list;
+        return getGaussDBProceduresCache().getAllObjects(monitor, this).stream()
+            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.p)
+            .collect(Collectors.toList());
     }
 
     @Association
     public List<GaussDBFunction> getGaussDBFunctions(DBRProgressMonitor monitor) throws DBException {
-        List<GaussDBFunction> list = getGaussDBFunctionsCache().getAllObjects(monitor, this).stream()
-            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.f).collect(Collectors.toList());
-        return list;
+        return getGaussDBFunctionsCache().getAllObjects(monitor, this).stream()
+            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.f)
+            .collect(Collectors.toList());
+    }
+
+    // ---- Shared SQL builder for procedure/function lookup ----
+
+    /**
+     * Build the common SQL query for looking up procedures and functions from pg_proc.
+     * Both ProceduresCache and FunctionsCache use this to avoid code duplication.
+     */
+    static JDBCPreparedStatement buildProceduresLookupStatement(
+        @NotNull JDBCSession session,
+        @NotNull PostgreSchema owner,
+        @Nullable PostgreProcedure object
+    ) throws SQLException {
+        PostgreServerExtension serverType = owner.getDataSource().getServerType();
+        String oidColumn = serverType.getProceduresOidColumn();
+        JDBCPreparedStatement dbStat = session.prepareStatement(
+            "SELECT p." + oidColumn + " as poid,p.*,"
+                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
+                + " as arg_defaults,d.description\n"
+                + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
+                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
+                + (session.getDataSource().isServerVersionAtLeast(7, 2) ? " AND d.objsubid = 0" : "")
+                + "\nWHERE p.pronamespace=?"
+                + (object == null ? "" : " AND p." + oidColumn + "=?")
+                + "\nORDER BY p.proname"
+        );
+        dbStat.setLong(1, owner.getObjectId());
+        if (object != null) {
+            dbStat.setLong(2, object.getObjectId());
+        }
+        return dbStat;
     }
 
     class PackageCache extends JDBCObjectCache<GaussDBSchema, GaussDBPackage> {
@@ -129,19 +173,7 @@ public class GaussDBSchema extends PostgreSchema {
         @Override
         public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull GaussDBSchema owner,
             @Nullable GaussDBProcedure object, @Nullable String objectName) throws SQLException {
-            PostgreServerExtension serverType = owner.getDataSource().getServerType();
-            String oidColumn = serverType.getProceduresOidColumn(); // Hack for Redshift SP support
-            JDBCPreparedStatement dbStat = session.prepareStatement("SELECT p." + oidColumn + " as poid,p.*,"
-                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
-                + " as arg_defaults,d.description\n" + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
-                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
-                + (session.getDataSource().isServerVersionAtLeast(7, 2) ? " AND d.objsubid = 0" : "") + // no links to columns
-                "\nWHERE p.pronamespace=?" + (object == null ? "" : " AND p." + oidColumn + "=?") + "\nORDER BY p.proname");
-            dbStat.setLong(1, owner.getObjectId());
-            if (object != null) {
-                dbStat.setLong(2, object.getObjectId());
-            }
-            return dbStat;
+            return buildProceduresLookupStatement(session, owner, object);
         }
 
         @Override
@@ -149,7 +181,6 @@ public class GaussDBSchema extends PostgreSchema {
             @NotNull JDBCResultSet dbResult) throws SQLException, DBException {
             return new GaussDBProcedure(session.getProgressMonitor(), owner, dbResult);
         }
-
     }
 
     public static class FunctionsCache extends JDBCObjectLookupCache<GaussDBSchema, GaussDBFunction> {
@@ -162,19 +193,7 @@ public class GaussDBSchema extends PostgreSchema {
         @Override
         public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull GaussDBSchema owner,
             @Nullable GaussDBFunction object, @Nullable String objectName) throws SQLException {
-            PostgreServerExtension serverType = owner.getDataSource().getServerType();
-            String oidColumn = serverType.getProceduresOidColumn(); // Hack for Redshift SP support
-            JDBCPreparedStatement dbStat = session.prepareStatement("SELECT p." + oidColumn + " as poid,p.*,"
-                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
-                + " as arg_defaults,d.description\n" + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
-                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
-                + (session.getDataSource().isServerVersionAtLeast(7, 2) ? " AND d.objsubid = 0" : "") + // no links to columns
-                "\nWHERE p.pronamespace=?" + (object == null ? "" : " AND p." + oidColumn + "=?") + "\nORDER BY p.proname");
-            dbStat.setLong(1, owner.getObjectId());
-            if (object != null) {
-                dbStat.setLong(2, object.getObjectId());
-            }
-            return dbStat;
+            return buildProceduresLookupStatement(session, owner, object);
         }
 
         @Override
@@ -182,7 +201,6 @@ public class GaussDBSchema extends PostgreSchema {
             @NotNull JDBCResultSet dbResult) throws SQLException, DBException {
             return new GaussDBFunction(session.getProgressMonitor(), owner, dbResult);
         }
-
     }
 
     public class ConstraintCache extends PostgreSchema.ConstraintCache {
@@ -224,10 +242,18 @@ public class GaussDBSchema extends PostgreSchema {
         return this.constraintCache;
     }
 
-    @NotNull
+    /**
+     * Check if the database is in MySQL "M" compatibility mode.
+     * In M mode, "substring" is a keyword and must not be quoted.
+     */
     private boolean isMMode(@NotNull PostgreTableContainer tableContainer) {
         GaussDBDatabase database = (GaussDBDatabase) tableContainer.getDatabase();
         String compatibilityMode = database.getDatabaseCompatibleMode();
-        return GaussDBConstants.GAUSSDB_M_COMPATIBLE_MODE.equals(compatibilityMode);
+        if (GaussDBConstants.GAUSSDB_M_COMPATIBLE_MODE.equals(compatibilityMode)) {
+            return true;
+        }
+        // Also check for the distributed MySQL value
+        return GaussDBConstants.GAUSSDB_MYSQL_COMPATIBLE_MODE.equalsIgnoreCase(compatibilityMode)
+            || GaussDBConstants.GAUSSDB_MYSQL_COMPATIBLE_MODE_C.equalsIgnoreCase(compatibilityMode);
     }
 }
