@@ -18,9 +18,11 @@
 package org.jkiss.dbeaver.ext.gaussdb.ui.config;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure;
 import org.jkiss.dbeaver.ext.gaussdb.ui.views.CreateFunctionOrProcedurePage;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreLanguage;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.edit.DBEObjectConfigurator;
@@ -52,11 +54,17 @@ public class GaussDBProcedureConfigurator implements DBEObjectConfigurator<Gauss
                 }
                 newProcedure.setKind(PostgreProcedureKind.p);
                 newProcedure.setName(editPage.getProcedureName());
-                String procedure = "CREATE [OR REPLACE] PROCEDURE " + newProcedure.getFullQualifiedSignature()
-                    + " ([ parameter [IN|OUT|INOUT] datatype[,parameter [IN|OUT|INOUT] datatype] ])\r\n" + "\r\n" + "AS\r\n" + "\r\n"
-                    + "DECLARE\r\n" + "\r\n" + " /*declaration_section*/\r\n" + "\r\n" + "BEGIN\r\n" + "\r\n"
-                    + " /*executable_section*/\r\n" + "\r\n" + "END;";
-                newProcedure.setObjectDefinitionText(procedure);
+                try {
+                    PostgreLanguage language = newProcedure.getDatabase().getLanguages(monitor).stream()
+                        .filter(candidate -> "plpgsql".equalsIgnoreCase(candidate.getName()))
+                        .findFirst()
+                        .orElse(null);
+                    if (language != null) {
+                        newProcedure.setLanguage(language);
+                    }
+                } catch (DBException e) {
+                    log.debug("Unable to select the default procedure language", e);
+                }
                 return newProcedure;
             }
         }.execute();

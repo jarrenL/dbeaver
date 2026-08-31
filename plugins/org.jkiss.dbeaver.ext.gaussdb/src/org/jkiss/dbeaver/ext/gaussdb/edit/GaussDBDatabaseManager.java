@@ -57,9 +57,11 @@ public class GaussDBDatabaseManager extends SQLObjectEditor<GaussDBDatabase, Gau
     }
 
     @Override
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public DBSObjectCache<? extends DBSObject, GaussDBDatabase> getObjectsCache(GaussDBDatabase object) {
-        // TODO Auto-generated method stub
-        return null;
+        // PostgreDataSource's cache is typed to PostgreDatabase, but this data source creates
+        // GaussDBDatabase instances exclusively.
+        return (DBSObjectCache) object.getDataSource().getDatabaseCache();
     }
 
     @Override
@@ -118,8 +120,15 @@ public class GaussDBDatabaseManager extends SQLObjectEditor<GaussDBDatabase, Gau
                 .append(DBUtils.getQuotedIdentifier(database.getDataSource(), database.getInitialTablespace().getName()));
         }
         if (database.getDatabaseCompatibleMode() != null && !"".equals(database.getDatabaseCompatibleMode())) {
-            sql.append("\nDBCOMPATIBILITY = '").append(DBCompatibilityEnum.of(database.getDatabaseCompatibleMode()).getdValue())
-                .append("'");
+            String compatibilityMode = database.getDatabaseCompatibleMode();
+            DBCompatibilityEnum compatibility = DBCompatibilityEnum.fromValue(compatibilityMode);
+            if (compatibility == null) {
+                compatibility = DBCompatibilityEnum.of(compatibilityMode);
+            }
+            String compatibilityValue = compatibility == null
+                ? compatibilityMode
+                : compatibility.getValue(database.getDataSource().getServerInfo().getDeployment());
+            sql.append("\nDBCOMPATIBILITY = '").append(compatibilityValue).append("'");
         }
         actions.add(new CreateDatabaseAction(database, sql));
     }

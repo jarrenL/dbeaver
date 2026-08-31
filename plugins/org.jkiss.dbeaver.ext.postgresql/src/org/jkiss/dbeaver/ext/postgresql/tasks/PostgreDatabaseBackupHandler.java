@@ -37,10 +37,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PostgreDatabaseBackupHandler extends PostgreNativeToolHandler<PostgreDatabaseBackupSettings, DBSObject, PostgreDatabaseBackupInfo> {
 
     private static final Log log = Log.getLog(PostgreDatabaseBackupHandler.class);
+    private final Map<PostgreDatabaseBackupInfo, Path> localTransferFiles = new ConcurrentHashMap<>();
 
     @Override
     public Collection<PostgreDatabaseBackupInfo> getRunInfo(PostgreDatabaseBackupSettings settings) {
@@ -126,9 +129,16 @@ public class PostgreDatabaseBackupHandler extends PostgreNativeToolHandler<Postg
             cmd.add("--create");
         }
 
-        if (!isUseStreamTransfer(settings.getOutputFile(arg)) ||
-            settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY
-        ) {
+        if (requiresLocalTransferFile(settings, settings.getOutputFile(arg))) {
+            Path localFile = Files.createTempFile("dbeaver-gaussdb-backup-", ".dump");
+            if (settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY) {
+                Files.delete(localFile);
+            }
+            localTransferFiles.put(arg, localFile);
+            cmd.add("--file");
+            cmd.add(localFile.toString());
+        } else if (!isUseStreamTransfer(settings.getOutputFile(arg)) ||
+                   settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY) {
             cmd.add("--file");
             cmd.add(settings.getOutputFile(arg));
         }
@@ -156,6 +166,32 @@ public class PostgreDatabaseBackupHandler extends PostgreNativeToolHandler<Postg
     }
 
     @Override
+    public boolean executeProcess(
+        DBRProgressMonitor monitor,
+        DBTTask task,
+        PostgreDatabaseBackupSettings settings,
+        PostgreDatabaseBackupInfo arg,
+        Log taskLog
+    ) throws IOException, InterruptedException {
+        try {
+            boolean result = super.executeProcess(monitor, task, settings, arg, taskLog);
+            Path localFile = localTransferFiles.get(arg);
+            if (localFile != null) {
+                Path target;
+                try {
+                    target = DBFUtils.resolvePathFromString(monitor, task.getProject(), settings.getOutputFile(arg));
+                } catch (DBException e) {
+                    throw new IOException("Cannot resolve backup output path", e);
+                }
+                copyTransferPath(localFile, target);
+            }
+            return result;
+        } finally {
+            deleteLocalTransferPath(localTransferFiles.remove(arg));
+        }
+    }
+
+    @Override
     protected List<String> getCommandLine(PostgreDatabaseBackupSettings settings, PostgreDatabaseBackupInfo arg) throws IOException {
         List<String> cmd = new ArrayList<>();
         fillProcessParameters(settings, arg, cmd);
@@ -176,7 +212,8 @@ public class PostgreDatabaseBackupHandler extends PostgreNativeToolHandler<Postg
     ) throws IOException, DBException {
         super.startProcessHandler(monitor, task, settings, arg, processBuilder, process, log);
         String outFileName = settings.getOutputFile(arg);
-        if (isUseStreamTransfer(outFileName) && settings.getFormat() != PostgreBackupRestoreSettings.ExportFormat.DIRECTORY) {
+        if (!localTransferFiles.containsKey(arg) && isUseStreamTransfer(outFileName) &&
+            settings.getFormat() != PostgreBackupRestoreSettings.ExportFormat.DIRECTORY) {
             Path outFile = DBFUtils.resolvePathFromString(monitor, task.getProject(), outFileName);
             log.debug("Dump database into " + outFile.toUri());
             DumpCopierJob job = new DumpCopierJob(monitor, "Export database", process.getInputStream(), outFile, log);

@@ -553,7 +553,7 @@ public abstract class PostgreTable extends PostgreTableReal
             @NotNull JDBCSession session,
             @NotNull PostgreTable table
         ) throws SQLException {
-            final var stmt = session.prepareStatement("select * from pg_catalog.pg_policies where schemaname=? and tablename=?");
+            final var stmt = session.prepareStatement(table.getDataSource().getServerType().getTablePoliciesQuery());
             stmt.setString(1, table.getSchema().getName());
             stmt.setString(2, table.getName());
             return stmt;

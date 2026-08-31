@@ -19,7 +19,6 @@ package org.jkiss.dbeaver.ext.postgresql.model.data;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.PostgreUtils;
 import org.jkiss.dbeaver.ext.postgresql.PostgreValueParser;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
@@ -74,12 +73,12 @@ public class PostgreArrayValueHandler extends JDBCArrayValueHandler {
                 throw new DBCException("Array type " + arrayType.getFullTypeName() + " doesn't have a component type");
             }
 
-            String className = object.getClass().getName();
             boolean isPgObject = PostgreUtils.isPgObject(dataSource, object);
+            boolean isPgArray = dataSource.getServerType().isPGArray(object);
             if (object instanceof String ||
                 isPgObject ||
-                className.equals(PostgreConstants.PG_ARRAY_CLASS)) {
-                if (className.equals(PostgreConstants.PG_ARRAY_CLASS)) {
+                isPgArray) {
+                if (isPgArray) {
                     // Convert arrays to string representation (#7468)
                     // Otherwise we may have problems with domain types decoding (as they come in form of PgObject)
                     String strValue = object.toString();

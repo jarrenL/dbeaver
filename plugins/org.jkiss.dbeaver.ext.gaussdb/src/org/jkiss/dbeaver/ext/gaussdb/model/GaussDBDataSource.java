@@ -18,27 +18,53 @@
 package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
+import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.ResultSet;
 
 public class GaussDBDataSource extends PostgreDataSource {
+    private static final Log log = Log.getLog(GaussDBDataSource.class);
+
+    /**
+     * GaussDB's catalog is derived from PostgreSQL but its product version is not a PostgreSQL version.
+     * Use the oldest catalog level required by this plugin and never opt into newer PostgreSQL catalog SQL
+     * (notably the PostgreSQL 10 partition columns, which GaussDB does not expose in pg_class).
+     */
+    private static final int POSTGRESQL_CATALOG_COMPATIBILITY_MAJOR = 9;
+    private static final int POSTGRESQL_CATALOG_COMPATIBILITY_MINOR = 2;
 
     private PostgreServerExtension serverExtension;
+    private volatile GaussDBServerInfo serverInfo;
 
     public GaussDBDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException {
         super(monitor, container, new GaussDBDialect());
     }
 
     @Override
-    public void initialize(@NotNull DBRProgressMonitor monitor) throws DBException {
-        super.initialize(monitor);
+    protected void initializeRemoteInstance(@NotNull DBRProgressMonitor monitor) throws DBException {
+        super.initializeRemoteInstance(monitor);
+        try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read GaussDB server information")) {
+            session.enableLogging(false);
+            serverInfo = GaussDBServerInfo.read(session);
+        } catch (Exception e) {
+            log.debug("Error reading GaussDB server information", e);
+            serverInfo = GaussDBServerInfo.unknown();
+        }
+    }
+
+    @NotNull
+    public GaussDBServerInfo getServerInfo() {
+        GaussDBServerInfo info = serverInfo;
+        return info == null ? GaussDBServerInfo.unknown() : info;
     }
 
     @NotNull
@@ -67,32 +93,10 @@ public class GaussDBDataSource extends PostgreDataSource {
         return CommonUtils.getBoolean(configuration.getProviderProperty(PostgreConstants.PROP_SHOW_NON_DEFAULT_DB), true);
     }
 
-    /**
-     * GaussDB version numbers (e.g. 8.x) do not align with PostgreSQL version numbers.
-     * The base class and PG model code call isServerVersionAtLeast with PG version expectations
-     * (e.g. isServerVersionAtLeast(9,3) for materialized views).
-     *
-     * Since GaussDB is based on PG 9.2/10/12 internals depending on the version, and most
-     * features checked by version here are either always supported or always unsupported
-     * (handled by PostgreServerGaussDB overrides), we return true for most version checks
-     * to ensure the PG model code does not skip features that GaussDB actually supports.
-     *
-     * The accurate feature gating is done in PostgreServerGaussDB.supports* overrides.
-     */
     @Override
     public boolean isServerVersionAtLeast(int major, int minor) {
-        // GaussDB supports all features that PG checks via version >= 8.x
-        // For very old PG version checks (< 8), be conservative
-        if (major < 8) {
-            return true;
-        }
-        if (major < 9) {
-            return true;
-        }
-        // For PG 9.x+ feature checks, GaussDB based on modern PG core supports them
-        // (materialized views, event triggers, partitions, etc. are gated by
-        // PostgreServerGaussDB overrides, not by this method)
-        return true;
+        return major < POSTGRESQL_CATALOG_COMPATIBILITY_MAJOR ||
+            major == POSTGRESQL_CATALOG_COMPATIBILITY_MAJOR && minor <= POSTGRESQL_CATALOG_COMPATIBILITY_MINOR;
     }
 
     @Override

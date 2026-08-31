@@ -45,8 +45,7 @@ import java.util.Map;
 /**
  * GaussDBProcedureManager
  */
-public class GaussDBProcedureManager extends SQLObjectEditor<GaussDBProcedure, GaussDBSchema>
-    implements DBEObjectRenamer<GaussDBProcedure> {
+public class GaussDBProcedureManager extends GaussDBRoutineManager<GaussDBProcedure> {
 
     @Nullable
     @Override
@@ -56,13 +55,32 @@ public class GaussDBProcedureManager extends SQLObjectEditor<GaussDBProcedure, G
     }
 
     @Override
+    protected GaussDBProcedure createDatabaseObject(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBECommandContext context,
+        @NotNull final Object container,
+        @Nullable Object copyFrom,
+        @NotNull Map<String, Object> options
+    ) {
+        return new GaussDBProcedure((PostgreSchema) container);
+    }
+}
+
+/**
+ * Shared, type-safe editor implementation for GaussDB procedures and functions.
+ */
+abstract class GaussDBRoutineManager<ROUTINE extends GaussDBProcedure>
+    extends SQLObjectEditor<ROUTINE, GaussDBSchema>
+    implements DBEObjectRenamer<ROUTINE> {
+
+    @Override
     public boolean canCreateObject(@NotNull Object container) {
-        return container instanceof PostgreSchema
-            && ((PostgreSchema) container).getDataSource().getServerType().supportsFunctionCreate();
+        return container instanceof GaussDBSchema schema
+            && schema.getDataSource().getServerType().supportsFunctionCreate();
     }
 
     @Override
-    public boolean canDeleteObject(@NotNull GaussDBProcedure object) {
+    public boolean canDeleteObject(@NotNull ROUTINE object) {
         return object.getDataSource().getServerType().supportsFunctionCreate();
     }
 
@@ -78,32 +96,23 @@ public class GaussDBProcedureManager extends SQLObjectEditor<GaussDBProcedure, G
         @NotNull Map<String, Object> options
     ) throws DBException {
         if (CommonUtils.isEmpty(command.getObject().getName())) {
-            throw new DBException("Function name cannot be empty");
+            throw new DBException("Routine name cannot be empty");
         }
     }
 
     @Override
-    protected GaussDBProcedure createDatabaseObject(
-        @NotNull DBRProgressMonitor monitor,
-        @NotNull DBECommandContext context,
-        @NotNull final Object container,
-        @Nullable Object copyFrom,
-        @NotNull Map<String, Object> options
-    ) {
-        return new GaussDBProcedure((PostgreSchema) container);
-    }
-
-    @Override
     protected void addObjectCreateActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext,
-                                          @NotNull List<DBEPersistAction> actions, @NotNull ObjectCreateCommand command, @NotNull Map<String, Object> options) {
-        createOrReplaceProcedureQuery(actions, command.getObject());
+                                          @NotNull List<DBEPersistAction> actions, @NotNull ObjectCreateCommand command,
+                                          @NotNull Map<String, Object> options) throws DBException {
+        createOrReplaceRoutineQuery(monitor, actions, command.getObject());
     }
 
     @Override
     protected void addObjectModifyActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext,
-                                          @NotNull List<DBEPersistAction> actionList, @NotNull ObjectChangeCommand command, @NotNull Map<String, Object> options) {
+                                          @NotNull List<DBEPersistAction> actionList, @NotNull ObjectChangeCommand command,
+                                          @NotNull Map<String, Object> options) throws DBException {
         if (command.getProperties().size() > 1 || command.getProperty(DBConstants.PROP_ID_DESCRIPTION) == null) {
-            createOrReplaceProcedureQuery(actionList, command.getObject());
+            createOrReplaceRoutineQuery(monitor, actionList, command.getObject());
         }
     }
 
@@ -112,19 +121,24 @@ public class GaussDBProcedureManager extends SQLObjectEditor<GaussDBProcedure, G
                                           @NotNull List<DBEPersistAction> actions, @NotNull ObjectDeleteCommand command, @NotNull Map<String, Object> options) {
         String objectType = command.getObject().getProcedureTypeName();
         actions.add(
-            new SQLDatabasePersistAction("Drop function", "DROP " + objectType + " " + command.getObject().getFullQualifiedSignature()) //$NON-NLS-2$
+            new SQLDatabasePersistAction("Drop routine", "DROP " + objectType + " " + command.getObject().getFullQualifiedSignature()) //$NON-NLS-2$
         );
     }
 
-    private void createOrReplaceProcedureQuery(List<DBEPersistAction> actions, GaussDBProcedure procedure) {
-        actions.add(new SQLDatabasePersistAction("Create function", procedure.getBody(), true));
+    private void createOrReplaceRoutineQuery(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull List<DBEPersistAction> actions,
+        @NotNull ROUTINE routine
+    ) throws DBException {
+        actions.add(new SQLDatabasePersistAction("Create routine", routine.getCreateStatement(monitor), true));
     }
 
     @Override
     protected void addObjectExtraActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext,
-                                         @NotNull List<DBEPersistAction> actions, @NotNull NestedObjectCommand<GaussDBProcedure, PropertyHandler> command, @NotNull Map<String, Object> options) {
+                                         @NotNull List<DBEPersistAction> actions, @NotNull NestedObjectCommand<ROUTINE, PropertyHandler> command,
+                                         @NotNull Map<String, Object> options) {
         if (command.getProperty(DBConstants.PROP_ID_DESCRIPTION) != null) {
-            actions.add(new SQLDatabasePersistAction("Comment function",
+            actions.add(new SQLDatabasePersistAction("Comment routine",
                 "COMMENT ON " + command.getObject().getProcedureTypeName() + " " + command.getObject().getFullQualifiedSignature()
                     + " IS " + SQLUtils.quoteString(command.getObject(), command.getObject().getDescription())));
         }
@@ -140,7 +154,7 @@ public class GaussDBProcedureManager extends SQLObjectEditor<GaussDBProcedure, G
     }
 
     @Override
-    public void renameObject(@NotNull DBECommandContext commandContext, @NotNull GaussDBProcedure object,
+    public void renameObject(@NotNull DBECommandContext commandContext, @NotNull ROUTINE object,
         @NotNull Map<String, Object> options, @NotNull String newName) throws DBException {
         processObjectRename(commandContext, object, options, newName);
     }
@@ -148,11 +162,11 @@ public class GaussDBProcedureManager extends SQLObjectEditor<GaussDBProcedure, G
     @Override
     protected void addObjectRenameActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext,
                                           @NotNull List<DBEPersistAction> actions, @NotNull ObjectRenameCommand command, @NotNull Map<String, Object> options) {
-        GaussDBProcedure procedure = command.getObject();
-        actions.add(new SQLDatabasePersistAction("Rename function",
-            "ALTER " + command.getObject().getProcedureTypeName() + " " + DBUtils.getQuotedIdentifier(procedure.getSchema()) + "."
-                + GaussDBProcedure.makeOverloadedName(procedure.getSchema(), command.getOldName(), procedure.getParameters(monitor),
+        ROUTINE routine = command.getObject();
+        actions.add(new SQLDatabasePersistAction("Rename routine",
+            "ALTER " + routine.getProcedureTypeName() + " " + DBUtils.getQuotedIdentifier(routine.getSchema()) + "."
+                + GaussDBProcedure.makeOverloadedName(routine.getSchema(), command.getOldName(), routine.getParameters(monitor),
                     true, false, false)
-                + " RENAME TO " + DBUtils.getQuotedIdentifier(procedure.getDataSource(), command.getNewName())));
+                + " RENAME TO " + DBUtils.getQuotedIdentifier(routine.getDataSource(), command.getNewName())));
     }
 }

@@ -22,6 +22,7 @@ import java.sql.SQLException;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreCharset;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreRole;
@@ -38,6 +39,8 @@ import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 
 public class GaussDBDatabase extends PostgreDatabase {
+
+    private static final Log log = Log.getLog(GaussDBDatabase.class);
 
     private DBRProgressMonitor monitor;
 
@@ -129,7 +132,17 @@ public class GaussDBDatabase extends PostgreDatabase {
                     }
                 }
             } catch (SQLException e) {
+                if (GaussDBMetadataErrorHandler.isOptionalMetadataError(e)) {
+                    log.debug("Optional GaussDB database compatibility metadata is unavailable", e);
+                    return;
+                }
                 throw new DBCException(e, session.getExecutionContext());
+            } catch (DBCException e) {
+                if (GaussDBMetadataErrorHandler.isOptionalMetadataError(e)) {
+                    log.debug("Optional GaussDB database compatibility metadata is unavailable", e);
+                    return;
+                }
+                throw e;
             }
         }
     }
@@ -160,6 +173,11 @@ public class GaussDBDatabase extends PostgreDatabase {
     }
 
     public void checkPackageSupport(DBRProgressMonitor monitor) {
-        setPackageSupported("Oracle".equalsIgnoreCase(DBCompatibilityEnum.queryTextByValue(this.databaseCompatibleMode)));
+        GaussDBServerInfo info = getDataSource().getServerInfo();
+        setPackageSupported(
+            "Oracle".equalsIgnoreCase(DBCompatibilityEnum.queryTextByValue(this.databaseCompatibleMode)) &&
+                info.getDeployment() == GaussDBServerInfo.Deployment.CENTRALIZED &&
+                info.hasRelation("gs_package")
+        );
     }
 }

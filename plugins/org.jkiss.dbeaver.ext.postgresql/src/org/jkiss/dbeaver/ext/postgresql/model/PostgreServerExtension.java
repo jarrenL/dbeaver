@@ -19,7 +19,9 @@ package org.jkiss.dbeaver.ext.postgresql.model;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
+import org.jkiss.dbeaver.model.connection.DBPNativeClientLocation;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectLookupCache;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -64,6 +66,17 @@ public interface PostgreServerExtension {
     boolean supportsRules();
 
     boolean supportsRowLevelSecurity();
+
+    /**
+     * Query used to load row-level security policies for a table. Implementations may map
+     * vendor-specific policy catalogs to PostgreSQL's policy column names.
+     */
+    @NotNull
+    String getTablePoliciesQuery();
+
+    boolean supportsPolicyWithCheck();
+
+    boolean supportsPolicyInsertEvent();
 
     boolean supportsExtensions();
 
@@ -264,6 +277,26 @@ public interface PostgreServerExtension {
 
     boolean supportsCustomDataTypes();
 
+    /**
+     * Whether the PostgreSQL INSERT ... ON CONFLICT SQL generator is valid for this server.
+     */
+    default boolean supportsInsertOnConflict() {
+        return true;
+    }
+
+    /**
+     * Gives PostgreSQL-compatible servers a chance to correct the JDBC type inferred from pg_type.
+     */
+    default int resolveDataTypeValueType(
+        @NotNull String typeName,
+        long typeId,
+        @Nullable PostgreTypeCategory typeCategory,
+        int typeLength,
+        int defaultValueType
+    ) {
+        return defaultValueType;
+    }
+
     boolean supportsDistinctForStatementsWithAcl();
 
     /** True if supports operator families as access methods (System Info) */
@@ -287,10 +320,66 @@ public interface PostgreServerExtension {
      */
     boolean supportsNativeClient();
 
+    /**
+     * True if the native cluster-wide backup tool supports the options required by the
+     * PostgreSQL backup-all task (in particular password suppression and database filters).
+     */
+    default boolean supportsNativeBackupAll() {
+        return supportsNativeClient();
+    }
+
+    default boolean supportsNativeBackupAllPasswordSuppression() {
+        return true;
+    }
+
+    default boolean supportsNativeBackupAllDatabaseFilter() {
+        return true;
+    }
+
+    /** True if native dump/restore tools can read or write their archive through standard streams. */
+    default boolean supportsNativeToolStreaming() {
+        return true;
+    }
+
+    /** Adds server-specific environment variables required by native client binaries. */
+    default void configureNativeToolEnvironment(
+        @NotNull DBPNativeClientLocation clientHome,
+        @NotNull Map<String, String> environment
+    ) {
+    }
+
     boolean supportsJobs();
 
     /**
      * Determines if the provided object is a PostgreSQL-specific object (PGObject) like {@code com.amazon.redshift.util.RedshiftObject}.
      */
     boolean isPGObject(@NotNull Object object);
+
+    default boolean isPGArray(@NotNull Object object) {
+        return PostgreConstants.PG_ARRAY_CLASS.equals(object.getClass().getName());
+    }
+
+    default boolean isPSQLException(@NotNull Throwable error) {
+        return PostgreConstants.PSQL_EXCEPTION_CLASS_NAME.equals(error.getClass().getName());
+    }
+
+    default boolean isPSQLWarning(@NotNull Throwable warning) {
+        return "org.postgresql.util.PSQLWarning".equals(warning.getClass().getName());
+    }
+
+    /**
+     * Root package containing core.BaseConnection and copy.CopyManager in the active JDBC driver.
+     */
+    @NotNull
+    default String getJDBCDriverPackage() {
+        return "org.postgresql";
+    }
+
+    /**
+     * Maps PostgreSQL native tool names to the compatible server's executable names.
+     */
+    @NotNull
+    default String getNativeToolName(@NotNull String postgreSQLToolName) {
+        return postgreSQLToolName;
+    }
 }

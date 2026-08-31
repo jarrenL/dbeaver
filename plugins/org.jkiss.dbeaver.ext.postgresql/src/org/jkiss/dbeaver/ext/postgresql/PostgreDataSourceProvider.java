@@ -49,11 +49,16 @@ public class PostgreDataSourceProvider extends JDBCDataSourceProvider<PostgreDat
 
     static {
         connectionsProps = new HashMap<>();
-
-        DBPPreferenceStore preferenceStore = DBWorkbench.getPlatform().getPreferenceStore();
-        if (preferenceStore != null) {
-            PrefUtils.setDefaultPreferenceValue(preferenceStore, PostgreConstants.PROP_DD_PLAIN_STRING, false);
-            PrefUtils.setDefaultPreferenceValue(preferenceStore, PostgreConstants.PROP_DD_TAG_STRING, false);
+        try {
+            if (DBWorkbench.isPlatformStarted()) {
+                DBPPreferenceStore preferenceStore = DBWorkbench.getPlatform().getPreferenceStore();
+                if (preferenceStore != null) {
+                    PrefUtils.setDefaultPreferenceValue(preferenceStore, PostgreConstants.PROP_DD_PLAIN_STRING, false);
+                    PrefUtils.setDefaultPreferenceValue(preferenceStore, PostgreConstants.PROP_DD_TAG_STRING, false);
+                }
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // Provider classes are also loaded by headless tools before an OSGi workbench exists.
         }
     }
 

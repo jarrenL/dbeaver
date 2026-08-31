@@ -19,8 +19,8 @@ package org.jkiss.dbeaver.ext.gaussdb;
 public class GaussDBConstants {
 
     // ---- Compatibility modes ----
-    // GaussDB centralized (集中式) uses single-letter values: A/B/C/PG
-    // GaussDB distributed (分布式) uses abbreviated names: ORA/MYSQL/TD/PG
+    // GaussDB centralized (集中式) uses single-letter values: A/B/C/PG/M
+    // GaussDB distributed (分布式) uses abbreviated names: ORA/MYSQL/TD/PG/M
     // The datcompatibility column in pg_database stores these values.
 
     /** Oracle compatibility mode — centralized value "A", distributed value "ORA" */
@@ -38,7 +38,7 @@ public class GaussDBConstants {
     /** PostgreSQL compatibility mode — value "PG" */
     public static final String GAUSSDB_PG_COMPATIBLE_MODE = "PG";
 
-    /** M compatibility mode (older GaussDB versions used "M" for MySQL) */
+    /** Independent M compatibility mode */
     public static final String GAUSSDB_M_COMPATIBLE_MODE = "M";
 
     // ---- Connection defaults ----
@@ -48,9 +48,10 @@ public class GaussDBConstants {
 
     // ---- Driver ----
     public static final String GAUSSDB_DRIVER_CLASS_PG = "org.postgresql.Driver";
-    public static final String GAUSSDB_DRIVER_CLASS_NATIVE = "com.huawei.gauss.jdbc.ZenithDriver";
+    public static final String GAUSSDB_DRIVER_CLASS_NATIVE = "com.huawei.gaussdb.jdbc.Driver";
     public static final String GAUSSDB_URL_PREFIX_PG = "jdbc:postgresql://";
     public static final String GAUSSDB_URL_PREFIX_NATIVE = "jdbc:gaussdb://";
+    public static final String BIN_FOLDER = "bin";
 
     // ---- System objects ----
     public static final String GAUSSDB_SYSTEM_SCHEMA_DBE_PERF = "dbe_perf";
@@ -59,8 +60,24 @@ public class GaussDBConstants {
 
     // ---- GaussDB-specific SQL keywords ----
     public static final String[] GAUSSDB_EXTRA_KEYWORDS = {
-        "PACKAGE", "BODY", "DBCOMPATIBILITY", "VECTOR", "HLL", "HASH",
-        "DISTRIBUTE", "REPLICATION", "SLICE", "DECFLOAT", "GS_PACKAGE",
-        "DBE_PLDEVELOPER", "GS_SOURCE", "SHRINK", "BARRIER"
+        "PACKAGE", "BODY", "DBCOMPATIBILITY", "DISTRIBUTE", "DISTRIBUTED",
+        "DISTRIBUTION", "REPLICATION", "SLICE", "SHRINK", "BARRIER", "IGNORE", "REPLACE"
+    };
+
+    // ---- GaussDB-specific SQL data types ----
+    public static final String[] GAUSSDB_DATA_TYPES = {
+        "HLL", "HLL_HASHVAL", "FLOATVECTOR", "BOOLVECTOR", "RAW", "VARCHAR2",
+        "NVARCHAR2", "CLOB", "BLOB", "SMALLDATETIME", "TINYINT", "MEDIUMINT",
+        "LARGESERIAL", "INT1", "UINT1", "UINT2", "UINT4", "UINT8", "INT16",
+        "NUMBER", "YEAR", "DATETIME", "BINARY", "VARBINARY", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
+        "NCLOB", "ENUM", "SET"
+    };
+
+    // ---- GaussDB-specific SQL functions ----
+    public static final String[] GAUSSDB_FUNCTIONS = {
+        "gs_encrypt_aes128", "gs_decrypt_aes128", "gs_encrypt", "gs_decrypt",
+        "gs_encrypt_bytea", "gs_decrypt_bytea", "hll_hash_any", "hll_union",
+        "hll_cardinality", "vector_dims", "vector_l2_squared_distance",
+        "vector_negative_inner_product", "vector_norm", "vector_spherical_distance", "vector_to_array"
     };
 }

@@ -40,7 +40,7 @@ public class GaussDBPackageBodyViewEditor extends PostgreSourceViewEditor {
         PostgreScriptObject object = getSourceObject();
         if (object instanceof GaussDBPackage) {
             GaussDBPackage sourceObject = (GaussDBPackage) object;
-            return sourceObject.getExtendedDefinitionText();
+            return sourceObject.getBodyText(monitor);
         }
         return "";
     }

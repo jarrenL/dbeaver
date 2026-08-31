@@ -120,6 +120,22 @@ public abstract class PostgreServerExtensionBase implements PostgreServerExtensi
         return false;
     }
 
+    @NotNull
+    @Override
+    public String getTablePoliciesQuery() {
+        return "SELECT * FROM pg_catalog.pg_policies WHERE schemaname=? AND tablename=?";
+    }
+
+    @Override
+    public boolean supportsPolicyWithCheck() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPolicyInsertEvent() {
+        return true;
+    }
+
     @Override
     public boolean supportsExtensions() {
         return dataSource.isServerVersionAtLeast(9, 1);
@@ -626,6 +642,17 @@ public abstract class PostgreServerExtensionBase implements PostgreServerExtensi
     @Override
     public boolean supportsCustomDataTypes() {
         return true;
+    }
+
+    @Override
+    public int resolveDataTypeValueType(
+        @NotNull String typeName,
+        long typeId,
+        @Nullable PostgreTypeCategory typeCategory,
+        int typeLength,
+        int defaultValueType
+    ) {
+        return defaultValueType;
     }
 
     @Override

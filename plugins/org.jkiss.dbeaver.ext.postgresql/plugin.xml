@@ -803,7 +803,7 @@
               icon="platform:/plugin/org.jkiss.dbeaver.ui/icons/file/export.svg" type="postgresql"
               handler="org.jkiss.dbeaver.ext.postgresql.tasks.PostgreDatabaseBackupAllHandler" requiresExportPrivileges="true">
             <datasource id="postgresql"/>
-            <objectType name="org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase" if="object.dataSource.serverType.supportsNativeClient()"/>
+            <objectType name="org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase" if="object.dataSource.serverType.supportsNativeBackupAll()"/>
         </task>
         <task id="pgScriptExecute" name="%task.pgScriptExecute.name" description="%task.pgScriptExecute.description" icon="platform:/plugin/org.jkiss.dbeaver.model/icons/tree/script.svg" type="postgresql" handler="org.jkiss.dbeaver.ext.postgresql.tasks.PostgreScriptExecuteHandler">
             <datasource id="postgresql"/>
@@ -882,7 +882,7 @@ SELECT
     <!-- SQL Generators -->
     <extension point="org.jkiss.dbeaver.sqlGenerator">
         <generator id="tableInsertOnConflict" class="org.jkiss.dbeaver.ext.postgresql.model.sql.generator.SQLGeneratorInsertOnConflict" label="INSERT ON CONFLICT" description="INSERT into table ON CONFLICT" order="7">
-            <objectType name="org.jkiss.dbeaver.ext.postgresql.model.PostgreTableBase"/>
+            <objectType name="org.jkiss.dbeaver.ext.postgresql.model.PostgreTableBase" if="object.dataSource.serverType.supportsInsertOnConflict()"/>
         </generator>
         <generator id="tableUpdateFrom" class="org.jkiss.dbeaver.ext.postgresql.model.sql.generator.SQLGeneratorUpdateFrom" label="UPDATE FROM" description="UPDATE FROM (UPDATE with JOIN)" order="8">
             <objectType name="org.jkiss.dbeaver.ext.postgresql.model.PostgreTableBase"/>

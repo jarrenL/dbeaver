@@ -58,7 +58,7 @@ public class CreateFunctionOrProcedurePage extends BaseObjectEditPage {
     private PostgreDataType returnType;
     private Combo returnTypeCombo;
 
-    private boolean isFunction;
+    private final boolean isFunction;
 
     public CreateFunctionOrProcedurePage(DBRProgressMonitor monitor, GaussDBProcedure parent, boolean isFunction) {
         super(isFunction ? GaussDBMessages.dialog_struct_create_function_title : GaussDBMessages.dialog_struct_create_procedure_title);
@@ -100,7 +100,9 @@ public class CreateFunctionOrProcedurePage extends BaseObjectEditPage {
         } else {
             typeCombo = null;
         }
-        typeCombo.setEnabled(false);
+        if (typeCombo != null) {
+            typeCombo.setEnabled(false);
+        }
         propsGroup.setTabList(ArrayUtils.remove(Control.class, propsGroup.getTabList(), containerText));
         if (isFunction) {
             createExtraControls(propsGroup);
@@ -125,20 +127,41 @@ public class CreateFunctionOrProcedurePage extends BaseObjectEditPage {
             } catch (DBException e) {
                 log.error(e);
             }
-            final Combo languageCombo = UIUtils.createLabelCombo(group, "Language", SWT.DROP_DOWN | SWT.READ_ONLY);
+            final Combo languageCombo = UIUtils.createLabelCombo(
+                group,
+                GaussDBMessages.dialog_struct_create_function_language,
+                SWT.DROP_DOWN | SWT.READ_ONLY
+            );
             for (PostgreLanguage lang : languages) {
                 languageCombo.add(lang.getName());
             }
 
             languageCombo.addModifyListener(e -> {
-                language = languages.get(languageCombo.getSelectionIndex());
+                int selectionIndex = languageCombo.getSelectionIndex();
+                language = selectionIndex < 0 ? null : languages.get(selectionIndex);
+                validateProperties();
+                updatePageState();
             });
-            languageCombo.setText("sql");
+            int languageIndex = findLanguage(languages, "sql");
+            if (languageIndex < 0) {
+                languageIndex = findLanguage(languages, "plpgsql");
+            }
+            if (languageIndex < 0 && !languages.isEmpty()) {
+                languageIndex = 0;
+            }
+            if (languageIndex >= 0) {
+                languageCombo.select(languageIndex);
+                language = languages.get(languageIndex);
+            }
         }
         {
             List<PostgreDataType> dataTypes = new ArrayList<>(parent.getDatabase().getLocalDataTypes());
             dataTypes.sort(Comparator.comparing(PostgreDataType::getName));
-            returnTypeCombo = UIUtils.createLabelCombo(group, "Return type", SWT.DROP_DOWN);
+            returnTypeCombo = UIUtils.createLabelCombo(
+                group,
+                GaussDBMessages.dialog_struct_create_function_return_type,
+                SWT.DROP_DOWN
+            );
             for (PostgreDataType dt : dataTypes) {
                 returnTypeCombo.add(dt.getName());
             }
@@ -150,9 +173,21 @@ public class CreateFunctionOrProcedurePage extends BaseObjectEditPage {
                 } else {
                     returnType = null;
                 }
+                validateProperties();
+                updatePageState();
             });
             returnTypeCombo.setText("int4");
         }
+        validateProperties();
+    }
+
+    private static int findLanguage(List<PostgreLanguage> languages, String name) {
+        for (int i = 0; i < languages.size(); i++) {
+            if (name.equalsIgnoreCase(languages.get(i).getName())) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     public DBSProcedureType getProcedureType() {
@@ -174,12 +209,25 @@ public class CreateFunctionOrProcedurePage extends BaseObjectEditPage {
 
     @Override
     public boolean isPageComplete() {
-        return !CommonUtils.isEmpty(name);
+        return !CommonUtils.isEmpty(name) && (!isFunction || language != null && returnType != null);
+    }
+
+    @Override
+    protected String getEditError() {
+        if (!isFunction) {
+            return null;
+        }
+        if (language == null) {
+            return GaussDBMessages.dialog_struct_create_function_language_required;
+        }
+        if (returnType == null) {
+            return GaussDBMessages.dialog_struct_create_function_return_type_required;
+        }
+        return null;
     }
 
     @Override
     public DBSObject getObject() {
-        // TODO Auto-generated method stub
-        return null;
+        return parent;
     }
 }

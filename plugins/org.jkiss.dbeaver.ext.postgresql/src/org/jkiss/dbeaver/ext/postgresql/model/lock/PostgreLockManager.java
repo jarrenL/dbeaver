@@ -44,19 +44,15 @@ public class PostgreLockManager extends LockGraphManager implements DBAServerLoc
                     "from "+
                      "pg_locks "+
          "), "+
-        "conflict as ( "+
-                "select "+
-                 "*  "+
-                "from (values "+
-                       "('AccessShareLock','AccessExclusiveLock',1), "+
-                       "('RowShareLock','ExclusiveLock',1), ('RowShareLock','AccessExclusiveLock',2),        "+
-                       "('RowExclusiveLock','ShareLock', 1), ('RowExclusiveLock','ShareRowExclusiveLock',2),  ('RowExclusiveLock','ExclusiveLock',3), ('RowExclusiveLock','AccessExclusiveLock',4), "+
-                       "('ShareUpdateExclusiveLock','ShareUpdateExclusiveLock',1), ('ShareUpdateExclusiveLock','ShareLock',2),  ('ShareUpdateExclusiveLock','ShareRowExclusiveLock',3), ('ShareUpdateExclusiveLock','ExclusiveLock', 4), ('ShareUpdateExclusiveLock','AccessExclusiveLock',5), "+
-                       "('ShareLock','RowExclusiveLock',1),  ('ShareLock','ShareUpdateExclusiveLock',2),  ('ShareLock','ShareRowExclusiveLock',3),  ('ShareLock','ExclusiveLock',4),	   ('ShareLock','AccessExclusiveLock',5), "+
-                       "('ShareRowExclusiveLock','RowExclusiveLock', 1),  ('ShareRowExclusiveLock','ShareUpdateExclusiveLock',    2),  ('ShareRowExclusiveLock','ShareLock',    3),  ('ShareRowExclusiveLock','ShareRowExclusiveLock',4),  ('ShareRowExclusiveLock','ExclusiveLock',5),  ('ShareRowExclusiveLock','AccessExclusiveLock', 6), "+
-                       "('ExclusiveLock','RowShareLock',1), ('ExclusiveLock','RowExclusiveLock',2), ('ExclusiveLock','ShareUpdateExclusiveLock',3),  ('ExclusiveLock','ShareLock',4),  ('ExclusiveLock','ShareRowExclusiveLock',5),   ('ExclusiveLock','ExclusiveLock',6),   ('ExclusiveLock','AccessExclusiveLock',7), "+
-                       "('AccessExclusiveLock','AccessShareLock',1), ('AccessExclusiveLock','RowShareLock',2), ('AccessExclusiveLock','RowExclusiveLock',3), ('AccessExclusiveLock','ShareUpdateExclusiveLock',4),   ('AccessExclusiveLock','ShareLock',5), ('AccessExclusiveLock','ShareRowExclusiveLock',6), ('AccessExclusiveLock','ExclusiveLock',7),  ('AccessExclusiveLock','AccessExclusiveLock',8) "+
-                   ") as t (mode1,mode2,prt)     "+
+        "conflict(mode1,mode2,prt) as ( "+
+                       "select 'AccessShareLock'::text,'AccessExclusiveLock'::text,1::integer "+
+                       "union all select 'RowShareLock','ExclusiveLock',1 union all select 'RowShareLock','AccessExclusiveLock',2 "+
+                       "union all select 'RowExclusiveLock','ShareLock',1 union all select 'RowExclusiveLock','ShareRowExclusiveLock',2 union all select 'RowExclusiveLock','ExclusiveLock',3 union all select 'RowExclusiveLock','AccessExclusiveLock',4 "+
+                       "union all select 'ShareUpdateExclusiveLock','ShareUpdateExclusiveLock',1 union all select 'ShareUpdateExclusiveLock','ShareLock',2 union all select 'ShareUpdateExclusiveLock','ShareRowExclusiveLock',3 union all select 'ShareUpdateExclusiveLock','ExclusiveLock',4 union all select 'ShareUpdateExclusiveLock','AccessExclusiveLock',5 "+
+                       "union all select 'ShareLock','RowExclusiveLock',1 union all select 'ShareLock','ShareUpdateExclusiveLock',2 union all select 'ShareLock','ShareRowExclusiveLock',3 union all select 'ShareLock','ExclusiveLock',4 union all select 'ShareLock','AccessExclusiveLock',5 "+
+                       "union all select 'ShareRowExclusiveLock','RowExclusiveLock',1 union all select 'ShareRowExclusiveLock','ShareUpdateExclusiveLock',2 union all select 'ShareRowExclusiveLock','ShareLock',3 union all select 'ShareRowExclusiveLock','ShareRowExclusiveLock',4 union all select 'ShareRowExclusiveLock','ExclusiveLock',5 union all select 'ShareRowExclusiveLock','AccessExclusiveLock',6 "+
+                       "union all select 'ExclusiveLock','RowShareLock',1 union all select 'ExclusiveLock','RowExclusiveLock',2 union all select 'ExclusiveLock','ShareUpdateExclusiveLock',3 union all select 'ExclusiveLock','ShareLock',4 union all select 'ExclusiveLock','ShareRowExclusiveLock',5 union all select 'ExclusiveLock','ExclusiveLock',6 union all select 'ExclusiveLock','AccessExclusiveLock',7 "+
+                       "union all select 'AccessExclusiveLock','AccessShareLock',1 union all select 'AccessExclusiveLock','RowShareLock',2 union all select 'AccessExclusiveLock','RowExclusiveLock',3 union all select 'AccessExclusiveLock','ShareUpdateExclusiveLock',4 union all select 'AccessExclusiveLock','ShareLock',5 union all select 'AccessExclusiveLock','ShareRowExclusiveLock',6 union all select 'AccessExclusiveLock','ExclusiveLock',7 union all select 'AccessExclusiveLock','AccessExclusiveLock',8 "+
         ")	  "+
         ",real_locks as ("+
         "select 	  "+
@@ -78,8 +74,8 @@ public class PostgreLockManager extends LockGraphManager implements DBAServerLoc
         "locks l "+
         "join conflict c on l.mode = c.mode1 "+
         "join locks l2 on l2.locktype = l.locktype and l2.mode = c.mode2 and l2.granted and l.pid != l2.pid and  "+
-                                  "coalesce(l.tid::text,'*') ||':'|| coalesce(l.relation::text,'*') ||':'|| coalesce(l.page::text,'*') ||':'|| coalesce(l.tuple::text,'*') = "+
-                                  "coalesce(l2.tid::text,'*') ||':'|| coalesce(l2.relation::text,'*') ||':'|| coalesce(l2.page::text,'*') ||':'|| coalesce(l2.tuple::text,'*') "+
+                                  "concat(coalesce(l.tid::text,'*'),':',coalesce(l.relation::text,'*'),':',coalesce(l.page::text,'*'),':',coalesce(l.tuple::text,'*')) = "+
+                                  "concat(coalesce(l2.tid::text,'*'),':',coalesce(l2.relation::text,'*'),':',coalesce(l2.page::text,'*'),':',coalesce(l2.tuple::text,'*')) "+
         "where not l.granted "+
         ") la "+
         "join pg_catalog.pg_stat_activity blocked_activity  ON blocked_activity.pid = la.pid "+
@@ -87,9 +83,8 @@ public class PostgreLockManager extends LockGraphManager implements DBAServerLoc
         "where la.rid = 1) "+
 
             ", root_quest as ( "+
-            "   select blocking_pid as blocking_pid from real_locks "+
-               " except "+
-               " select blocked_pid from real_locks ) "+
+            "   select distinct r.blocking_pid from real_locks r "+
+            "   where not exists (select 1 from real_locks b where b.blocked_pid = r.blocking_pid)) "+
             " select blocked_pid, "+
             "       blocked_user, "+
              "      blocking_pid, "+
@@ -114,20 +109,20 @@ public class PostgreLockManager extends LockGraphManager implements DBAServerLoc
 											;
 
 	public static final String LOCK_ITEM_QUERY = "select "+
-			" coalesce(db.datname,'') as datname, "+
-			" coalesce(lock.locktype,'') as locktype, "+
-			" coalesce(lock.relation::regclass::varchar,'') as relation, "+
-			" coalesce(lock.mode,'') as mode, "+
-			" coalesce(lock.transactionid::varchar,'') as tid, "+
-			" lock.page as page, "+
-			" lock.tuple as tuple, "+
-			" lock.pid as pid, "+
-			" lock.granted"+
-			" from pg_catalog.pg_locks lock "+
+			" coalesce(db.datname::text,'') as datname, "+
+			" coalesce(lck.locktype,'') as locktype, "+
+			" coalesce(lck.relation::regclass::varchar,'') as relation, "+
+			" coalesce(lck.mode,'') as mode, "+
+			" coalesce(lck.transactionid::varchar,'') as tid, "+
+			" lck.page as page, "+
+			" lck.tuple as tuple, "+
+			" lck.pid as pid, "+
+			" lck.granted"+
+			" from pg_catalog.pg_locks lck "+
 			"   left join pg_catalog.pg_database db "+
-			"     on db.oid = lock.database "+
+			"     on db.oid = lck.database "+
 			" where  "+
-			"  lock.pid = ? ";
+			"  lck.pid = ? ";
     public static final String pidHold = "hpid";
     public static final String pidWait = "wpid";
 

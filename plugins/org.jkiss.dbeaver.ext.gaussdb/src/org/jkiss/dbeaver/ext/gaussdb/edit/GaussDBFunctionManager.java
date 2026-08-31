@@ -29,11 +29,10 @@ import org.jkiss.dbeaver.model.struct.cache.DBSObjectCache;
 import java.util.Map;
 
 /**
- * GaussDBFunctionManager — extends GaussDBProcedureManager to reuse all
- * create/modify/delete/rename logic. Only overrides the minimum necessary
- * to handle the Function type instead of Procedure.
+ * GaussDB function manager. Common routine editing logic is implemented by
+ * the generic GaussDBRoutineManager base class.
  */
-public class GaussDBFunctionManager extends GaussDBProcedureManager {
+public class GaussDBFunctionManager extends GaussDBRoutineManager<GaussDBFunction> {
 
     @Nullable
     @Override

@@ -21,8 +21,8 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
  * GaussDB database compatibility modes.
  *
  * GaussDB supports multiple compatibility modes stored in pg_database.datcompatibility:
- * - Centralized (集中式): values are "A" (Oracle), "B" (MySQL), "C" (Teradata), "PG" (PostgreSQL)
- * - Distributed (分布式): values are "ORA" (Oracle), "MYSQL" (MySQL), "TD" (Teradata), "PG" (PostgreSQL)
+ * - Centralized (集中式): values are "A" (Oracle), "B" (MySQL), "C" (Teradata), "PG" (PostgreSQL), "M" (M)
+ * - Distributed (分布式): values are "ORA" (Oracle), "MYSQL" (MySQL), "TD" (Teradata), "PG" (PostgreSQL), "M" (M)
  *
  * The enum maps both representations to a canonical text name for display.
  */
@@ -31,7 +31,8 @@ public enum DBCompatibilityEnum {
     ORACLE("Oracle", "A", "ORA"),
     MYSQL("MySQL", "B", "MYSQL"),
     TERADATA("Teradata", "C", "TD"),
-    POSTGRES("PostgreSQL", "PG", "PG");
+    POSTGRES("PostgreSQL", "PG", "PG"),
+    M("M", "M", "M");
 
     private final String text;
     private final String cValue;  // Centralized value
@@ -55,6 +56,10 @@ public enum DBCompatibilityEnum {
         return dValue;
     }
 
+    public String getValue(GaussDBServerInfo.Deployment deployment) {
+        return deployment == GaussDBServerInfo.Deployment.CENTRALIZED ? cValue : dValue;
+    }
+
     /**
      * Gets DBCompatibilityEnum by text.
      *
@@ -66,7 +71,7 @@ public enum DBCompatibilityEnum {
             return null;
         }
         for (DBCompatibilityEnum e : values()) {
-            if (e.getText().equals(text)) {
+            if (e.getText().equalsIgnoreCase(text)) {
                 return e;
             }
         }
@@ -74,26 +79,30 @@ public enum DBCompatibilityEnum {
     }
 
     /**
+     * Resolves either the centralized or distributed catalog representation.
+     */
+    public static DBCompatibilityEnum fromValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        for (DBCompatibilityEnum compatibility : values()) {
+            if (compatibility.cValue.equalsIgnoreCase(value) || compatibility.dValue.equalsIgnoreCase(value)) {
+                return compatibility;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Query DBCompatibilityEnum text by compatibility value.
-     * Accepts both centralized (A/B/C/PG) and distributed (ORA/MYSQL/TD/PG) values.
+     * Accepts both centralized (A/B/C/PG/M) and distributed (ORA/MYSQL/TD/PG/M) values.
      *
      * @param value the compatibility value from pg_database.datcompatibility
      * @return the canonical text (e.g. "Oracle"), or empty string if not recognized
      */
     public static String queryTextByValue(String value) {
-        if (value == null) {
-            return "";
-        }
-        for (DBCompatibilityEnum e : values()) {
-            if (e.cValue.equalsIgnoreCase(value) || e.dValue.equalsIgnoreCase(value)) {
-                return e.text;
-            }
-        }
-        // Handle legacy "M" mode (older GaussDB used "M" for MySQL)
-        if ("M".equalsIgnoreCase(value)) {
-            return MYSQL.text;
-        }
-        return "";
+        DBCompatibilityEnum compatibility = fromValue(value);
+        return compatibility == null ? "" : compatibility.text;
     }
 
     /**
@@ -105,6 +114,6 @@ public enum DBCompatibilityEnum {
      */
     public static String getDValueByText(String text) {
         DBCompatibilityEnum e = of(text);
-        return e != null ? e.dValue : PG.dValue;
+        return e != null ? e.dValue : POSTGRES.dValue;
     }
 }

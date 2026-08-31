@@ -35,7 +35,7 @@ public class GaussDBPackageDeclareViewEditor extends PostgreSourceViewEditor {
         PostgreScriptObject object = getSourceObject();
         if (object instanceof GaussDBPackage) {
             GaussDBPackage sourceObject = (GaussDBPackage) object;
-            return sourceObject.getObjectDefinitionText();
+            return sourceObject.getDeclarationText(monitor);
         }
         return "";
     }

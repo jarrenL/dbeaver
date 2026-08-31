@@ -19,8 +19,12 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import java.sql.ResultSet;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 
 /**
  * GaussDB function — extends GaussDBProcedure since GaussDB treats functions
@@ -36,5 +40,12 @@ public class GaussDBFunction extends GaussDBProcedure {
 
     public GaussDBFunction(PostgreSchema schema) {
         super(schema);
+        setKind(PostgreProcedureKind.f);
+    }
+
+    @Override
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+        GaussDBSchema schema = (GaussDBSchema) getContainer();
+        return schema.getGaussDBFunctionsCache().refreshObject(monitor, schema, this);
     }
 }

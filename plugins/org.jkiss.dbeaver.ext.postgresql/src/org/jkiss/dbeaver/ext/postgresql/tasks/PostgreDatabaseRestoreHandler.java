@@ -25,6 +25,7 @@ import org.jkiss.dbeaver.model.fs.DBFUtils;
 import org.jkiss.dbeaver.model.messages.ModelMessages;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.DBRRunnableContext;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.task.DBTTask;
 import org.jkiss.dbeaver.registry.task.TaskPreferenceStore;
@@ -38,8 +39,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<PostgreDatabaseRestoreSettings, DBSObject, PostgreDatabaseRestoreInfo> {
+    private final Map<PostgreDatabaseRestoreInfo, Path> localTransferFiles = new ConcurrentHashMap<>();
 
     @Override
     public Collection<PostgreDatabaseRestoreInfo> getRunInfo(PostgreDatabaseRestoreSettings settings) {
@@ -92,6 +96,21 @@ public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<Post
     ) throws IOException {
         super.fillProcessParameters(settings, arg, cmd);
 
+        if (requiresLocalTransferFile(settings, settings.getInputFile())) {
+            Path source;
+            try {
+                source = DBFUtils.resolvePathFromString(
+                    new VoidProgressMonitor(), settings.getProject(), settings.getInputFile());
+            } catch (DBException e) {
+                throw new IOException("Cannot resolve restore input path", e);
+            }
+            Path localFile = settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY
+                ? Files.createTempDirectory("dbeaver-gaussdb-restore-")
+                : Files.createTempFile("dbeaver-gaussdb-restore-", ".dump");
+            copyTransferPath(source, localFile);
+            localTransferFiles.put(arg, localFile);
+        }
+
         // only supported by pg_restore
         if (settings.getFormat() != PostgreBackupRestoreSettings.ExportFormat.PLAIN) {
             if (settings.isCleanFirst()) {
@@ -122,11 +141,17 @@ public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<Post
         cmd.add("--dbname=" + settings.getRestoreInfo().getDatabase()); // database name here can be used without quotes
 
         if (settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.PLAIN) {
-            if (!isUseStreamTransfer(settings.getInputFile())) {
+            Path localFile = localTransferFiles.get(arg);
+            if (localFile != null) {
+                cmd.add("--file=" + localFile);
+            } else if (!isUseStreamTransfer(settings.getInputFile())) {
                 cmd.add("--file=" + settings.getInputFile());
             }
         } else {
-            if (!isUseStreamTransfer(settings.getInputFile()) ||
+            Path localFile = localTransferFiles.get(arg);
+            if (localFile != null) {
+                cmd.add(localFile.toString());
+            } else if (!isUseStreamTransfer(settings.getInputFile()) ||
                 settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY
             ) {
                 cmd.add(settings.getInputFile());
@@ -134,6 +159,21 @@ public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<Post
         }
 
         return cmd;
+    }
+
+    @Override
+    public boolean executeProcess(
+        DBRProgressMonitor monitor,
+        DBTTask task,
+        PostgreDatabaseRestoreSettings settings,
+        PostgreDatabaseRestoreInfo arg,
+        Log taskLog
+    ) throws IOException, InterruptedException {
+        try {
+            return super.executeProcess(monitor, task, settings, arg, taskLog);
+        } finally {
+            deleteLocalTransferPath(localTransferFiles.remove(arg));
+        }
     }
 
     @Override
@@ -148,12 +188,16 @@ public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<Post
 
     @Override
     protected void startProcessHandler(DBRProgressMonitor monitor, DBTTask task, PostgreDatabaseRestoreSettings settings, PostgreDatabaseRestoreInfo arg, ProcessBuilder processBuilder, Process process, Log log) throws IOException, DBException {
-        final Path inputFile = DBFUtils.resolvePathFromString(monitor, task.getProject(), settings.getInputFile());
+        Path localFile = localTransferFiles.get(arg);
+        final Path inputFile = localFile == null
+            ? DBFUtils.resolvePathFromString(monitor, task.getProject(), settings.getInputFile())
+            : localFile;
         if (!Files.exists(inputFile)) {
             throw new IOException("File '" + inputFile + "' doesn't exist");
         }
         super.startProcessHandler(monitor, task, settings, arg, processBuilder, process, log);
-        if (isUseStreamTransfer(inputFile.toUri().toString()) && settings.getFormat() != PostgreBackupRestoreSettings.ExportFormat.DIRECTORY) {
+        if (localFile == null && isUseStreamTransfer(inputFile.toUri().toString()) &&
+            settings.getFormat() != PostgreBackupRestoreSettings.ExportFormat.DIRECTORY) {
             new BinaryFileTransformerJob(monitor, task, inputFile, process.getOutputStream(), log).start();
         }
     }
