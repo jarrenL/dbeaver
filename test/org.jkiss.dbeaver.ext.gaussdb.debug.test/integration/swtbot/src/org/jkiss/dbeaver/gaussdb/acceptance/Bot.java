@@ -217,9 +217,16 @@ public final class Bot implements IStartup {
         constructor.setAccessible(true);
         for (String mode : java.util.List.of("a", "b", "c", "pg", "m")) {
             Object database = constructor.newInstance(monitor, source, "dbeaver_ext_0909_" + mode);
-            out.println("database=dbeaver_ext_0909_" + mode);
-            for (String method : java.util.List.of("getCompatibility", "isStoredProcedureSupported", "isPackageSupported")) {
-                out.println(method + "=" + type.getMethod(method).invoke(database));
+            try {
+                out.println("database=dbeaver_ext_0909_" + mode);
+                for (String method : java.util.List.of("getCompatibility", "isStoredProcedureSupported", "isPackageSupported")) {
+                    out.println(method + "=" + type.getMethod(method).invoke(database));
+                }
+            } finally {
+                // These temporary database instances are outside the navigator cache.
+                // The datasource will not discover them during its normal shutdown.
+                Arrays.stream(type.getMethods()).filter(m -> m.getName().equals("shutdown")
+                    && m.getParameterCount() == 2).findFirst().orElseThrow().invoke(database, monitor, false);
             }
         }
     }

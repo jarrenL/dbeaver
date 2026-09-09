@@ -54,8 +54,10 @@ import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -78,6 +80,8 @@ public class DatabaseLazyEditorInput implements IDatabaseEditorInput, ILazyEdito
     @Nullable
     private DBPProject project;
     private DBPDataSourceContainer dataSourceContainer;
+    private final Map<String, Object> attributes = new HashMap<>();
+    private IDatabaseEditorInput initializedInput;
 
     public DatabaseLazyEditorInput(IMemento memento) {
         inputClass = memento.getString(DatabaseEditorInputFactory.TAG_CLASS);
@@ -221,18 +225,21 @@ public class DatabaseLazyEditorInput implements IDatabaseEditorInput, ILazyEdito
     }
 
     @Override
-    public Collection<String> getAttributeNames() {
-        return Collections.emptyList();
+    public synchronized Collection<String> getAttributeNames() {
+        return initializedInput == null ? new ArrayList<>(attributes.keySet()) : initializedInput.getAttributeNames();
     }
 
     @Override
-    public Object getAttribute(String name) {
-        return null;
+    public synchronized Object getAttribute(String name) {
+        return initializedInput == null ? attributes.get(name) : initializedInput.getAttribute(name);
     }
 
     @Override
-    public Object setAttribute(String name, Object value) {
-        return null;
+    public synchronized Object setAttribute(String name, Object value) {
+        if (initializedInput != null) {
+            return initializedInput.setAttribute(name, value);
+        }
+        return value == null ? attributes.remove(name) : attributes.put(name, value);
     }
 
     @Override
@@ -347,6 +354,10 @@ public class DatabaseLazyEditorInput implements IDatabaseEditorInput, ILazyEdito
                 DatabaseNodeEditorInput realInput = new DatabaseNodeEditorInput((DBNDatabaseNode) node);
                 realInput.setDefaultFolderId(activeFolderId);
                 realInput.setDefaultPageId(activePageId);
+                synchronized (this) {
+                    attributes.forEach(realInput::setAttribute);
+                    initializedInput = realInput;
+                }
                 return realInput;
             } else {
                 throw new DBException("Database node has bad type: " + node.getClass().getName());

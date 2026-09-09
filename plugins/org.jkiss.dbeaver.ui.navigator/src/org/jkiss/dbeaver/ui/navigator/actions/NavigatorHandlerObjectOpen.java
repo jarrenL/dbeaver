@@ -159,8 +159,8 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
             if (editor != null) {
                 boolean settingsChanged = false;
                 IEditorInput editorInput = editor.getEditorInput();
-                if (editorInput instanceof DatabaseEditorInput) {
-                    settingsChanged = setInputAttributes((DatabaseEditorInput<?>) editorInput, defaultPageId, defaultFolderId, attributes);
+                if (editorInput instanceof IDatabaseEditorInput databaseInput) {
+                    settingsChanged = setInputAttributes(databaseInput, defaultPageId, defaultFolderId, attributes);
                 }
                 if (editor instanceof EntityEditor && defaultPageId != null) {
                     // Set active page
@@ -287,22 +287,24 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
     }
 
     private static boolean setInputAttributes(
-        @NotNull DatabaseEditorInput<?> editorInput,
+        @NotNull IDatabaseEditorInput editorInput,
         @Nullable String defaultPageId,
         @Nullable String defaultFolderId,
         @Nullable Map<String, Object> attributes
     ) {
         boolean changed = false;
-        if (defaultFolderId != null && !CommonUtils.equalObjects(defaultFolderId, editorInput.getDefaultFolderId())) {
-            editorInput.setDefaultFolderId(defaultFolderId);
+        if (editorInput instanceof DatabaseEditorInput<?> concrete && defaultFolderId != null
+            && !CommonUtils.equalObjects(defaultFolderId, concrete.getDefaultFolderId())) {
+            concrete.setDefaultFolderId(defaultFolderId);
             changed = true;
             if (defaultPageId == null) {
                 defaultPageId = EntityEditorDescriptor.DEFAULT_OBJECT_EDITOR_ID;
 
             }
         }
-        if (defaultPageId != null && !CommonUtils.equalObjects(defaultPageId, editorInput.getDefaultPageId())) {
-            editorInput.setDefaultPageId(defaultPageId);
+        if (editorInput instanceof DatabaseEditorInput<?> concrete && defaultPageId != null
+            && !CommonUtils.equalObjects(defaultPageId, concrete.getDefaultPageId())) {
+            concrete.setDefaultPageId(defaultPageId);
             changed = true;
         }
 

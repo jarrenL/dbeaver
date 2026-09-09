@@ -31,6 +31,7 @@ import org.jkiss.dbeaver.debug.jdbc.DBGJDBCSession;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.debug.PostgreDebugConstants;
 import org.jkiss.dbeaver.ext.postgresql.debug.core.PostgreSqlDebugCore;
+import org.jkiss.dbeaver.ext.postgresql.debug.core.PostgreDebugSourceLines;
 import org.jkiss.dbeaver.ext.postgresql.debug.internal.PostgreDebugCoreMessages;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
@@ -89,6 +90,7 @@ public class PostgreDebugSession extends DBGJDBCSession {
     
     private volatile Job localWorkerJob = null;
     private final CompletableFuture<Boolean> localExecutionResult = new CompletableFuture<>();
+    private final Map<String, Long> breakpointServerLines = new java.util.concurrent.ConcurrentHashMap<>();
 
     private PostgreDebugBreakpointDescriptor bpGlobal;
 
@@ -596,10 +598,36 @@ public class PostgreDebugSession extends DBGJDBCSession {
         return sessionInfo;
     }
 
+    @Override
+    public void addBreakpoint(DBRProgressMonitor monitor, DBGBreakpointDescriptor descriptor) throws DBGException {
+        PostgreDebugBreakpointDescriptor bp = (PostgreDebugBreakpointDescriptor) descriptor;
+        if (!bp.isOnStart()) {
+            try (JDBCSession session = getControllerConnection().openSession(monitor, DBCExecutionPurpose.UTIL, "Read breakpoint source")) {
+                String source = JDBCUtils.queryString(session, "SELECT prosrc FROM pg_catalog.pg_proc WHERE oid=?",
+                    Long.parseLong(String.valueOf(bp.getObjectId())));
+                long serverLine = bp.getLineNo() == PostgreDebugSourceLines.firstStatementLine(source) ? -1 : bp.getLineNo();
+                breakpointServerLines.put(breakpointKey(bp), serverLine);
+            } catch (SQLException e) {
+                throw new DBGException("Unable to resolve breakpoint source line", e);
+            }
+        }
+        super.addBreakpoint(monitor, descriptor);
+    }
+
+    @Override
+    public void removeBreakpoint(DBRProgressMonitor monitor, DBGBreakpointDescriptor descriptor) throws DBGException {
+        super.removeBreakpoint(monitor, descriptor);
+        breakpointServerLines.remove(breakpointKey((PostgreDebugBreakpointDescriptor) descriptor));
+    }
+
+    private static String breakpointKey(PostgreDebugBreakpointDescriptor bp) {
+        return bp.getObjectId() + ":" + bp.getLineNo();
+    }
+
     protected String composeAddBreakpointCommand(DBGBreakpointDescriptor descriptor) {
         PostgreDebugBreakpointDescriptor bp = (PostgreDebugBreakpointDescriptor) descriptor;
         String sqlPattern = attachKind == PostgreDebugAttachKind.GLOBAL ? SQL_SET_GLOBAL_BREAKPOINT : SQL_SET_BREAKPOINT;
-        long lineNumber = bp.isOnStart() ? -1 : bp.getLineNo();
+        long lineNumber = bp.isOnStart() ? -1 : breakpointServerLines.getOrDefault(breakpointKey(bp), bp.getLineNo());
         log.debug(String.format("Adding breakpoint to line #%d", lineNumber));
         return sqlPattern.replaceAll("\\?sessionid", String.valueOf(getSessionId()))
             .replaceAll("\\?obj", String.valueOf(bp.getObjectId()))
@@ -611,7 +639,8 @@ public class PostgreDebugSession extends DBGJDBCSession {
         PostgreDebugBreakpointDescriptor bp = (PostgreDebugBreakpointDescriptor) breakpointDescriptor;
         return SQL_DROP_BREAKPOINT.replaceAll("\\?sessionid", String.valueOf(getSessionId()))
             .replaceAll("\\?obj", String.valueOf(bp.getObjectId()))
-            .replaceAll("\\?line", bp.isOnStart() ? "-1" : String.valueOf(bp.getLineNo()));
+            .replaceAll("\\?line", bp.isOnStart() ? "-1"
+                : String.valueOf(breakpointServerLines.getOrDefault(breakpointKey(bp), bp.getLineNo())));
     }
 
     @Override

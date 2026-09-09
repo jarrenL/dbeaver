@@ -9,6 +9,7 @@ import org.eclipse.core.runtime.Platform;
 import org.jkiss.dbeaver.debug.DBGResolver;
 import org.jkiss.dbeaver.ext.postgresql.debug.PostgreDebugConstants;
 import org.jkiss.dbeaver.ext.postgresql.debug.core.PostgreSqlDebugCore;
+import org.jkiss.dbeaver.ext.postgresql.debug.core.PostgreDebugSourceLines;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -21,6 +22,15 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PostgreDebugRegressionTest {
+    @Test
+    void mapsFirstExecutableStatementIncludingCommentsAndQuotedDeclarations() {
+        assertEquals(3, PostgreDebugSourceLines.firstStatementLine("\nBEGIN\n RETURN 1;\nEND"));
+        assertEquals(5, PostgreDebugSourceLines.firstStatementLine("DECLARE\n x text := $tag$BEGIN$tag$;\nBEGIN\n /* outer /* inner */ comment */\n RETURN x;\nEND"));
+        assertEquals(4, PostgreDebugSourceLines.firstStatementLine("DECLARE\n \"BEGIN\" text := 'BEGIN';\nBEGIN\n NULL;\nEND"));
+        assertEquals(4, PostgreDebugSourceLines.firstStatementLine("<<outer>>\r\nBEGIN\r\n -- comment\r\n RETURN 1;\r\nEND"));
+        assertEquals(4, PostgreDebugSourceLines.firstStatementLine("BEGIN\n DECLARE\n x int;\n BEGIN\n NULL;\n END;\nEND"));
+        assertEquals(0, PostgreDebugSourceLines.firstStatementLine("BEGIN /* empty */ END"));
+    }
     @Test
     void resolvesFrameOidWithoutChangingLaunchConfiguration() throws Exception {
         var container = Mockito.mock(DBPDataSourceContainer.class);

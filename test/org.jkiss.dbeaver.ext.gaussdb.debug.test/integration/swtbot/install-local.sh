@@ -2,7 +2,7 @@
 # Test-only installation into an explicit disposable product copy.
 set -euo pipefail
 test_root=${1:?Usage: install-local.sh /absolute/test-directory}
-test_eclipse="$test_root/DBeaver.app/Contents/Eclipse"
+test_eclipse=${2:-"$test_root/DBeaver.app/Contents/Eclipse"}
 test_source=$(cd "$(dirname "$0")" && pwd)
 test_java=${JAVA_HOME:?Set JAVA_HOME to a JDK 21 or newer}
 test -f "$test_eclipse/configuration/org.eclipse.equinox.simpleconfigurator/bundles.info"
