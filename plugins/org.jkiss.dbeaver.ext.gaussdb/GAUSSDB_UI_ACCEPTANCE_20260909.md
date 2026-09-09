@@ -49,7 +49,9 @@ windowNotFoundAtPosition，键盘和原生菜单仍可操作；这限制了后�
 
 product/community/DBeaver.product 新增 org.jkiss.dbeaver.debug.feature 引用。
 产品 materialize 日志显示六个目标成品生成完成，实际 macOS ARM64 成品可运行；
-Maven 主进程在 materialize 后未输出 BUILD SUCCESS，因此不声明完整产品构建命令正常退出。
+并行 reactor 最终 BUILD FAILURE：org.jkiss.dbeaver.data.office 无法解析
+org.jkiss.bundle.apache.poi:5.4.2（bundleLocation can't be null）。因此本轮使用的是成功生成的
+macOS 成品做运行验证，不声明完整产品构建通过；Office 依赖问题还需解决。
 日志：/tmp/dbeaver-ui-acceptance-build-20260909.log；
 客户端日志：/tmp/dbeaver-ui-acceptance-20260909-launch.log。
 
@@ -58,5 +60,5 @@ Maven 主进程在 materialize 后未输出 BUILD SUCCESS，因此不声明完�
 ## 清理
 
 客户端正常退出，确认测试库连接数为 0 后删除本轮临时库和账号；测试建库/建过程 SQL
-中的临时凭据已删除。业务库未作为写入或删除目标。对 materialize 后未退出的本轮
-Maven 进程发送中断，保留成品和日志供排查。
+中的临时凭据已删除。业务库未作为写入或删除目标。最终查询确认临时库和角色数量均为 0。
+本轮 Maven 已自行以失败退出，保留成品和日志供排查。
