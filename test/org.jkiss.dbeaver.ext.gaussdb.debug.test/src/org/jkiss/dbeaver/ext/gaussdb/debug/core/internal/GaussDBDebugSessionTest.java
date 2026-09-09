@@ -24,6 +24,45 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBDebugSessionTest {
+    @Test
+    void expectedAbortDoesNotBecomeTargetFailureDialog() throws Exception {
+        JDBCStatement statement = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.executeQuery("SELECT DBE_PLDEBUGGER.abort()")).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        session.doDetach(monitor);
+        assertEquals(org.eclipse.core.runtime.IStatus.CANCEL,
+            session.handleTargetFailure(new SQLException("receive abort message")).getSeverity());
+    }
+
+    @Test
+    void unexpectedTargetFailureRemainsAnError() {
+        assertEquals(org.eclipse.core.runtime.IStatus.ERROR,
+            session.handleTargetFailure(new SQLException("division by zero", "22012")).getSeverity());
+    }
+
+    @Test
+    void readsAndPreserves64BitBackendProcessId() throws Exception {
+        long pid = 281470169823552L;
+        JDBCExecutionContext context = mock(JDBCExecutionContext.class);
+        JDBCSession jdbc = mock(JDBCSession.class);
+        JDBCStatement statement = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(context.openSession(any(), any(), anyString())).thenReturn(jdbc);
+        when(jdbc.createStatement()).thenReturn(statement);
+        when(statement.executeQuery("SELECT pg_backend_pid()")).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        when(result.getLong(1)).thenReturn(pid);
+        long actual = GaussDBDebugSession.queryLong(context, new VoidProgressMonitor(), "SELECT pg_backend_pid()", "Read target process");
+        assertEquals(pid, actual);
+        verify(result, never()).getInt(1);
+        GaussDBDebugSessionInfo info = new GaussDBDebugSessionInfo(actual, "dn_6001", 3);
+        assertEquals(pid, info.getID());
+        assertEquals(pid, info.toMap().get("pid"));
+        assertTrue(info.getTitle().contains(Long.toString(pid)));
+    }
+
     private final VoidProgressMonitor monitor = new VoidProgressMonitor();
     private JDBCSession connection;
     private GaussDBDebugSession session;

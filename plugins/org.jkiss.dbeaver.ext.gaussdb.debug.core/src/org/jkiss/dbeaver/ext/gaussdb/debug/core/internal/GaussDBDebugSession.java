@@ -50,6 +50,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     private volatile Job commandJob;
     private volatile boolean attached;
     private volatile boolean done;
+    private volatile boolean closing;
     private volatile boolean transactionCompletionPending;
     private GaussDBDebugSessionInfo sessionInfo;
     private String breakpointArgumentType = "oid";
@@ -95,7 +96,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             throw new DBGException("Unable to validate the GaussDB routine for debugging", e);
         }
         checkCapabilities(monitor);
-        int processId = queryInt(targetConnection, monitor, "SELECT pg_backend_pid()", "Read target process");
+        long processId = queryLong(targetConnection, monitor, "SELECT pg_backend_pid()", "Read target process");
         String node;
         int port;
         try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Enable PL/SQL debugger");
@@ -196,17 +197,23 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                     transactionCompletionPending = true;
                     return Status.OK_STATUS;
                 } catch (Exception e) {
-                    done = true;
-                    if (!Thread.currentThread().isInterrupted()) {
-                        log.error("GaussDB debug target failed", e);
-                        fireEvent(new DBGEvent(GaussDBDebugSession.this, DBGEvent.TERMINATE, DBGEvent.CLIENT_REQUEST));
-                        return DebugUtils.newErrorStatus("GaussDB debug target failed", e);
-                    }
-                    return Status.CANCEL_STATUS;
+                    return handleTargetFailure(e);
                 }
             }
         };
         targetJob.schedule();
+    }
+
+    IStatus handleTargetFailure(Exception error) {
+        done = true;
+        if (closing || Thread.currentThread().isInterrupted()) {
+            // DBE_PLDEBUGGER.abort deliberately makes the target CALL fail.
+            // The user-requested termination has already notified the debug model.
+            return Status.CANCEL_STATUS;
+        }
+        log.error("GaussDB debug target failed", error);
+        fireEvent(new DBGEvent(this, DBGEvent.TERMINATE, DBGEvent.CLIENT_REQUEST));
+        return DebugUtils.newErrorStatus("GaussDB debug target failed", error);
     }
 
     private List<String> parameterValues() {
@@ -516,6 +523,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
 
     @Override
     protected void doDetach(DBRProgressMonitor monitor) throws DBGException {
+        closing = true;
         if (!done) {
             try {
                 queryString(controllerConnection, monitor, "SELECT " + API + "abort()", "Abort debug target");
@@ -528,6 +536,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
 
     @Override
     public void closeSession(DBRProgressMonitor monitor) throws DBGException {
+        closing = true;
         DBGException failure = null;
         try {
             if (attached) {
@@ -630,13 +639,13 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         return sessionInfo == null ? null : sessionInfo.getID();
     }
 
-    private static int queryInt(JDBCExecutionContext context, DBRProgressMonitor monitor, String sql, String task)
+    static long queryLong(JDBCExecutionContext context, DBRProgressMonitor monitor, String sql, String task)
         throws DBGException {
         try (JDBCSession session = context.openSession(monitor, DBCExecutionPurpose.UTIL, task);
              Statement statement = session.createStatement();
              ResultSet result = statement.executeQuery(sql)) {
             if (result.next()) {
-                return result.getInt(1);
+                return result.getLong(1);
             }
             throw new DBGException(task + " returned no result");
         } catch (SQLException e) {

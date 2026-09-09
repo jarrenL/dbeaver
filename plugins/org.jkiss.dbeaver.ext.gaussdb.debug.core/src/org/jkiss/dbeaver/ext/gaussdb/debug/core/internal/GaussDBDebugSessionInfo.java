@@ -9,7 +9,7 @@ import org.jkiss.dbeaver.debug.DBGSessionInfo;
 
 import java.util.Map;
 
-public record GaussDBDebugSessionInfo(int processId, String nodeName, int port) implements DBGSessionInfo {
+public record GaussDBDebugSessionInfo(long processId, String nodeName, int port) implements DBGSessionInfo {
     @Override
     public Object getID() {
         return processId;

@@ -28,6 +28,7 @@ import org.eclipse.osgi.util.NLS;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.debug.*;
 import org.jkiss.dbeaver.debug.core.DebugUtils;
+import org.jkiss.dbeaver.debug.core.breakpoints.IDatabaseBreakpoint;
 import org.jkiss.dbeaver.debug.internal.core.DebugCoreMessages;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.DefaultProgressMonitor;
@@ -189,7 +190,7 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
         if (breakpoints != null) {
             for (IBreakpoint bp : breakpoints) {
                 DBGBreakpointDescriptor descriptor = describeBreakpoint(bp);
-                if (descriptor != null && bp.isEnabled() &&
+                if (descriptor != null && supportsBreakpoint(bp) && bp.isEnabled() &&
                     DebugPlugin.getDefault().getBreakpointManager().isEnabled()) {
                     try {
                         session.addBreakpoint(dbm, descriptor);
@@ -298,11 +299,23 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public boolean supportsBreakpoint(IBreakpoint breakpoint) {
-        return breakpoint.getModelIdentifier().equals(DBGConstants.BREAKPOINT_ID_DATABASE_LINE);
+        if (!(breakpoint instanceof IDatabaseBreakpoint databaseBreakpoint) ||
+            !DBGConstants.MODEL_IDENTIFIER_DATABASE.equals(breakpoint.getModelIdentifier())) {
+            return false;
+        }
+        try {
+            return getController().getDataSourceContainer().getId().equals(databaseBreakpoint.getDatasourceId());
+        } catch (CoreException e) {
+            log.debug("Unable to read breakpoint datasource", e);
+            return false;
+        }
     }
 
     @Override
     public void breakpointAdded(IBreakpoint breakpoint) {
+        if (session == null || !supportsBreakpoint(breakpoint)) {
+            return;
+        }
         try {
             if (!breakpoint.isEnabled() || !DebugPlugin.getDefault().getBreakpointManager().isEnabled()) {
                 return;
@@ -332,7 +345,7 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public void breakpointRemoved(IBreakpoint breakpoint, IMarkerDelta delta) {
-        if (!terminated) {
+        if (!terminated && session != null && supportsBreakpoint(breakpoint)) {
             DBGBreakpointDescriptor descriptor = describeBreakpoint(breakpoint);
             if (descriptor == null) {
                 log.error(NLS.bind("Unable to describe breakpoint {0}", breakpoint));
@@ -352,7 +365,7 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public void breakpointChanged(IBreakpoint breakpoint, IMarkerDelta delta) {
-        if (!terminated && supportsBreakpoint(breakpoint)) {
+        if (!terminated && session != null && supportsBreakpoint(breakpoint)) {
             try {
                 if (breakpoint.isEnabled() && DebugPlugin.getDefault().getBreakpointManager().isEnabled()) {
                     DBGBreakpointDescriptor descriptor = describeBreakpoint(breakpoint);
@@ -393,7 +406,7 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public void breakpointManagerEnablementChanged(boolean enabled) {
-        IBreakpoint[] breakpoints = DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(DBGConstants.BREAKPOINT_ID_DATABASE_LINE);
+        IBreakpoint[] breakpoints = DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(DBGConstants.MODEL_IDENTIFIER_DATABASE);
         for (IBreakpoint breakpoint : breakpoints) {
             breakpointChanged(breakpoint, null);
         }
