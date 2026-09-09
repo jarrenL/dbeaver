@@ -53,6 +53,32 @@ public class GaussDBPackageCompilerTest {
     }
 
     @Test
+    public void allCompilationPreservesMixedSourcePartsAndLineNumbers() throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(result);
+        Mockito.when(result.next()).thenReturn(true, true, false);
+        Mockito.when(result.getString("type")).thenReturn("package", "package body");
+        Mockito.when(result.getString("src")).thenReturn("spec error", "body error");
+        Mockito.when(result.getInt("line")).thenReturn(2, 3);
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        Assertions.assertFalse(GaussDBPackageCompiler.logErrors(session, log, object, GaussDBPackageCompileTarget.ALL));
+        var errors = log.getErrorStack().iterator();
+        var spec = (GaussDBPackageCompileError) errors.next();
+        var body = (GaussDBPackageCompileError) errors.next();
+        Assertions.assertEquals(GaussDBPackageCompileTarget.SPECIFICATION, spec.getSourcePart());
+        Assertions.assertEquals(2, spec.getLine());
+        Assertions.assertEquals(GaussDBPackageCompileTarget.BODY, body.getSourcePart());
+        Assertions.assertEquals(3, body.getLine());
+        Assertions.assertFalse(errors.hasNext());
+    }
+
+    @Test
     public void generatesAllCompileVariantsWithQualifiedName() {
         GaussDBPackage object = Mockito.mock(GaussDBPackage.class);
         Mockito.when(object.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("\"Mixed Schema\".\"Test Package\"");

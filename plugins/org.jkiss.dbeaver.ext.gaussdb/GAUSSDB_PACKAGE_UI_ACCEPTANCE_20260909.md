@@ -1,5 +1,8 @@
 # 包功能客户端验收（2026-09-09）
 
+> 后续边界验收与修复见 [包编译边界验收](GAUSSDB_PACKAGE_BOUNDARY_ACCEPTANCE_20260909.md)。
+> 下文为第一轮历史结果；跨页、多包错误定位与状态刷新已在后续轮次补测。
+
 ## 环境与结论
 
 macOS ARM64、SWTBot、原生 GaussDB JDBC、`gaussdb-507-ha-lab` Centralized 507

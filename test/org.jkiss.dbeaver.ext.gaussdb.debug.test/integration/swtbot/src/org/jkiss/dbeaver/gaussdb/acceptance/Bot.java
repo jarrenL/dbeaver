@@ -144,6 +144,7 @@ public final class Bot implements IStartup {
             }
             case "close" -> new SWTBotShell((Shell) widget).close();
             case "context" -> new SWTBotTreeItem((TreeItem) widget).contextMenu(args[2]).click();
+            case "context-selection" -> new SWTBotTree((Tree) widget).contextMenu(args[2]).click();
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
             case "focus" -> display.syncExec(() -> ((Control) widget).setFocus());

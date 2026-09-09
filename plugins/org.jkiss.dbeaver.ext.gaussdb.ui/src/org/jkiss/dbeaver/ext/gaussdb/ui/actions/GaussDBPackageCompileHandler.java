@@ -38,10 +38,9 @@ import org.jkiss.dbeaver.model.exec.compile.DBCSourceHost;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.IRefreshablePart;
 import org.jkiss.dbeaver.ui.editors.IDatabaseEditorInput;
-import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
-import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -71,8 +70,18 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         if (sourceHost == null && packages.size() == 1) {
             sourceHost = getSourceHost(HandlerUtil.getActiveEditor(event), packages.get(0));
         }
-        DBCCompileLog compileLog = sourceHost == null ? new DBCCompileLogBase() : sourceHost.getCompileLog();
-        compileLog.clearLog();
+        // A navigator command can run while the corresponding editor is dirty.
+        for (var reference : HandlerUtil.getActiveWorkbenchWindow(event).getActivePage().getEditorReferences()) {
+            IEditorPart editor = reference.getEditor(false);
+            if (editor != null && editor.isDirty()
+                && editor.getEditorInput() instanceof IDatabaseEditorInput input
+                && packages.contains(input.getDatabaseObject())) {
+                UIUtils.showMessageBox(HandlerUtil.getActiveShell(event), "Save package",
+                    "Save the package source before compiling it.", SWT.ICON_WARNING);
+                return null;
+            }
+        }
+        List<GaussDBPackageCompileResultsDialog.Result> results = new ArrayList<>();
 
         try {
             UIUtils.runInProgressService(monitor -> {
@@ -80,15 +89,22 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
                 try {
                     for (GaussDBPackage object : packages) {
                         if (monitor.isCanceled()) {
-                            break;
+                            throw new InterruptedException();
                         }
                         monitor.subTask(object.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.UI));
                         try {
+                            DBCCompileLog compileLog = new DBCCompileLogBase();
                             GaussDBPackageCompiler.compile(monitor, compileLog, object, target);
+                            for (DBCCompileError error : compileLog.getErrorStack()) {
+                                results.add(new GaussDBPackageCompileResultsDialog.Result(object, error));
+                            }
                         } catch (DBException e) {
                             throw new InvocationTargetException(e);
                         }
                         monitor.worked(1);
+                    }
+                    if (monitor.isCanceled()) {
+                        throw new InterruptedException();
                     }
                 } finally {
                     monitor.done();
@@ -105,27 +121,25 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
             return null;
         }
 
-        if (!CommonUtils.isEmpty(compileLog.getErrorStack())) {
-            DBCCompileError firstError = compileLog.getErrorStack().iterator().next();
-            StringBuilder message = new StringBuilder();
-            for (DBCCompileError error : compileLog.getErrorStack()) {
-                if (!message.isEmpty()) {
-                    message.append(GeneralUtils.getDefaultLineSeparator());
-                }
-                message.append(error);
+        // OBJECT_UPDATE refreshes the navigator icon, but property forms only
+        // reload values on an explicit refresh. Never discard newly typed edits.
+        for (var reference : HandlerUtil.getActiveWorkbenchWindow(event).getActivePage().getEditorReferences()) {
+            IEditorPart editor = reference.getEditor(false);
+            if (editor != null && !editor.isDirty()
+                && editor.getEditorInput() instanceof IDatabaseEditorInput input
+                && packages.contains(input.getDatabaseObject())
+                && editor instanceof IRefreshablePart refreshable) {
+                refreshable.refreshPart(this, true);
             }
-            if (sourceHost != null && firstError.getLine() > 0) {
-                sourceHost.positionSource(firstError.getLine(), Math.max(1, firstError.getPosition()));
-                sourceHost.setCompileInfo(packages.get(0).getName() + " compilation failed", true);
-                sourceHost.showCompileLog();
-            } else {
-                DBWorkbench.getPlatformUI().showError("GaussDB package compilation failed", message.toString());
-            }
+        }
+        if (!results.isEmpty()) {
+            new GaussDBPackageCompileResultsDialog(HandlerUtil.getActiveShell(event), results).open();
         } else {
             String message = packages.size() == 1
                 ? packages.get(0).getName() + " compiled successfully"
                 : packages.size() + " packages compiled successfully";
             if (sourceHost != null) {
+                sourceHost.getCompileLog().clearLog();
                 sourceHost.setCompileInfo(message, false);
             }
             UIUtils.showMessageBox(HandlerUtil.getActiveShell(event), "Compile package", message, SWT.ICON_INFORMATION);

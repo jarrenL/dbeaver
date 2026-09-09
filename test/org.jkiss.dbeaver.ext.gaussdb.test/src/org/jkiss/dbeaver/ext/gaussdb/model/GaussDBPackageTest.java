@@ -45,6 +45,8 @@ public class GaussDBPackageTest {
             Mockito.mock(JDBCSession.class), Mockito.mock(GaussDBSchema.class), validResult
         );
         Assertions.assertSame(DBSObjectState.NORMAL, validPackage.getObjectState());
+        Assertions.assertEquals("Normal", validPackage.getSpecificationStatus());
+        Assertions.assertEquals("Normal", validPackage.getBodyStatus());
 
         JDBCResultSet invalidResult = Mockito.mock(JDBCResultSet.class);
         Mockito.when(invalidResult.getLong("oid")).thenReturn(74L);
@@ -56,6 +58,8 @@ public class GaussDBPackageTest {
             Mockito.mock(JDBCSession.class), Mockito.mock(GaussDBSchema.class), invalidResult
         );
         Assertions.assertSame(DBSObjectState.INVALID, invalidPackage.getObjectState());
+        Assertions.assertEquals("Normal", invalidPackage.getSpecificationStatus());
+        Assertions.assertEquals("Invalid", invalidPackage.getBodyStatus());
     }
 
     @Test

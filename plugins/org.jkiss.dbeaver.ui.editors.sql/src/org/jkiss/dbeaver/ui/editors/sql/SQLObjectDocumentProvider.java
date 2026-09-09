@@ -83,7 +83,8 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
         if (element instanceof StringEditorInput) {
             sourceText = ((StringEditorInput) element).getBuffer().toString();
         }
-        if (sourceText == null) {
+        boolean loadingSource = sourceText == null;
+        if (loadingSource) {
             DBPDataSource dataSource = editor.getDataSource();
             if (dataSource != null) {
                 sourceText = SQLUtils.generateCommentLine(editor.getDataSource(), "Loading '" + editor.getEditorInput().getName() + "' source...");
@@ -134,7 +135,9 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
         }
         // Set text
         document.set(sourceText);
-        sourceLoaded = true;
+        // A loading placeholder is not source. The completion callback recreates
+        // this document with the loaded text before navigation may use its lines.
+        sourceLoaded = !loadingSource;
 
         return document;
     }

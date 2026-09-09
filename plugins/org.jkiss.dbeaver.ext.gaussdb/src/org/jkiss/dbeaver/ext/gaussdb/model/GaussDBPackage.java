@@ -251,16 +251,26 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
         return DBSObjectState.UNKNOWN;
     }
 
-    @Property(viewable = true, order = 3)
     @NotNull
     public DBSObjectState getSpecificationState() {
         return specificationState;
     }
 
-    @Property(viewable = true, order = 4)
     @NotNull
     public DBSObjectState getBodyState() {
         return bodyPresent ? bodyState : DBSObjectState.UNKNOWN;
+    }
+
+    @Property(viewable = true, order = 3)
+    @NotNull
+    public String getSpecificationStatus() {
+        return getSpecificationState().getTitle();
+    }
+
+    @Property(viewable = true, order = 4)
+    @NotNull
+    public String getBodyStatus() {
+        return getBodyState().getTitle();
     }
 
     public boolean isBodyPresent() {
