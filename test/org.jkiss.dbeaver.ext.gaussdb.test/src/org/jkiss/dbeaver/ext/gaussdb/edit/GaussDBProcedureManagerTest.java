@@ -44,13 +44,15 @@ public class GaussDBProcedureManagerTest {
         Mockito.when(schema.getDataSource()).thenReturn(dataSource);
         Mockito.when(dataSource.getServerType()).thenReturn(server);
         Mockito.when(server.supportsFunctionCreate()).thenReturn(true);
+        Mockito.when(server.supportsStoredProcedures()).thenReturn(true);
     }
 
     @Test
-    public void enablesProcedureCreationInMCompatibilityMode() {
+    public void disablesProcedureCreationInMCompatibilityMode() {
         Mockito.when(database.getDatabaseCompatibleMode()).thenReturn(GaussDBConstants.GAUSSDB_M_COMPATIBLE_MODE);
+        Mockito.when(database.isStoredProcedureSupported()).thenReturn(false);
 
-        Assertions.assertTrue(new GaussDBProcedureManager().canCreateObject(schema));
+        Assertions.assertFalse(new GaussDBProcedureManager().canCreateObject(schema));
     }
 
     @Test
@@ -58,6 +60,7 @@ public class GaussDBProcedureManagerTest {
         GaussDBProcedureManager manager = new GaussDBProcedureManager();
         for (String compatibilityMode : List.of("A", "ORA", "B", "MYSQL", "C", "TD", "PG")) {
             Mockito.when(database.getDatabaseCompatibleMode()).thenReturn(compatibilityMode);
+            Mockito.when(database.isStoredProcedureSupported()).thenReturn(true);
             Assertions.assertTrue(manager.canCreateObject(schema), compatibilityMode);
         }
     }

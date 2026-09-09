@@ -92,6 +92,11 @@ public class GaussDBTable extends PostgreTableRegular {
     }
 
     @Override
+    public boolean supportsInsertOnConflict() {
+        return getDatabase() instanceof GaussDBDatabase database && database.isInsertOnConflictSupported();
+    }
+
+    @Override
     public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
         partitions = null;
         return super.refreshObject(monitor);

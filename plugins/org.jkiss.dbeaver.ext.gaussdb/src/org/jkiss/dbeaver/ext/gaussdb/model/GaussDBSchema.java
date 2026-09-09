@@ -172,7 +172,15 @@ public class GaussDBSchema extends PostgreSchema {
         protected JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session,
             @NotNull GaussDBSchema owner) throws SQLException {
             final JDBCPreparedStatement dbStat = session
-                .prepareStatement("select g.oid, g.pkgnamespace, g.pkgname as name from gs_package g where g.pkgnamespace = ?");
+                .prepareStatement(
+                    "SELECT g.oid,g.pkgnamespace,g.pkgname AS name," +
+                        "spec.valid::text AS spec_valid,body.valid::text AS body_valid," +
+                        "(body.object_oid IS NOT NULL) AS body_present " +
+                        "FROM pg_catalog.gs_package g " +
+                        "LEFT JOIN pg_catalog.pg_object spec ON spec.object_oid=g.oid AND spec.object_type='S' " +
+                        "LEFT JOIN pg_catalog.pg_object body ON body.object_oid=g.oid AND body.object_type='B' " +
+                        "WHERE g.pkgnamespace=?"
+                );
             dbStat.setLong(1, GaussDBSchema.this.getObjectId());
             return dbStat;
         }

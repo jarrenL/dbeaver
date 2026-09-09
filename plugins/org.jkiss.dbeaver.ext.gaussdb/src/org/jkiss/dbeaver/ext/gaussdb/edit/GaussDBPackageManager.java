@@ -100,7 +100,7 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
         GaussDBPackage pack = command.getObject();
         actions.add(new SQLDatabasePersistAction(
             "Drop package",
-            "DROP PACKAGE " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL)) //$NON-NLS-2$
+            "DROP PACKAGE IF EXISTS " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL)) //$NON-NLS-2$
         );
     }
 
@@ -122,7 +122,7 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
         } else {
             actionList.add(new SQLDatabasePersistAction(
                 "Drop package body",
-                "DROP PACKAGE BODY " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL),
+                "DROP PACKAGE BODY IF EXISTS " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL),
                 DBEPersistAction.ActionType.OPTIONAL) // $NON-NLS-1$
             );
         }

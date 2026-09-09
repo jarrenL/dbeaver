@@ -1,8 +1,15 @@
 # DBeaver GaussDB 适配说明
 
+> 后续功能范围、缺口和验收标准以
+> [GAUSSDB_FEATURE_REQUIREMENTS_ANALYSIS.md](GAUSSDB_FEATURE_REQUIREMENTS_ANALYSIS.md) 为准；
+> 本文记录的是兼容适配过程；调试与 Package 的当前实现/验收状态见需求分析报告，
+> 不把源码构建成功等同于真实数据库和跨平台客户包验收完成。
+> GaussDB 507 分布式真库结果见
+> [GAUSSDB_REALDB_VALIDATION_20260902.md](GAUSSDB_REALDB_VALIDATION_20260902.md)。
+
 > 分支：`feature/gaussdb-compatibility`
 >
-> 本轮状态：2026-08-24
+> 本轮状态：2026-09-02
 >
 > 范围：连接、元数据、对象管理、兼容模式、分区、安全、原生工具，以及补充的
 > RLS/generated column/vector/HLL 支持
@@ -14,6 +21,17 @@ GaussDB 插件仍采用“继承 PostgreSQL 插件 + GaussDB 特化”的结构�
 GaussDB 不兼容的 PostgreSQL 功能会在 UI 中关闭或走专用实现。
 
 本轮已完成的核心内容：
+
+- GaussDB `DBE_PLDEBUGGER` 专用 Debug core/UI：F7/F8/Shift+F7/F9/F10、断点启停删、
+  Variables/变量名 Watch、变量修改、调用堆栈，以及调试完成后的提交/回滚选择。
+- Debug 入口按目标数据库兼容模式和 routine language 门控：M/未知模式、未保存对象和非
+  PL/pgSQL/PLSQL routine 不显示或不可选择；启动前逐一校验 17 个 API 的参数签名、API
+  EXECUTE 权限、目标 routine EXECUTE 权限，并要求 system administrator/superuser 或
+  `gs_role_pldebugger` 成员身份。507 的 `add_breakpoint(oid,integer)` 和新版文档的
+  `add_breakpoint(text,integer)` 均作为明确的兼容签名支持。
+- Package ALL/SPECIFICATION/BODY 编译、spec/body 状态、`GS_ERRORS` 错误读取和行级定位，
+  以及完整限定名的多选删除。
+- M 模式过程门控、未知部署建库值和数据库级 `ON CONFLICT` 等兼容能力修正。
 
 - 三套驱动配置：旧版兼容驱动、M 模式 `gsjdbc4.jar`、原生 `gaussdbjdbc.jar`。
 - 识别真实 GaussDB 产品版本、部署形态、`sql_compatibility` 和关键 catalog 能力。

@@ -99,6 +99,27 @@ public class GaussDBDatabase extends PostgreDatabase {
         return this.databaseCompatibleMode;
     }
 
+    @Nullable
+    public DBCompatibilityEnum getCompatibility() {
+        return DBCompatibilityEnum.fromValue(databaseCompatibleMode);
+    }
+
+    public boolean isMCompatibility() {
+        return getCompatibility() == DBCompatibilityEnum.M;
+    }
+
+    /**
+     * Stored procedure availability is database-specific because a single GaussDB
+     * data source may expose databases with different compatibility modes.
+     */
+    public boolean isStoredProcedureSupported() {
+        return !isMCompatibility() && getDataSource().getServerType().supportsStoredProcedures();
+    }
+
+    public boolean isInsertOnConflictSupported() {
+        return getCompatibility() == DBCompatibilityEnum.POSTGRES;
+    }
+
     /**
      * is package supported
      * 

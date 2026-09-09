@@ -57,4 +57,10 @@
         </breakpoint>
     </extension>
 
+    <extension point="org.eclipse.debug.core.watchExpressionDelegates">
+        <watchExpressionDelegate
+                debugModel="org.jkiss.dbeaver.debug.core.database"
+                delegateClass="org.jkiss.dbeaver.debug.core.model.DatabaseWatchExpressionDelegate"/>
+    </extension>
+
 </plugin>

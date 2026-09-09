@@ -41,13 +41,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 
 public class PostgreDatabaseBackupAllHandler
     extends PostgreNativeToolHandler<PostgreBackupAllSettings, DBSObject, PostgreDatabaseBackupAllInfo> {
-    private static final Pattern ROLE_PASSWORD_PATTERN = Pattern.compile(
-        "(?i)(\\bPASSWORD\\s+)(?:'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|[^\\s;]+)"
-    );
     private final Map<PostgreDatabaseBackupAllInfo, Path> localTransferFiles = new ConcurrentHashMap<>();
 
     @Override
@@ -226,11 +222,7 @@ public class PostgreDatabaseBackupAllHandler
         try {
             try (var reader = Files.newBufferedReader(output, StandardCharsets.ISO_8859_1);
                  var writer = Files.newBufferedWriter(sanitized, StandardCharsets.ISO_8859_1)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    writer.write(ROLE_PASSWORD_PATTERN.matcher(line).replaceAll("$1DISABLE"));
-                    writer.newLine();
-                }
+                PostgreRolePasswordSanitizer.sanitize(reader, writer);
             }
             try {
                 Files.move(sanitized, output, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

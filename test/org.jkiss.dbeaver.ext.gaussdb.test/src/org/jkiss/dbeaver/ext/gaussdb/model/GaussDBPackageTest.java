@@ -22,6 +22,7 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSObjectState;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -31,6 +32,31 @@ import java.util.List;
 import java.util.Map;
 
 public class GaussDBPackageTest {
+
+    @Test
+    public void combinesSpecificationAndBodyValidity() throws SQLException {
+        JDBCResultSet validResult = Mockito.mock(JDBCResultSet.class);
+        Mockito.when(validResult.getLong("oid")).thenReturn(73L);
+        Mockito.when(validResult.getString("name")).thenReturn("test_package");
+        Mockito.when(validResult.getString("spec_valid")).thenReturn("true");
+        Mockito.when(validResult.getString("body_valid")).thenReturn("true");
+        Mockito.when(validResult.getBoolean("body_present")).thenReturn(true);
+        GaussDBPackage validPackage = new GaussDBPackage(
+            Mockito.mock(JDBCSession.class), Mockito.mock(GaussDBSchema.class), validResult
+        );
+        Assertions.assertSame(DBSObjectState.NORMAL, validPackage.getObjectState());
+
+        JDBCResultSet invalidResult = Mockito.mock(JDBCResultSet.class);
+        Mockito.when(invalidResult.getLong("oid")).thenReturn(74L);
+        Mockito.when(invalidResult.getString("name")).thenReturn("invalid_package");
+        Mockito.when(invalidResult.getString("spec_valid")).thenReturn("true");
+        Mockito.when(invalidResult.getString("body_valid")).thenReturn("false");
+        Mockito.when(invalidResult.getBoolean("body_present")).thenReturn(true);
+        GaussDBPackage invalidPackage = new GaussDBPackage(
+            Mockito.mock(JDBCSession.class), Mockito.mock(GaussDBSchema.class), invalidResult
+        );
+        Assertions.assertSame(DBSObjectState.INVALID, invalidPackage.getObjectState());
+    }
 
     @Test
     public void reportsNewPackageAsNotPersisted() {

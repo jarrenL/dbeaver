@@ -38,7 +38,7 @@ public class GaussDBProcedureConfigurator implements DBEObjectConfigurator<Gauss
 
     protected static final Log log = Log.getLog(GaussDBProcedureConfigurator.class);
 
-    public static boolean isFunction = false;
+    private static final boolean isFunction = false;
 
     @NotNull
     @Override

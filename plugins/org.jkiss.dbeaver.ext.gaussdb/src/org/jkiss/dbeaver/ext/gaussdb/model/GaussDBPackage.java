@@ -22,6 +22,10 @@ import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
+import org.jkiss.dbeaver.model.DBPQualifiedObject;
+import org.jkiss.dbeaver.model.DBPRefreshableObject;
+import org.jkiss.dbeaver.model.DBPStatefulObject;
 import org.jkiss.dbeaver.model.DBPSystemInfoObject;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.DBCException;
@@ -32,6 +36,7 @@ import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSObjectState;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.utils.CommonUtils;
 
@@ -43,7 +48,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSystemInfoObject {
+public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSystemInfoObject,
+    DBPQualifiedObject, DBPStatefulObject, DBPRefreshableObject {
 
     private static final Log log = Log.getLog(GaussDBPackage.class);
     private static final Set<String> LOGGED_OPTIONAL_SOURCE_ERRORS = ConcurrentHashMap.newKeySet();
@@ -54,6 +60,9 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
     private String sourceDeclaration = "";
     private String sourceDefinition = "";
     private volatile boolean sourceLoaded;
+    private volatile DBSObjectState specificationState = DBSObjectState.UNKNOWN;
+    private volatile DBSObjectState bodyState = DBSObjectState.UNKNOWN;
+    private volatile boolean bodyPresent;
 
     /**
      * Creates a package descriptor from the cache row. Source text is loaded on demand.
@@ -62,6 +71,9 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
         this.schema = schema;
         this.oid = JDBCUtils.safeGetLong(dbResult, "oid");
         this.name = JDBCUtils.safeGetString(dbResult, "name");
+        this.specificationState = readState(JDBCUtils.safeGetString(dbResult, "spec_valid"));
+        this.bodyState = readState(JDBCUtils.safeGetString(dbResult, "body_valid"));
+        this.bodyPresent = JDBCUtils.safeGetBoolean(dbResult, "body_present");
     }
 
     public GaussDBPackage(GaussDBSchema schema, DBRProgressMonitor unusedMonitor, String name) {
@@ -94,6 +106,7 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
                     } else {
                         sourceDeclaration = declaration;
                         sourceDefinition = definition;
+                        bodyPresent = !CommonUtils.isEmpty(definition);
                         sourceLoaded = true;
                     }
                 } catch (SQLException e) {
@@ -124,6 +137,7 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
                     String initialization = CommonUtils.notEmpty(JDBCUtils.safeGetString(resultSet, "pkgbodyinitsrc"));
                     sourceDefinition = wrapCatalogSource(
                         body + (CommonUtils.isEmpty(initialization) ? "" : "\n" + initialization), true);
+                    bodyPresent = !CommonUtils.isEmpty(sourceDefinition);
                 }
                 sourceLoaded = true;
             }
@@ -221,6 +235,99 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
 
     @NotNull
     @Override
+    public String getFullyQualifiedName(@NotNull DBPEvaluationContext context) {
+        return DBUtils.getFullQualifiedName(getDataSource(), schema, this);
+    }
+
+    @NotNull
+    @Override
+    public DBSObjectState getObjectState() {
+        if (specificationState == DBSObjectState.INVALID || bodyPresent && bodyState == DBSObjectState.INVALID) {
+            return DBSObjectState.INVALID;
+        }
+        if (specificationState == DBSObjectState.NORMAL && (!bodyPresent || bodyState == DBSObjectState.NORMAL)) {
+            return DBSObjectState.NORMAL;
+        }
+        return DBSObjectState.UNKNOWN;
+    }
+
+    @Property(viewable = true, order = 3)
+    @NotNull
+    public DBSObjectState getSpecificationState() {
+        return specificationState;
+    }
+
+    @Property(viewable = true, order = 4)
+    @NotNull
+    public DBSObjectState getBodyState() {
+        return bodyPresent ? bodyState : DBSObjectState.UNKNOWN;
+    }
+
+    public boolean isBodyPresent() {
+        return bodyPresent;
+    }
+
+    @Override
+    public void refreshObjectState(@NotNull DBRProgressMonitor monitor) throws DBCException {
+        if (!isPersisted()) {
+            specificationState = DBSObjectState.UNKNOWN;
+            bodyState = DBSObjectState.UNKNOWN;
+            bodyPresent = !CommonUtils.isEmpty(sourceDefinition);
+            return;
+        }
+        try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read GaussDB package state");
+             JDBCPreparedStatement statement = session.prepareStatement(
+                 "SELECT object_type::text,valid::text FROM pg_catalog.pg_object " +
+                     "WHERE object_oid=? AND object_type IN ('S','B')")) {
+            statement.setLong(1, oid);
+            DBSObjectState newSpecificationState = DBSObjectState.UNKNOWN;
+            DBSObjectState newBodyState = DBSObjectState.UNKNOWN;
+            boolean newBodyPresent = false;
+            try (JDBCResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    String type = JDBCUtils.safeGetString(resultSet, "object_type");
+                    DBSObjectState state = readState(JDBCUtils.safeGetString(resultSet, "valid"));
+                    if ("S".equalsIgnoreCase(type)) {
+                        newSpecificationState = state;
+                    } else if ("B".equalsIgnoreCase(type)) {
+                        newBodyPresent = true;
+                        newBodyState = state;
+                    }
+                }
+            }
+            specificationState = newSpecificationState;
+            bodyState = newBodyState;
+            bodyPresent = newBodyPresent;
+        } catch (SQLException e) {
+            if (GaussDBMetadataErrorHandler.isOptionalMetadataError(e)) {
+                specificationState = DBSObjectState.UNKNOWN;
+                bodyState = DBSObjectState.UNKNOWN;
+                return;
+            }
+            throw new DBCException("Error reading GaussDB package state", e);
+        }
+    }
+
+    @Override
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+        sourceDeclaration = "";
+        sourceDefinition = "";
+        sourceLoaded = false;
+        refreshObjectState(monitor);
+        return this;
+    }
+
+    private static DBSObjectState readState(@Nullable String value) {
+        if (value == null) {
+            return DBSObjectState.UNKNOWN;
+        }
+        return "t".equalsIgnoreCase(value) || "true".equalsIgnoreCase(value)
+            ? DBSObjectState.NORMAL
+            : DBSObjectState.INVALID;
+    }
+
+    @NotNull
+    @Override
     public String getObjectDefinitionText(@NotNull DBRProgressMonitor monitor, @NotNull Map<String, Object> options) throws DBException {
         loadSource(monitor);
         if (CommonUtils.isEmpty(sourceDefinition)) {
@@ -259,6 +366,7 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
 
     public void setExtendedDefinitionText(String source) {
         this.sourceDefinition = source;
+        this.bodyPresent = !CommonUtils.isEmpty(source);
         sourceLoaded = true;
     }
 

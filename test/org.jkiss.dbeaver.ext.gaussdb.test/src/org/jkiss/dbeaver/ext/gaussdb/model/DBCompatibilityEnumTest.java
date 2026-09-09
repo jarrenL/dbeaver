@@ -52,4 +52,16 @@ public class DBCompatibilityEnumTest {
         Assertions.assertEquals("PG", DBCompatibilityEnum.getDValueByText("unknown"));
         Assertions.assertEquals("", DBCompatibilityEnum.queryTextByValue(null));
     }
+
+    @Test
+    public void doesNotGuessCompatibilityValueForUnknownDeployment() {
+        Assertions.assertThrows(
+            IllegalArgumentException.class,
+            () -> DBCompatibilityEnum.ORACLE.getValue(GaussDBServerInfo.Deployment.UNKNOWN)
+        );
+        Assertions.assertThrows(
+            IllegalArgumentException.class,
+            () -> DBCompatibilityEnum.MYSQL.getValue(GaussDBServerInfo.Deployment.CLOUD_NATIVE)
+        );
+    }
 }

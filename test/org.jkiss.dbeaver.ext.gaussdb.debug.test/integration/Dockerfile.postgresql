@@ -1,0 +1,8 @@
+FROM postgres:16-alpine
+RUN apk add --no-cache git build-base openssl-dev krb5-dev
+RUN git clone https://github.com/EnterpriseDB/pldebugger.git /tmp/pldebugger \
+    && cd /tmp/pldebugger \
+    && git checkout 6afdcbfa1a11b74c1c2c1edff8db0942e2a40026 \
+    && make USE_PGXS=1 PG_CONFIG=/usr/local/bin/pg_config with_llvm=no \
+    && make USE_PGXS=1 PG_CONFIG=/usr/local/bin/pg_config with_llvm=no install
+CMD ["postgres", "-c", "shared_preload_libraries=plugin_debugger"]

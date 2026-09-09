@@ -1,6 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?eclipse version="3.2"?>
 <plugin>
+  <extension point="org.eclipse.ui.commands">
+    <category id="org.jkiss.dbeaver.ext.gaussdb" name="GaussDB" description="GaussDB commands"/>
+    <command id="org.jkiss.dbeaver.ext.gaussdb.package.compile" name="%command.package.compile.name" description="%command.package.compile.description" categoryId="org.jkiss.dbeaver.ext.gaussdb"/>
+    <command id="org.jkiss.dbeaver.ext.gaussdb.package.compileSpecification" name="%command.package.compile_spec.name" description="%command.package.compile_spec.description" categoryId="org.jkiss.dbeaver.ext.gaussdb"/>
+    <command id="org.jkiss.dbeaver.ext.gaussdb.package.compileBody" name="%command.package.compile_body.name" description="%command.package.compile_body.description" categoryId="org.jkiss.dbeaver.ext.gaussdb"/>
+  </extension>
+  <extension point="org.eclipse.ui.handlers">
+    <handler commandId="org.jkiss.dbeaver.ext.gaussdb.package.compile" class="org.jkiss.dbeaver.ext.gaussdb.ui.actions.GaussDBPackageCompileHandler">
+      <enabledWhen><with variable="selection"><count value="+"/><iterate operator="and"><adapt type="org.jkiss.dbeaver.model.struct.DBSObject"><instanceof value="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage"/></adapt></iterate></with></enabledWhen>
+    </handler>
+    <handler commandId="org.jkiss.dbeaver.ext.gaussdb.package.compileSpecification" class="org.jkiss.dbeaver.ext.gaussdb.ui.actions.GaussDBPackageCompileHandler"/>
+    <handler commandId="org.jkiss.dbeaver.ext.gaussdb.package.compileBody" class="org.jkiss.dbeaver.ext.gaussdb.ui.actions.GaussDBPackageCompileHandler"/>
+  </extension>
+  <extension point="org.eclipse.ui.menus">
+    <menuContribution allPopups="false" locationURI="popup:org.eclipse.ui.popup.any?after=navigator_additions_end">
+      <command commandId="org.jkiss.dbeaver.ext.gaussdb.package.compile"><visibleWhen checkEnabled="true"/></command>
+      <command commandId="org.jkiss.dbeaver.ext.gaussdb.package.compileSpecification">
+        <visibleWhen><with variable="selection"><count value="+"/><iterate operator="and"><adapt type="org.jkiss.dbeaver.model.struct.DBSObject"><instanceof value="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage"/></adapt></iterate></with></visibleWhen>
+      </command>
+      <command commandId="org.jkiss.dbeaver.ext.gaussdb.package.compileBody">
+        <visibleWhen><with variable="selection"><count value="+"/><iterate operator="and"><adapt type="org.jkiss.dbeaver.model.struct.DBSObject"><instanceof value="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage"/></adapt></iterate></with></visibleWhen>
+      </command>
+    </menuContribution>
+  </extension>
   <extension point="org.jkiss.dbeaver.dataSourceView">
     <view id="org.jkiss.dbeaver.ext.postgresql.dataSourceWizardView" dataSource="gaussdb" targetID="org.jkiss.dbeaver.ext.ui.newConnectionWizard" label="%dialog.connection.header" class="org.jkiss.dbeaver.ext.gaussdb.ui.views.GaussDBConnectionPage" icon="platform:/plugin/org.jkiss.dbeaver.ext.gaussdb/icons/gaussdb_icon.png"/>
     <view id="org.jkiss.dbeaver.ext.postgresql.dataSourceEditorView" dataSource="gaussdb" targetID="org.jkiss.dbeaver.ext.ui.editConnectionDialog" label="%dialog.connection.header" class="org.jkiss.dbeaver.ext.gaussdb.ui.views.GaussDBConnectionPage" icon="platform:/plugin/org.jkiss.dbeaver.ext.gaussdb/icons/gaussdb_icon.png"/>

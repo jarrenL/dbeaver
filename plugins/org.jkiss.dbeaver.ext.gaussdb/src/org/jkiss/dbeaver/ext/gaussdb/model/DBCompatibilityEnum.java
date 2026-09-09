@@ -57,7 +57,13 @@ public enum DBCompatibilityEnum {
     }
 
     public String getValue(GaussDBServerInfo.Deployment deployment) {
-        return deployment == GaussDBServerInfo.Deployment.CENTRALIZED ? cValue : dValue;
+        return switch (deployment) {
+            case CENTRALIZED -> cValue;
+            case DISTRIBUTED -> dValue;
+            case CLOUD_NATIVE, UNKNOWN -> throw new IllegalArgumentException(
+                "GaussDB deployment must be known before resolving a compatibility value"
+            );
+        };
     }
 
     /**

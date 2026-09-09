@@ -104,7 +104,8 @@ public class GaussDBDatabaseManager extends SQLObjectEditor<GaussDBDatabase, Gau
 
     @Override
     protected void addObjectCreateActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext,
-                                          @NotNull List<DBEPersistAction> actions, @NotNull ObjectCreateCommand command, @NotNull Map<String, Object> options) {
+                                          @NotNull List<DBEPersistAction> actions, @NotNull ObjectCreateCommand command,
+                                          @NotNull Map<String, Object> options) throws DBException {
         final GaussDBDatabase database = command.getObject();
         StringBuilder sql = new StringBuilder();
         sql.append("CREATE DATABASE ").append(DBUtils.getQuotedIdentifier(database));
@@ -120,17 +121,38 @@ public class GaussDBDatabaseManager extends SQLObjectEditor<GaussDBDatabase, Gau
                 .append(DBUtils.getQuotedIdentifier(database.getDataSource(), database.getInitialTablespace().getName()));
         }
         if (database.getDatabaseCompatibleMode() != null && !"".equals(database.getDatabaseCompatibleMode())) {
-            String compatibilityMode = database.getDatabaseCompatibleMode();
-            DBCompatibilityEnum compatibility = DBCompatibilityEnum.fromValue(compatibilityMode);
-            if (compatibility == null) {
-                compatibility = DBCompatibilityEnum.of(compatibilityMode);
-            }
-            String compatibilityValue = compatibility == null
-                ? compatibilityMode
-                : compatibility.getValue(database.getDataSource().getServerInfo().getDeployment());
+            String compatibilityValue = resolveCompatibilityValue(
+                database.getDatabaseCompatibleMode(),
+                database.getDataSource().getServerInfo().getDeployment()
+            );
             sql.append("\nDBCOMPATIBILITY = '").append(compatibilityValue).append("'");
         }
         actions.add(new CreateDatabaseAction(database, sql));
+    }
+
+    @NotNull
+    static String resolveCompatibilityValue(
+        @NotNull String value,
+        @NotNull org.jkiss.dbeaver.ext.gaussdb.model.GaussDBServerInfo.Deployment deployment
+    ) throws DBException {
+        String normalized = value.trim();
+        for (DBCompatibilityEnum compatibility : DBCompatibilityEnum.values()) {
+            if (compatibility.getcValue().equalsIgnoreCase(normalized)) {
+                return compatibility.getcValue();
+            }
+            if (compatibility.getdValue().equalsIgnoreCase(normalized)) {
+                return compatibility.getdValue();
+            }
+        }
+        DBCompatibilityEnum compatibility = DBCompatibilityEnum.of(normalized);
+        if (compatibility == null) {
+            throw new DBException("Unsupported GaussDB compatibility mode: " + value);
+        }
+        try {
+            return compatibility.getValue(deployment);
+        } catch (IllegalArgumentException e) {
+            throw new DBException("Select a deployment type before creating a GaussDB database", e);
+        }
     }
 
     @Override

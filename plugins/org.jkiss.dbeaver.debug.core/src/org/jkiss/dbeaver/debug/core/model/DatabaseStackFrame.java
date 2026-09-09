@@ -88,7 +88,7 @@ public class DatabaseStackFrame extends DatabaseDebugElement implements IStackFr
 
     @Override
     public void stepReturn() throws DebugException {
-        getThread().canStepReturn();
+        getThread().stepReturn();
     }
 
     @Override

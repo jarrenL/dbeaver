@@ -30,8 +30,12 @@ public class PostgreBreakpointAdapterFactory implements IAdapterFactory {
     public <T> T getAdapter(Object adaptableObject, Class<T> adapterType) {
         if (adapterType == DBGBreakpointDescriptor.class) {
             if (adaptableObject instanceof PostgreProcedure) {
+                PostgreProcedure procedure = (PostgreProcedure) adaptableObject;
+                if (!"postgresql".equals(procedure.getDataSource().getContainer().getDriver().getProviderId())) {
+                    return null;
+                }
                 return adapterType.cast(new PostgreDebugBreakpointDescriptor(
-                    ((PostgreProcedure) adaptableObject).getObjectId(), -1
+                    procedure.getObjectId(), -1
                 ));
             }
         }

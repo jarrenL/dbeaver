@@ -18,6 +18,11 @@ package org.jkiss.dbeaver.ext.gaussdb;
 
 public class GaussDBConstants {
 
+    public static final String CMD_COMPILE_PACKAGE = "org.jkiss.dbeaver.ext.gaussdb.package.compile";
+    public static final String CMD_COMPILE_PACKAGE_SPECIFICATION =
+        "org.jkiss.dbeaver.ext.gaussdb.package.compileSpecification";
+    public static final String CMD_COMPILE_PACKAGE_BODY = "org.jkiss.dbeaver.ext.gaussdb.package.compileBody";
+
     // ---- Compatibility modes ----
     // GaussDB centralized (集中式) uses single-letter values: A/B/C/PG/M
     // GaussDB distributed (分布式) uses abbreviated names: ORA/MYSQL/TD/PG/M

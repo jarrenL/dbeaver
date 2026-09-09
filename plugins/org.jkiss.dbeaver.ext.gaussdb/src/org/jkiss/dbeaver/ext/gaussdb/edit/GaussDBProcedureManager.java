@@ -47,6 +47,14 @@ import java.util.Map;
  */
 public class GaussDBProcedureManager extends GaussDBRoutineManager<GaussDBProcedure> {
 
+    @Override
+    public boolean canCreateObject(@NotNull Object container) {
+        return super.canCreateObject(container)
+            && container instanceof GaussDBSchema schema
+            && schema.getDatabase() instanceof org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase database
+            && database.isStoredProcedureSupported();
+    }
+
     @Nullable
     @Override
     public DBSObjectCache<GaussDBSchema, GaussDBProcedure> getObjectsCache(GaussDBProcedure object) {

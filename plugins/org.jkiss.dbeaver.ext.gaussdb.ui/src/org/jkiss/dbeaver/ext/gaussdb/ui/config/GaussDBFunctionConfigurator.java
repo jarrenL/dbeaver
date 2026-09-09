@@ -37,7 +37,7 @@ public class GaussDBFunctionConfigurator implements DBEObjectConfigurator<GaussD
 
     protected static final Log log = Log.getLog(GaussDBFunctionConfigurator.class);
 
-    public static boolean isFunction = true;
+    private static final boolean isFunction = true;
 
     @NotNull
     @Override

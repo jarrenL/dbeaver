@@ -55,6 +55,11 @@ public class GaussDBTablePartition extends PostgreTablePartition {
     private final boolean hasChildren;
     private volatile List<PostgreTableBase> partitions;
 
+    @Override
+    public boolean supportsInsertOnConflict() {
+        return getDatabase() instanceof GaussDBDatabase database && database.isInsertOnConflictSupported();
+    }
+
     private GaussDBTablePartition(
         @NotNull PostgreTable partitionParent,
         long rootTableId,

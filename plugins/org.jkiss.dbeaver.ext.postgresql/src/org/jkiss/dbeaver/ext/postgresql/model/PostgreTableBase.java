@@ -130,6 +130,14 @@ public abstract class PostgreTableBase extends JDBCTable<PostgreDataSource, Post
         return getContainer().getDatabase();
     }
 
+    /**
+     * Object-level capability used by SQL generator enablement. Implementations
+     * with per-database compatibility modes can override this method.
+     */
+    public boolean supportsInsertOnConflict() {
+        return getDataSource().getServerType().supportsInsertOnConflict();
+    }
+
     @Association
     public List<PostgreDependency> getDependencies(DBRProgressMonitor monitor) throws DBCException {
         return PostgreDependency.readDependencies(monitor, this, true);
