@@ -92,6 +92,16 @@ public final class Bot implements IStartup {
             new SWTBot().captureScreenshot(args[1]);
             return;
         }
+        if (args[0].equals("view")) {
+            display.syncExec(() -> {
+                try {
+                    PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().showView(args[1]);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            return;
+        }
         Widget widget = widgets.get(Integer.parseInt(args[1]));
         if (widget == null || widget.isDisposed()) {
             throw new IllegalStateException("Stale widget; take a fresh dump");
@@ -145,12 +155,71 @@ public final class Bot implements IStartup {
             case "close" -> new SWTBotShell((Shell) widget).close();
             case "context" -> new SWTBotTreeItem((TreeItem) widget).contextMenu(args[2]).click();
             case "context-selection" -> new SWTBotTree((Tree) widget).contextMenu(args[2]).click();
+            case "dropdown" -> new SWTBotToolbarDropDownButton((ToolItem) widget).menuItem(args[2]).click();
+            case "model" -> inspectModel((TreeItem) widget, out);
+            case "modes" -> inspectModes((TreeItem) widget, out);
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
             case "focus" -> display.syncExec(() -> ((Control) widget).setFocus());
             default -> throw new IllegalArgumentException(args[0]);
         }
         out.println("ACTION " + args[0] + " " + args[1]);
+    }
+
+    private void inspectModel(TreeItem item, PrintWriter out) throws Exception {
+        Object[] data = new Object[1];
+        display.syncExec(() -> data[0] = item.getData());
+        Object object = data[0].getClass().getMethod("getObject").invoke(data[0]);
+        out.println("model=" + object.getClass().getName());
+        for (String name : java.util.List.of("getName", "getCompatibility", "isStoredProcedureSupported", "isPackageSupported")) {
+            try {
+                out.println(name + "=" + object.getClass().getMethod(name).invoke(object));
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        if (object.getClass().getSimpleName().equals("GaussDBProcedure")
+            || object.getClass().getSimpleName().equals("GaussDBFunction")) {
+            var modelBundle = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model");
+            Object monitor = modelBundle.loadClass("org.jkiss.dbeaver.model.runtime.VoidProgressMonitor").getConstructor().newInstance();
+            var debugBundle = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.ext.gaussdb.debug.core");
+            Class<?> core = debugBundle.loadClass("org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugCore");
+            var eligibility = Arrays.stream(core.getMethods()).filter(m -> m.getName().equals("getRoutineEligibilityError")
+                && m.getParameterCount() == 2).findFirst().orElseThrow();
+            out.println("eligibility=" + eligibility.invoke(null, monitor, object));
+            Class<?> utils = modelBundle.loadClass("org.jkiss.dbeaver.model.DBUtils");
+            var contextMethod = Arrays.stream(utils.getMethods()).filter(m -> m.getName().equals("getDefaultContext")
+                && m.getParameterCount() == 2).findFirst().orElseThrow();
+            Object context = contextMethod.invoke(null, object, false);
+            Class<?> detector = debugBundle.loadClass("org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugCapabilityDetector");
+            var check = Arrays.stream(detector.getDeclaredMethods()).filter(m -> m.getName().equals("check")).findFirst().orElseThrow();
+            check.setAccessible(true);
+            try {
+                out.println("capabilities=" + check.invoke(null, context, monitor, object.getClass().getMethod("getObjectId").invoke(object)));
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                out.println("capabilities-denied=" + e.getTargetException().getMessage());
+            }
+        }
+    }
+
+    private void inspectModes(TreeItem item, PrintWriter out) throws Exception {
+        Object[] data = new Object[1];
+        display.syncExec(() -> data[0] = item.getData());
+        Object object = data[0].getClass().getMethod("getObject").invoke(data[0]);
+        Object source = object.getClass().getMethod("getDataSource").invoke(object);
+        Class<?> type = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.ext.gaussdb")
+            .loadClass("org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase");
+        Object monitor = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model")
+            .loadClass("org.jkiss.dbeaver.model.runtime.VoidProgressMonitor").getConstructor().newInstance();
+        var constructor = Arrays.stream(type.getDeclaredConstructors()).filter(c -> c.getParameterCount() == 3
+            && c.getParameterTypes()[2] == String.class).findFirst().orElseThrow();
+        constructor.setAccessible(true);
+        for (String mode : java.util.List.of("a", "b", "c", "pg", "m")) {
+            Object database = constructor.newInstance(monitor, source, "dbeaver_ext_0909_" + mode);
+            out.println("database=dbeaver_ext_0909_" + mode);
+            for (String method : java.util.List.of("getCompatibility", "isStoredProcedureSupported", "isPackageSupported")) {
+                out.println(method + "=" + type.getMethod(method).invoke(database));
+            }
+        }
     }
 
     private void dump(Widget widget, String indent, PrintWriter out) {

@@ -2,6 +2,5 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-SymbolicName: org.jkiss.dbeaver.gaussdb.swtbot.acceptance;singleton:=true
 Bundle-Version: 1.0.0
-Require-Bundle: org.eclipse.ui,org.eclipse.swtbot.swt.finder
+Require-Bundle: org.eclipse.ui,org.eclipse.core.runtime,org.eclipse.swtbot.swt.finder
 Bundle-RequiredExecutionEnvironment: JavaSE-21
-

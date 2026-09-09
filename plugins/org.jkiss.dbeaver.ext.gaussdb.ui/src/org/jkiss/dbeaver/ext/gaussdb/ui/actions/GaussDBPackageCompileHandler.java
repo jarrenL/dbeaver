@@ -19,12 +19,15 @@ package org.jkiss.dbeaver.ext.gaussdb.ui.actions;
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.SWT;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.ISaveablePart;
 import org.eclipse.ui.IWorkbenchPart;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.GaussDBConstants;
@@ -36,13 +39,14 @@ import org.jkiss.dbeaver.model.exec.compile.DBCCompileLog;
 import org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase;
 import org.jkiss.dbeaver.model.exec.compile.DBCSourceHost;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.model.runtime.AbstractJob;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.IRefreshablePart;
 import org.jkiss.dbeaver.ui.editors.IDatabaseEditorInput;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -66,10 +70,7 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         }
 
         GaussDBPackageCompileTarget target = getTarget(event.getCommand().getId());
-        DBCSourceHost sourceHost = packages.size() == 1 ? getSourceHost(activePart, packages.get(0)) : null;
-        if (sourceHost == null && packages.size() == 1) {
-            sourceHost = getSourceHost(HandlerUtil.getActiveEditor(event), packages.get(0));
-        }
+        IWorkbenchWindow window = HandlerUtil.getActiveWorkbenchWindow(event);
         // A navigator command can run while the corresponding editor is dirty.
         for (var reference : HandlerUtil.getActiveWorkbenchWindow(event).getActivePage().getEditorReferences()) {
             IEditorPart editor = reference.getEditor(false);
@@ -83,13 +84,16 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         }
         List<GaussDBPackageCompileResultsDialog.Result> results = new ArrayList<>();
 
-        try {
-            UIUtils.runInProgressService(monitor -> {
+        // The generic progress service only sets a canceled flag during JDBC IO.
+        // AbstractJob additionally cancels the monitor's active JDBC blocking object.
+        AbstractJob job = new AbstractJob("Compile GaussDB package") {
+            @Override
+            protected IStatus run(DBRProgressMonitor monitor) {
                 monitor.beginTask("Compile GaussDB package", packages.size());
                 try {
                     for (GaussDBPackage object : packages) {
                         if (monitor.isCanceled()) {
-                            throw new InterruptedException();
+                            return Status.CANCEL_STATUS;
                         }
                         monitor.subTask(object.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.UI));
                         try {
@@ -99,31 +103,40 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
                                 results.add(new GaussDBPackageCompileResultsDialog.Result(object, error));
                             }
                         } catch (DBException e) {
-                            throw new InvocationTargetException(e);
+                            if (monitor.isCanceled()) {
+                                return Status.CANCEL_STATUS;
+                            }
+                            UIUtils.asyncExec(() -> DBWorkbench.getPlatformUI().showError(
+                                "GaussDB package compilation failed", null, e));
+                            return Status.OK_STATUS;
                         }
                         monitor.worked(1);
                     }
                     if (monitor.isCanceled()) {
-                        throw new InterruptedException();
+                        return Status.CANCEL_STATUS;
                     }
+                    UIUtils.asyncExec(() -> showResults(window, packages, results));
+                    return Status.OK_STATUS;
                 } finally {
                     monitor.done();
                 }
-            });
-        } catch (InterruptedException e) {
-            return null;
-        } catch (InvocationTargetException e) {
-            DBWorkbench.getPlatformUI().showError(
-                "GaussDB package compilation failed",
-                null,
-                e.getTargetException()
-            );
-            return null;
-        }
+            }
+        };
+        job.setUser(true);
+        job.schedule();
+        return null;
+    }
 
+    private void showResults(IWorkbenchWindow window, List<GaussDBPackage> packages,
+        List<GaussDBPackageCompileResultsDialog.Result> results) {
+        if (window.getShell().isDisposed() || window.getActivePage() == null) {
+            return;
+        }
+        DBCSourceHost sourceHost = packages.size() == 1
+            ? getSourceHost(window.getActivePage().getActiveEditor(), packages.get(0)) : null;
         // OBJECT_UPDATE refreshes the navigator icon, but property forms only
         // reload values on an explicit refresh. Never discard newly typed edits.
-        for (var reference : HandlerUtil.getActiveWorkbenchWindow(event).getActivePage().getEditorReferences()) {
+        for (var reference : window.getActivePage().getEditorReferences()) {
             IEditorPart editor = reference.getEditor(false);
             if (editor != null && !editor.isDirty()
                 && editor.getEditorInput() instanceof IDatabaseEditorInput input
@@ -133,7 +146,7 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
             }
         }
         if (!results.isEmpty()) {
-            new GaussDBPackageCompileResultsDialog(HandlerUtil.getActiveShell(event), results).open();
+            new GaussDBPackageCompileResultsDialog(window.getShell(), results).open();
         } else {
             String message = packages.size() == 1
                 ? packages.get(0).getName() + " compiled successfully"
@@ -142,9 +155,8 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
                 sourceHost.getCompileLog().clearLog();
                 sourceHost.setCompileInfo(message, false);
             }
-            UIUtils.showMessageBox(HandlerUtil.getActiveShell(event), "Compile package", message, SWT.ICON_INFORMATION);
+            UIUtils.showMessageBox(window.getShell(), "Compile package", message, SWT.ICON_INFORMATION);
         }
-        return null;
     }
 
     private static GaussDBPackageCompileTarget getTarget(String commandId) {

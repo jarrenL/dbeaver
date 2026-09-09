@@ -53,19 +53,29 @@ public final class GaussDBPackageCompiler {
         @NotNull GaussDBPackage object,
         @NotNull GaussDBPackageCompileTarget target
     ) throws DBException {
+        if (monitor.isCanceled()) {
+            return false;
+        }
         String sql = getCompileSQL(object, target);
         compileLog.trace(sql);
         try (JDBCSession session = DBUtils.openUtilSession(monitor, object, "Compile GaussDB package");
              JDBCPreparedStatement statement = session.prepareStatement(sql)) {
             // Keep the JDBC SQLException (executeStatement wraps it in DBCException).
             statement.execute();
+            if (monitor.isCanceled()) {
+                return false;
+            }
             boolean success = logErrors(session, compileLog, object, target);
             object.refreshObjectState(monitor);
             object.getDataSource().getContainer().fireEvent(new DBPEvent(DBPEvent.Action.OBJECT_UPDATE, object));
             return success;
         } catch (SQLException e) {
+            // Do not issue metadata SQL on a canceled/aborted connection.
+            if (monitor.isCanceled()) {
+                return false;
+            }
             String sqlState = e.getSQLState();
-            if (sqlState != null && (sqlState.startsWith("08") || sqlState.startsWith("28"))) {
+            if (isInfrastructureError(sqlState)) {
                 throw new DBException("Error compiling GaussDB package " + object.getName(), e);
             }
             boolean errorsFound = false;
@@ -83,6 +93,12 @@ public final class GaussDBPackageCompiler {
             object.getDataSource().getContainer().fireEvent(new DBPEvent(DBPEvent.Action.OBJECT_UPDATE, object));
             return false;
         }
+    }
+
+    static boolean isInfrastructureError(String sqlState) {
+        return sqlState != null && (sqlState.startsWith("08") || sqlState.startsWith("28")
+            || "42501".equals(sqlState) || "57P01".equals(sqlState)
+            || "57P02".equals(sqlState) || "57P03".equals(sqlState));
     }
 
     @NotNull

@@ -45,6 +45,15 @@ Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 StyledText dumps include the one-based caret line and selection offsets.
 All separators in actual command files are tabs, not spaces.
 
+`context-selection TREE_ID MENU_TEXT` preserves a multi-selection when opening its menu.
+`dropdown TOOL_ITEM_ID MENU_TEXT` operates a toolbar drop-down; `view VIEW_ID` opens a workbench view.
+`model TREE_ITEM_ID` reads the actual model and, for GaussDB routines, calls the production eligibility
+and live capability checks. These are model/API assertions, not evidence of menu visibility.
+`modes DATABASE_TREE_ITEM_ID` loads the five dedicated `dbeaver_ext_0909_*` fixture databases
+through the selected GaussDB data source and reports their production capability flags. Create them
+with `extended-mode-fixtures.sql` only in a disposable instance. `extended-pg-fixtures.sql` provides
+the native PostgreSQL parent/child and audit fixtures for GUI regression.
+
 `OK` in a result means the UI action completed, **not that a requirement passed**.
 Acceptance must assert the resulting widget state and, where relevant, independent
 database results. Shell screenshots obtained through SWTBot's desktop capture can

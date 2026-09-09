@@ -26,6 +26,25 @@ import java.sql.SQLException;
 public class GaussDBPackageCompilerTest {
 
     @Test
+    public void connectionTerminationAndPermissionErrorsAreNotSourceDiagnostics() {
+        for (String state : java.util.List.of("08006", "28P01", "42501", "57P01", "57P02", "57P03")) {
+            Assertions.assertTrue(GaussDBPackageCompiler.isInfrastructureError(state), state);
+        }
+        Assertions.assertFalse(GaussDBPackageCompiler.isInfrastructureError("42601"));
+        Assertions.assertFalse(GaussDBPackageCompiler.isInfrastructureError(null));
+    }
+
+    @Test
+    public void canceledCompilationDoesNotAccessDatabaseOrProduceErrors() throws Exception {
+        var monitor = Mockito.mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        var log = Mockito.mock(org.jkiss.dbeaver.model.exec.compile.DBCCompileLog.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        Mockito.when(monitor.isCanceled()).thenReturn(true);
+        Assertions.assertFalse(GaussDBPackageCompiler.compile(monitor, log, object, GaussDBPackageCompileTarget.ALL));
+        Mockito.verifyNoInteractions(log, object);
+    }
+
+    @Test
     public void catalogErrorsPreserveBodyLineAndFilterSpecification() throws Exception {
         var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
         var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);

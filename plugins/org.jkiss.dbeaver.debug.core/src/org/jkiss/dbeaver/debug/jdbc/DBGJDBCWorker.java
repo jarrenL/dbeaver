@@ -58,6 +58,9 @@ public class DBGJDBCWorker extends AbstractJob {
                 return Status.OK_STATUS;
             }
         } catch (SQLException e) {
+            if (debugSession.isSuccessfulCompletion(e)) {
+                return Status.OK_STATUS;
+            }
             return GeneralUtils.makeExceptionStatus(String.format("Failed to execute %s", sql), e);
         } finally {
             monitor.done();
