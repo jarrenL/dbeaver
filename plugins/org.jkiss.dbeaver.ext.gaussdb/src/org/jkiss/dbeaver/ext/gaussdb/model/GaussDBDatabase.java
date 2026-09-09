@@ -126,6 +126,9 @@ public class GaussDBDatabase extends PostgreDatabase {
      * @return is package supported
      */
     public boolean isPackageSupported() {
+        // Databases are constructed before initializeRemoteInstance finishes
+        // probing the server. Re-evaluate from the latest in-memory snapshot.
+        checkPackageSupport(monitor);
         return isPackageSupported;
     }
 

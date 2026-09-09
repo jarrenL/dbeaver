@@ -68,6 +68,9 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
 
         GaussDBPackageCompileTarget target = getTarget(event.getCommand().getId());
         DBCSourceHost sourceHost = packages.size() == 1 ? getSourceHost(activePart, packages.get(0)) : null;
+        if (sourceHost == null && packages.size() == 1) {
+            sourceHost = getSourceHost(HandlerUtil.getActiveEditor(event), packages.get(0));
+        }
         DBCCompileLog compileLog = sourceHost == null ? new DBCCompileLogBase() : sourceHost.getCompileLog();
         compileLog.clearLog();
 
@@ -144,7 +147,8 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         if (activePart == null) {
             return null;
         }
-        DBCSourceHost sourceHost = RuntimeUtils.getObjectAdapter(activePart, DBCSourceHost.class);
+        DBCSourceHost sourceHost = activePart instanceof DBCSourceHost host
+            ? host : activePart.getAdapter(DBCSourceHost.class);
         return sourceHost != null && sourceHost.getSourceObject() == object ? sourceHost : null;
     }
 
@@ -153,8 +157,8 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         ISelection selection = HandlerUtil.getCurrentSelection(event);
         if (selection instanceof IStructuredSelection structuredSelection) {
             for (Object item : structuredSelection.toList()) {
-                GaussDBPackage object = RuntimeUtils.getObjectAdapter(item, GaussDBPackage.class);
-                if (object != null) {
+                DBSObject selectedObject = RuntimeUtils.getObjectAdapter(item, DBSObject.class);
+                if (selectedObject instanceof GaussDBPackage object) {
                     packages.add(object);
                 }
             }

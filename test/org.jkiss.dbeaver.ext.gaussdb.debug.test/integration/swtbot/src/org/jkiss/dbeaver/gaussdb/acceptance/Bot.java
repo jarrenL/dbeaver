@@ -120,6 +120,10 @@ public final class Bot implements IStartup {
             case "check" -> new SWTBotTreeItem((TreeItem) widget).check();
             case "uncheck" -> new SWTBotTreeItem((TreeItem) widget).uncheck();
             case "text" -> new SWTBotText((Text) widget).setText(args[2]);
+            case "source" -> new SWTBotStyledText((StyledText) widget).setText(Files.readString(Path.of(args[2])));
+            case "select" -> new SWTBotTree((Tree) widget).select(java.util.Arrays.stream(args[2].split("\\|"))
+                .map(id -> new SWTBotTreeItem((TreeItem) widgets.get(Integer.parseInt(id))))
+                .toArray(SWTBotTreeItem[]::new));
             case "secret" -> new SWTBotText((Text) widget).setText(Files.readString(Path.of(args[2])).strip());
             case "combo" -> new SWTBotCombo((Combo) widget).setSelection(args[2]);
             case "key" -> {
@@ -154,13 +158,17 @@ public final class Bot implements IStartup {
         String text = "";
         try {
             // SWT exposes getText across unrelated widget hierarchies.
-            text = String.valueOf(widget.getClass().getMethod("getText").invoke(widget));
+            var method = widget.getClass().getMethod("getText");
+            method.trySetAccessible();
+            text = String.valueOf(method.invoke(widget));
         } catch (ReflectiveOperationException ignored) {
         }
         if (widget instanceof Text t && (t.getStyle() & SWT.PASSWORD) != 0) text = "<redacted>";
         out.println(indent + id + " " + widget.getClass().getSimpleName() + " " + text.replace("\n", "\\n")
             + (widget instanceof Control c ? " visible=" + c.isVisible() + " enabled=" + c.isEnabled() : ""));
         if (widget instanceof ToolItem t) out.println(indent + " tooltip=" + t.getToolTipText() + " enabled=" + t.isEnabled());
+        if (widget instanceof StyledText t) out.println(indent + " caretLine="
+            + (t.getLineAtOffset(t.getCaretOffset()) + 1) + " selection=" + t.getSelection());
         if (widget instanceof Shell s && s.getMenuBar() != null) dump(s.getMenuBar(), indent + " ", out);
         if (widget instanceof Menu m) for (MenuItem child : m.getItems()) dump(child, indent + " ", out);
         if (widget instanceof MenuItem m && m.getMenu() != null) dump(m.getMenu(), indent + " ", out);

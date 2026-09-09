@@ -57,7 +57,8 @@ public final class GaussDBPackageCompiler {
         compileLog.trace(sql);
         try (JDBCSession session = DBUtils.openUtilSession(monitor, object, "Compile GaussDB package");
              JDBCPreparedStatement statement = session.prepareStatement(sql)) {
-            statement.executeStatement();
+            // Keep the JDBC SQLException (executeStatement wraps it in DBCException).
+            statement.execute();
             boolean success = logErrors(session, compileLog, object, target);
             object.refreshObjectState(monitor);
             object.getDataSource().getContainer().fireEvent(new DBPEvent(DBPEvent.Action.OBJECT_UPDATE, object));
@@ -67,7 +68,17 @@ public final class GaussDBPackageCompiler {
             if (sqlState != null && (sqlState.startsWith("08") || sqlState.startsWith("28"))) {
                 throw new DBException("Error compiling GaussDB package " + object.getName(), e);
             }
-            compileLog.error(toCompileError(e, target));
+            boolean errorsFound = false;
+            try (JDBCSession errorsSession = DBUtils.openMetaSession(monitor, object, "Read package compilation errors")) {
+                errorsFound = !logErrors(errorsSession, compileLog, object, target);
+            } catch (SQLException metadataError) {
+                if (!GaussDBMetadataErrorHandler.isOptionalMetadataError(metadataError)) {
+                    throw new DBException("Error reading package compilation errors", metadataError);
+                }
+            }
+            if (!errorsFound) {
+                compileLog.error(toCompileError(e, target));
+            }
             object.refreshObjectState(monitor);
             object.getDataSource().getContainer().fireEvent(new DBPEvent(DBPEvent.Action.OBJECT_UPDATE, object));
             return false;

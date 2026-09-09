@@ -26,6 +26,33 @@ import java.sql.SQLException;
 public class GaussDBPackageCompilerTest {
 
     @Test
+    public void catalogErrorsPreserveBodyLineAndFilterSpecification() throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(object.getObjectId()).thenReturn(42L);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(schema.getObjectId()).thenReturn(99L);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(result);
+        Mockito.when(result.next()).thenReturn(true, false);
+        Mockito.when(result.getString("type")).thenReturn("package body");
+        Mockito.when(result.getString("src")).thenReturn("invalid type name");
+        Mockito.when(result.getInt("line")).thenReturn(3);
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        Assertions.assertFalse(GaussDBPackageCompiler.logErrors(session, log, object, GaussDBPackageCompileTarget.BODY));
+        Assertions.assertEquals(3, log.getErrorStack().iterator().next().getLine());
+        Mockito.verify(statement).setLong(1, 42L);
+        Mockito.verify(statement).setLong(2, 99L);
+        Mockito.when(result.next()).thenReturn(true, false);
+        log.clearLog();
+        Assertions.assertTrue(GaussDBPackageCompiler.logErrors(session, log, object, GaussDBPackageCompileTarget.SPECIFICATION));
+        Assertions.assertTrue(log.getErrorStack().isEmpty());
+    }
+
+    @Test
     public void generatesAllCompileVariantsWithQualifiedName() {
         GaussDBPackage object = Mockito.mock(GaussDBPackage.class);
         Mockito.when(object.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("\"Mixed Schema\".\"Test Package\"");

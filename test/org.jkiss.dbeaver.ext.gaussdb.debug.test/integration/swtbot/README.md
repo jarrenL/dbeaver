@@ -40,6 +40,9 @@ Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 `text ID VALUE`, `secret ID /absolute/password-file`, `focus ID`,
 `key ID F7` (or `SHIFT+F7`), `combo ID VALUE`, `cell TABLE_ID ROW COLUMN`,
 `line STYLED_TEXT_ID ZERO_BASED_LINE`, `context TREE_ITEM_ID MENU_TEXT`, `close ID`.
+`source STYLED_TEXT_ID /absolute/file.sql` replaces editor text through SWTBot.
+`select TREE_ID ITEM_ID|ITEM_ID` selects observed nested tree items together.
+StyledText dumps include the one-based caret line and selection offsets.
 All separators in actual command files are tabs, not spaces.
 
 `OK` in a result means the UI action completed, **not that a requirement passed**.
@@ -62,7 +65,7 @@ these test-driver accommodations.
 - Variable read/edit and variable-name watch; failed edits retain old values.
 - Nested stack and double-click source navigation.
 - Commit and rollback dialogs with independent table-content verification.
-- Centralized ORA only: SPEC/BODY/ALL compilation, compiler error source location,
+- Package-capable ORA/A environment: SPEC/BODY/ALL compilation, compiler error source location,
   multi-selection deletion and verification of removed test objects.
 
 Record each scenario separately as passed, failed or blocked. Protocol-only tests

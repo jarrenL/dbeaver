@@ -18,8 +18,25 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 public class GaussDBServerInfoTest {
+
+    @Test
+    public void packageSupportFollowsLateServerDiscovery() {
+        GaussDBDatabase database = Mockito.mock(GaussDBDatabase.class, Mockito.CALLS_REAL_METHODS);
+        GaussDBDataSource dataSource = Mockito.mock(GaussDBDataSource.class);
+        GaussDBServerInfo discovered = GaussDBServerInfo.forTest(
+            GaussDBServerInfo.Deployment.CENTRALIZED, java.util.Set.of("gs_package"));
+        Mockito.doReturn(dataSource).when(database).getDataSource();
+        database.setDatabaseCompatibleMode("A");
+        Mockito.when(dataSource.getServerInfo()).thenReturn(GaussDBServerInfo.unknown());
+        Assertions.assertFalse(database.isPackageSupported());
+        Mockito.when(dataSource.getServerInfo()).thenReturn(discovered);
+        Assertions.assertTrue(database.isPackageSupported());
+        database.setDatabaseCompatibleMode("M");
+        Assertions.assertFalse(database.isPackageSupported());
+    }
 
     @Test
     public void parsesGaussDB507ProductVersion() {

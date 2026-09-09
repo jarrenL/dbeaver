@@ -107,6 +107,12 @@ public final class GaussDBServerInfo {
     }
 
     @ForTest
+    static GaussDBServerInfo forTest(@NotNull Deployment deployment, @NotNull Set<String> relations) {
+        return new GaussDBServerInfo(true, "", "", "", deployment, "A", DBCompatibilityEnum.ORACLE,
+            Collections.emptyMap(), relations, Collections.emptySet(), Collections.emptySet());
+    }
+
+    @ForTest
     @NotNull
     static GaussDBServerInfo forTest(
         @Nullable DBCompatibilityEnum compatibility,
