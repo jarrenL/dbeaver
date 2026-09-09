@@ -31,7 +31,9 @@ public class GaussDBDebugObjectAdapterFactory implements IAdapterFactory {
             adaptableObject = editorPart.getEditorInput();
         }
         GaussDBProcedure routine = null;
-        if (adaptableObject instanceof PostgreSourceViewEditor sourceEditor &&
+        if (adaptableObject instanceof GaussDBProcedure procedure) {
+            routine = procedure;
+        } else if (adaptableObject instanceof PostgreSourceViewEditor sourceEditor &&
             sourceEditor.getSourceObject() instanceof GaussDBProcedure sourceRoutine) {
             routine = sourceRoutine;
         } else if (adaptableObject instanceof IDatabaseEditorInput input &&

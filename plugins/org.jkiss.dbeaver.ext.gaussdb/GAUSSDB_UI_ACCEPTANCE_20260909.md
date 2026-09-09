@@ -1,6 +1,6 @@
 # GaussDB 客户端验收记录（2026-09-09）
 
-结论：本轮验收不通过，不能将原始 7 项标为全部验收完成。
+结论：首次验收不通过，不能将原始 7 项标为全部验收完成。后续修复状态见末尾“修复复测”。
 
 ## 环境与方法
 
@@ -62,3 +62,23 @@ macOS 成品做运行验证，不声明完整产品构建通过；Office 依赖�
 客户端正常退出，确认测试库连接数为 0 后删除本轮临时库和账号；测试建库/建过程 SQL
 中的临时凭据已删除。业务库未作为写入或删除目标。最终查询确认临时库和角色数量均为 0。
 本轮 Maven 已自行以失败退出，保留成品和日志供排查。
+
+## 修复复测（同日）
+
+- 首次点击调试入口：无历史配置时先打开配置窗口，不再直接调用无法解析当前参数/属性
+  选择的 ContextRunner；UI 已观察到“数据库调试 Configurations”窗口，包含 DBeaver 类型。
+- 修正 launchShortcuts 的 configurationType ID，使其与实际注册的
+  org.jkiss.dbeaver.debug.launchConfiguration 一致。
+- 补充 GaussDB 导航树节点和过程对象到 DBGDebugObject 的适配注册；工厂继续执行 provider、
+  compatibility、language 和持久化状态门控。
+- POI 依赖：从项目官方 P2 仓库下载 org.jkiss.bundle.apache.poi_5.4.2.jar，SHA-256 与
+  本机 P2 元数据中的 94dbd8e722e4fa85b1aad8a2044e0f26adddb9abff3251747ed9d054f5f53b37 一致，
+  补齐本地缓存后完整产品构建 BUILD SUCCESS。日志 /tmp/dbeaver-ui-fixed-product.log。
+- 71 模块 verify 再次通过，576 测试、573 通过、3 个既有跳过，0 failure/error。
+  日志 /tmp/dbeaver-ui-fix-verify.log。
+- 桌面自动化读取调试配置窗口时，Java 25 进程在 macOS 原生 AXSerializeCFType /
+  cfAttributedStringSerialize 路径崩溃；日志为成品 Contents/MacOS/hs_err_pid96466.log。
+  已改用现有 DBeaver 内置 Java 21 启动排查。当前不能将打开配置窗口等同于断点、变量、
+  堆栈、事务 UI 全部通过，也不能在未验证前把原生崩溃归因于 Java 25 本身。
+- 继续执行 UI 验收使用重新创建的独立 dbeaver_ui_0909 库/账号，不涉及业务库；
+  集中式 Package 环境仍待提供。

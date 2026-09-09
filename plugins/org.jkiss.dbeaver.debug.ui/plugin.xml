@@ -41,7 +41,7 @@
                 class="org.jkiss.dbeaver.debug.ui.internal.DatabaseDebugLaunchShortcut"
                 icon="icons/database_debug.png"
                 modes="debug">
-            <configurationType id="org.jkiss.dbeaver.debug.ui.configuration"/>
+            <configurationType id="org.jkiss.dbeaver.debug.launchConfiguration"/>
             <contextualLaunch>
                 <contextLabel label="%launchShortcuts.shortcut.label" mode="debug">
                 </contextLabel>

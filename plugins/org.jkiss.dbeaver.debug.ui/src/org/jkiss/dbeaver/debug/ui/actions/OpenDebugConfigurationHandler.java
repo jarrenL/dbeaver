@@ -33,6 +33,14 @@ public class OpenDebugConfigurationHandler extends AbstractHandler implements IH
 
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
+        // A new workspace has no launch history. Open the configuration dialog before
+        // invoking the context runner, which otherwise reports "Unable To Launch" for
+        // an editor's property/parameter selection.
+        if (getLastLaunch() == null) {
+            DebugUITools.openLaunchConfigurationDialogOnGroup(
+                DebugUIPlugin.getShell(), new StructuredSelection(), DebugUI.DEBUG_LAUNCH_GROUP_ID);
+            return null;
+        }
         if (LaunchingResourceManager.isContextLaunchEnabled(DebugUI.DEBUG_LAUNCH_GROUP_ID)) {
             ContextRunner.getDefault().launch(
                 DebugUIPlugin.getDefault().getLaunchConfigurationManager().getLaunchGroup(
