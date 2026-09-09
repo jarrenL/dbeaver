@@ -134,6 +134,7 @@ final class GaussDBPackageCompileResultsDialog extends BaseDialog {
 
     private void positionWhenLoaded(EntityEditor editor, Result result, int request, int attempts) {
         if (request != navigationRequest || getShell() == null || getShell().isDisposed()
+            || editor.getSite() == null || editor.getSite().getPage() == null
             || editor.getSite().getPage().findEditor(editor.getEditorInput()) != editor) {
             return;
         }

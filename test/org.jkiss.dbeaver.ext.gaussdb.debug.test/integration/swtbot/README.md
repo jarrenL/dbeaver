@@ -54,6 +54,14 @@ through the selected GaussDB data source and reports their production capability
 with `extended-mode-fixtures.sql` only in a disposable instance. `extended-pg-fixtures.sql` provides
 the native PostgreSQL parent/child and audit fixtures for GUI regression.
 
+`resolve-frame TREE_ITEM_ID OID EXPECTED_SCHEMA` asserts the actual GaussDB resolver returns that OID/schema
+without mutating launch configuration. `navigation-race SHELL_ID stale-request|closed-editor|closed-dialog`
+replays a captured real package navigation callback after the lifecycle transition. Use the actual package
+results shell, a clean active package editor, and (for stale-request) two error rows. This test intentionally
+closes editors without saving; never run it against a workspace containing unsaved user work. These tests
+are deterministic callback interleavings, not long-running load tests. Cross-schema SQL fixtures are
+`cross-schema-gaussdb.sql` and `cross-schema-postgresql.sql`, for disposable acceptance databases only.
+
 `OK` in a result means the UI action completed, **not that a requirement passed**.
 Acceptance must assert the resulting widget state and, where relevant, independent
 database results. Shell screenshots obtained through SWTBot's desktop capture can

@@ -158,6 +158,8 @@ public final class Bot implements IStartup {
             case "dropdown" -> new SWTBotToolbarDropDownButton((ToolItem) widget).menuItem(args[2]).click();
             case "model" -> inspectModel((TreeItem) widget, out);
             case "modes" -> inspectModes((TreeItem) widget, out);
+            case "navigation-race" -> navigationRace((Shell) widget, args[2], out);
+            case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], out);
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
             case "focus" -> display.syncExec(() -> ((Control) widget).setFocus());
@@ -220,6 +222,89 @@ public final class Bot implements IStartup {
                 out.println(method + "=" + type.getMethod(method).invoke(database));
             }
         }
+    }
+
+    private void resolveFrame(TreeItem item, long oid, String expectedSchema, PrintWriter out) throws Exception {
+        Object[] data = new Object[1];
+        display.syncExec(() -> data[0] = item.getData());
+        Object routine = data[0].getClass().getMethod("getObject").invoke(data[0]);
+        Object source = routine.getClass().getMethod("getDataSource").invoke(routine);
+        Object container = source.getClass().getMethod("getContainer").invoke(source);
+        var bundle = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.ext.gaussdb.debug.core");
+        Class<?> core = bundle.loadClass("org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugCore");
+        Map<String, Object> configuration = new HashMap<>();
+        Arrays.stream(core.getMethods()).filter(m -> m.getName().equals("saveRoutine")).findFirst().orElseThrow()
+            .invoke(null, routine, configuration);
+        Map<String, Object> original = Map.copyOf(configuration);
+        Class<?> resolverType = bundle.loadClass("org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugResolver");
+        Object resolver = resolverType.getConstructors()[0].newInstance(container);
+        Object monitor = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model")
+            .loadClass("org.jkiss.dbeaver.model.runtime.VoidProgressMonitor").getConstructor().newInstance();
+        Object resolved = Arrays.stream(resolverType.getMethods()).filter(m -> m.getName().equals("resolveObject"))
+            .findFirst().orElseThrow().invoke(resolver, configuration, oid, monitor);
+        Object schema = resolved.getClass().getMethod("getSchema").invoke(resolved);
+        String actualSchema = (String) schema.getClass().getMethod("getName").invoke(schema);
+        long actualOid = ((Number) resolved.getClass().getMethod("getObjectId").invoke(resolved)).longValue();
+        if (!expectedSchema.equals(actualSchema) || actualOid != oid || !configuration.equals(original)) {
+            throw new AssertionError("Wrong frame target or launch configuration mutated: " + actualSchema + "/" + actualOid);
+        }
+        out.println("PASS resolve-frame schema=" + actualSchema + " oid=" + actualOid + "; launch unchanged");
+    }
+
+    /** Replays a real late navigation callback after its lifecycle has changed. No production delay hooks. */
+    private void navigationRace(Shell shell, String scenario, PrintWriter out) throws Exception {
+        Throwable[] failure = new Throwable[1];
+        display.syncExec(() -> {
+            try {
+                Object dialog = shell.getData();
+                if (dialog == null || !dialog.getClass().getSimpleName().equals("GaussDBPackageCompileResultsDialog")) {
+                    throw new AssertionError("Select the real package compilation results shell");
+                }
+                Class<?> type = dialog.getClass();
+                var requests = type.getDeclaredField("navigationRequest");
+                var results = type.getDeclaredField("results");
+                var tableField = type.getDeclaredField("table");
+                requests.setAccessible(true);
+                results.setAccessible(true);
+                tableField.setAccessible(true);
+                int oldRequest = requests.getInt(dialog);
+                Object oldResult = ((java.util.List<?>) results.get(dialog)).get(0);
+                var page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
+                var oldEditor = page.getActiveEditor();
+                if (oldEditor == null || oldEditor.isDirty()) {
+                    throw new AssertionError("Requires a clean active package editor; refusing to discard edits");
+                }
+                var oldInput = oldEditor.getEditorInput();
+                var callback = Arrays.stream(type.getDeclaredMethods()).filter(m -> m.getName().equals("positionWhenLoaded"))
+                    .findFirst().orElseThrow();
+                callback.setAccessible(true);
+                switch (scenario) {
+                    case "closed-editor" -> {
+                        if (!page.closeEditor(oldEditor, false)) throw new AssertionError("Editor did not close");
+                    }
+                    case "closed-dialog" -> shell.dispose();
+                    case "stale-request" -> {
+                        Table table = (Table) tableField.get(dialog);
+                        if (table.getItemCount() < 2) throw new AssertionError("Requires two package errors");
+                        table.setSelection(1);
+                        table.notifyListeners(SWT.DefaultSelection, new Event());
+                        if (requests.getInt(dialog) == oldRequest) throw new AssertionError("New navigation was not issued");
+                    }
+                    default -> throw new IllegalArgumentException(scenario);
+                }
+                var expectedEditor = page.getActiveEditor();
+                // Invoke the exact callback captured before close/supersession, as a timer would.
+                callback.invoke(dialog, oldEditor, oldResult, oldRequest, 100);
+                if (page.getActiveEditor() != expectedEditor) throw new AssertionError("Late callback stole editor focus");
+                if (scenario.equals("closed-editor") && page.findEditor(oldInput) != null) {
+                    throw new AssertionError("Late callback reopened the closed editor");
+                }
+                out.println("PASS navigation-race " + scenario + "; late callback rejected without changing active editor");
+            } catch (Throwable e) {
+                failure[0] = e;
+            }
+        });
+        if (failure[0] != null) throw new Exception("Navigation lifecycle assertion failed", failure[0]);
     }
 
     private void dump(Widget widget, String indent, PrintWriter out) {

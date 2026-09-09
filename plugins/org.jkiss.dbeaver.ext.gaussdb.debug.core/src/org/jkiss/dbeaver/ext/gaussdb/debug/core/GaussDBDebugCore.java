@@ -10,6 +10,9 @@ import org.jkiss.dbeaver.debug.DBGConstants;
 import org.jkiss.dbeaver.ext.gaussdb.model.*;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreLanguage;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBUtils;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
+import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.utils.CommonUtils;
 
@@ -103,6 +106,29 @@ public final class GaussDBDebugCore {
         if (schema == null) {
             throw new DBException("Schema '" + schemaName + "' not found in database " + databaseName);
         }
+        GaussDBProcedure routine = findRoutine(monitor, schema, oid);
+        if (routine == null) {
+            // Stack frames are identified by OID, not by the launch schema or routine name.
+            // Resolve only the target namespace; scanning every schema loads unrelated system routines.
+            try (JDBCSession session = DBUtils.openMetaSession(monitor, database, "Resolve routine schema")) {
+                String targetSchema = JDBCUtils.queryString(session,
+                    "SELECT n.nspname FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n "
+                        + "ON n.oid=p.pronamespace WHERE p.oid=?", oid);
+                if (targetSchema != null && database.getSchema(monitor, targetSchema) instanceof GaussDBSchema other) {
+                    routine = findRoutine(monitor, other, oid);
+                }
+            } catch (java.sql.SQLException e) {
+                throw new DBException("Unable to resolve schema for routine " + oid, e);
+            }
+        }
+        if (routine == null) {
+            throw new DBException("Routine " + oid + " not found in database " + databaseName);
+        }
+        return routine;
+    }
+
+    private static GaussDBProcedure findRoutine(DBRProgressMonitor monitor, GaussDBSchema schema, long oid)
+        throws DBException {
         GaussDBProcedure routine = schema.getGaussDBProceduresCache().getAllObjects(monitor, schema).stream()
             .filter(candidate -> candidate.getObjectId() == oid)
             .findFirst()
@@ -112,9 +138,6 @@ public final class GaussDBDebugCore {
                 .filter(candidate -> candidate.getObjectId() == oid)
                 .findFirst()
                 .orElse(null);
-        }
-        if (routine == null) {
-            throw new DBException("Routine " + oid + " not found in schema " + schemaName);
         }
         return routine;
     }
