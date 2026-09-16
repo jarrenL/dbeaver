@@ -21,6 +21,7 @@ import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.osgi.util.NLS;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.SWT;
@@ -29,14 +30,11 @@ import org.eclipse.ui.ISaveablePart;
 import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.GaussDBConstants;
+import org.jkiss.dbeaver.ext.gaussdb.ui.internal.GaussDBMessages;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageCompileBatch;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageCompileTarget;
-import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageCompiler;
-import org.jkiss.dbeaver.model.exec.compile.DBCCompileError;
-import org.jkiss.dbeaver.model.exec.compile.DBCCompileLog;
-import org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase;
 import org.jkiss.dbeaver.model.exec.compile.DBCSourceHost;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.runtime.AbstractJob;
@@ -82,7 +80,6 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
                 return null;
             }
         }
-        List<GaussDBPackageCompileResultsDialog.Result> results = new ArrayList<>();
 
         // The generic progress service only sets a canceled flag during JDBC IO.
         // AbstractJob additionally cancels the monitor's active JDBC blocking object.
@@ -91,32 +88,28 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
             protected IStatus run(DBRProgressMonitor monitor) {
                 monitor.beginTask("Compile GaussDB package", packages.size());
                 try {
-                    for (GaussDBPackage object : packages) {
-                        if (monitor.isCanceled()) {
-                            return Status.CANCEL_STATUS;
+                    GaussDBPackageCompileBatch.Result batch = GaussDBPackageCompileBatch.compile(monitor, packages, target);
+                    List<GaussDBPackageCompileResultsDialog.Result> results = batch.diagnostics().stream()
+                        .map(item -> new GaussDBPackageCompileResultsDialog.Result(item.object(), item.error())).toList();
+                    UIUtils.asyncExec(() -> {
+                        if (window.getShell().isDisposed() || window.getActivePage() == null) {
+                            return;
                         }
-                        monitor.subTask(object.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.UI));
-                        try {
-                            DBCCompileLog compileLog = new DBCCompileLogBase();
-                            GaussDBPackageCompiler.compile(monitor, compileLog, object, target);
-                            for (DBCCompileError error : compileLog.getErrorStack()) {
-                                results.add(new GaussDBPackageCompileResultsDialog.Result(object, error));
+                        if (batch.interrupted()) {
+                            String summary = NLS.bind(GaussDBMessages.package_compile_partial_summary, new Object[]{
+                                batch.completed(), batch.total(), batch.canceled() ? GaussDBMessages.package_compile_canceled
+                                    : GaussDBMessages.package_compile_failed,
+                                batch.stoppedAt() == null ? "-" : batch.stoppedAt().getName()});
+                            if (batch.failure() != null && !batch.canceled()) {
+                                DBWorkbench.getPlatformUI().showError(GaussDBMessages.package_compile_interrupted, summary, batch.failure());
+                            } else {
+                                UIUtils.showMessageBox(window.getShell(), GaussDBMessages.package_compile_interrupted, summary, SWT.ICON_WARNING);
                             }
-                        } catch (DBException e) {
-                            if (monitor.isCanceled()) {
-                                return Status.CANCEL_STATUS;
-                            }
-                            UIUtils.asyncExec(() -> DBWorkbench.getPlatformUI().showError(
-                                "GaussDB package compilation failed", null, e));
-                            return Status.OK_STATUS;
                         }
-                        monitor.worked(1);
-                    }
-                    if (monitor.isCanceled()) {
-                        return Status.CANCEL_STATUS;
-                    }
-                    UIUtils.asyncExec(() -> showResults(window, packages, results));
-                    return Status.OK_STATUS;
+                        showResults(window, packages, results, !batch.interrupted());
+                    });
+                    return batch.canceled() ? Status.CANCEL_STATUS : batch.failure() == null ? Status.OK_STATUS
+                        : new Status(IStatus.ERROR, "org.jkiss.dbeaver.ext.gaussdb.ui", "Package compilation interrupted", batch.failure());
                 } finally {
                     monitor.done();
                 }
@@ -128,7 +121,7 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
     }
 
     private void showResults(IWorkbenchWindow window, List<GaussDBPackage> packages,
-        List<GaussDBPackageCompileResultsDialog.Result> results) {
+        List<GaussDBPackageCompileResultsDialog.Result> results, boolean completed) {
         if (window.getShell().isDisposed() || window.getActivePage() == null) {
             return;
         }
@@ -147,7 +140,7 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         }
         if (!results.isEmpty()) {
             new GaussDBPackageCompileResultsDialog(window.getShell(), results).open();
-        } else {
+        } else if (completed) {
             String message = packages.size() == 1
                 ? packages.get(0).getName() + " compiled successfully"
                 : packages.size() + " packages compiled successfully";

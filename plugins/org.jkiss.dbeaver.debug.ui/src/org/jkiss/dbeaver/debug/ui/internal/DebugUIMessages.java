@@ -44,6 +44,12 @@ public class DebugUIMessages extends NLS {
 
     public static String DatabaseLaunchShortcut_select_message;
     public static String DatabaseLaunchShortcut_select_title;
+    public static String DebugTransaction_title;
+    public static String DebugTransaction_question;
+    public static String DebugTransaction_commit;
+    public static String DebugTransaction_rollback;
+    public static String DebugTransaction_unconfirmed;
+    public static String DebugTransaction_failure_details;
 
     static {
         // initialize resource bundle

@@ -17,6 +17,21 @@ import static org.mockito.Mockito.*;
 
 class DatabaseWatchLifecycleTest {
     @Test
+    void failedRefreshIsReportedInsteadOfReturningAStaleSuccessfulWatch() throws Exception {
+        IDatabaseDebugTarget target = mock(IDatabaseDebugTarget.class);
+        DBGSession session = mock(DBGSession.class);
+        when(target.getSession()).thenReturn(session);
+        DatabaseThread thread = mock(DatabaseThread.class);
+        when(thread.getDatabaseDebugTarget()).thenReturn(target);
+        DBGStackFrame serverFrame = mock(DBGStackFrame.class);
+        DatabaseStackFrame frame = new DatabaseStackFrame(thread, serverFrame);
+        when(session.getVariables(serverFrame)).thenThrow(new org.jkiss.dbeaver.debug.DBGException("debugger busy"));
+        IWatchExpressionListener listener = mock(IWatchExpressionListener.class);
+        new DatabaseWatchExpressionDelegate().evaluateExpression("v_local", frame, listener);
+        verify(listener).watchEvaluationFinished(argThat(result -> result.hasErrors() && result.getException() != null));
+    }
+
+    @Test
     void watchRefreshAfterSessionReleaseReturnsErrorInsteadOfNullPointer() throws Exception {
         IDatabaseDebugTarget target = mock(IDatabaseDebugTarget.class);
         DatabaseThread thread = mock(DatabaseThread.class);

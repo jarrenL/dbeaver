@@ -150,7 +150,7 @@ public class DatabaseStackFrame extends DatabaseDebugElement implements IStackFr
                 List<? extends DBGVariable<?>> variables = session.getVariables(dbgStackFrame);
                 rebuildVariables(variables);
             } catch (DBGException e) {
-                log.debug("Error getting variables", e);
+                throw new DebugException(DebugUtils.newErrorStatus("Unable to refresh debug variables", e));
             }
         }
         if (variables.isEmpty()) {
