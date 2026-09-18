@@ -47,7 +47,7 @@ Section "DBeaver GaussDB"
   WriteRegStr HKCU "${REGKEY}" "DisplayName" "DBeaver GaussDB ${RELEASE} (Preview)"
   WriteRegStr HKCU "${REGKEY}" "DisplayVersion" "26.2.0-${RELEASE}"
   WriteRegStr HKCU "${REGKEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "${REGKEY}" "UninstallString" '$"$INSTDIR\uninstall.exe$"'
+  WriteRegStr HKCU "${REGKEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegDWORD HKCU "${REGKEY}" "NoModify" 1
   WriteRegDWORD HKCU "${REGKEY}" "NoRepair" 1
 SectionEnd
