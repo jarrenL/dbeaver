@@ -44,6 +44,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     private static final Log log = Log.getLog(GaussDBDebugSession.class);
     private static final String API = "DBE_PLDEBUGGER."; //$NON-NLS-1$
     private static final String FINISHED = "[EXECUTION FINISHED]"; //$NON-NLS-1$
+    private static final int TRANSACTION_NETWORK_TIMEOUT_MS = 10000;
 
     private final Map<String, Object> configuration;
     private final JDBCExecutionContext controllerConnection;
@@ -126,7 +127,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         }
 
         sessionInfo = new GaussDBDebugSessionInfo(processId, node, port);
-        runTarget();
+        runTarget(monitor);
         try (JDBCSession session = controllerConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Attach PL/SQL debugger");
              PreparedStatement statement = session.prepareStatement("SELECT * FROM " + API + "attach(?, ?)") ) {
             statement.setString(1, node);
@@ -174,14 +175,14 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         breakpointArgumentType = GaussDBDebugCapabilityDetector.check(controllerConnection, monitor, routine.getObjectId());
     }
 
-    private void runTarget() throws DBGException {
+    private void runTarget(DBRProgressMonitor monitor) throws DBGException {
         List<PostgreProcedureParameter> parameters = routine.getInputParameters();
         Object rawModes = configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETER_MODES);
         List<String> modes = rawModes instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of();
         GaussDBDebugArguments.Plan arguments = GaussDBDebugArguments.build(parameters, parameterValues(), modes);
         List<String> values = arguments.values();
         if (values.size() < parameters.size()) {
-            validateDefaultInvocation();
+            validateDefaultInvocation(monitor);
         }
         String sql = (routine.getProcedureType() == DBSProcedureType.PROCEDURE ? "CALL " : "SELECT ") +
             routine.getFullyQualifiedName(DBPEvaluationContext.DML) + '(' + arguments.sql() + ')';
@@ -217,19 +218,26 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         targetJob.schedule();
     }
 
-    void validateDefaultInvocation() throws DBGException {
+    void validateDefaultInvocation(DBRProgressMonitor monitor) throws DBGException {
+        if (monitor.isCanceled()) {
+            throw new DBGException("Default argument validation canceled");
+        }
         // Omitted arguments may select a different overload than the OID armed by turn_on.
         // Reject ambiguous names conservatively instead of running an unintended routine.
         String sql = "SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_proc target " +
             "ON p.proname=target.proname AND p.pronamespace=target.pronamespace " +
             "WHERE target.oid=? AND p.oid<>target.oid LIMIT 1";
-        try (JDBCSession session = targetConnection.openSession(new VoidProgressMonitor(), DBCExecutionPurpose.UTIL, "Validate default arguments");
+        try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Validate default arguments");
              PreparedStatement statement = session.prepareStatement(sql)) {
+            statement.setQueryTimeout(10);
             statement.setLong(1, routine.getObjectId());
             try (ResultSet result = statement.executeQuery()) {
                 if (result.next()) {
                     throw new DBGException("Default arguments are not enabled for overloaded routine names; enter all arguments explicitly");
                 }
+            }
+            if (monitor.isCanceled()) {
+                throw new DBGException("Default argument validation canceled");
             }
         } catch (SQLException e) {
             throw sqlError("Unable to validate default arguments", e);
@@ -667,12 +675,27 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                 throw new DBGException("Transaction completion canceled before execution");
             }
             try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Complete debug transaction")) {
-                if (action == DBGTransactionAction.COMMIT) {
-                    session.commit();
-                } else {
-                    session.rollback();
+                // Statement timeout does not bound Connection.commit(), and normal debugger
+                // reads intentionally have no deadline. Bound only transaction completion.
+                int previousTimeout = session.getNetworkTimeout();
+                session.setNetworkTimeout(Runnable::run, previousTimeout > 0
+                    ? Math.min(previousTimeout, TRANSACTION_NETWORK_TIMEOUT_MS) : TRANSACTION_NETWORK_TIMEOUT_MS);
+                try {
+                    if (action == DBGTransactionAction.COMMIT) {
+                        session.commit();
+                    } else {
+                        session.rollback();
+                    }
+                    transactionCompletionPending = false;
+                } finally {
+                    try {
+                        session.setNetworkTimeout(Runnable::run, previousTimeout);
+                    } catch (SQLException restoreError) {
+                        // A timeout normally closes the socket. Do not mask the outcome
+                        // or mislabel a confirmed commit because restoration failed.
+                        log.debug("Cannot restore debug connection network timeout", restoreError);
+                    }
                 }
-                transactionCompletionPending = false;
             } catch (SQLException e) {
                 transactionOutcomeUnknown = true;
                 throw sqlError("Transaction outcome was not confirmed; verify it using another connection", e);
@@ -691,6 +714,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         if (!done) {
             try (JDBCSession session = controllerConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Abort debug target");
                  Statement statement = session.createStatement()) {
+                session.setNetworkTimeout(Runnable::run, TRANSACTION_NETWORK_TIMEOUT_MS);
                 statement.setQueryTimeout(5);
                 statement.execute("SELECT " + API + "abort()");
             } catch (SQLException e) {
@@ -719,10 +743,10 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             }
             synchronized (transactionLock) {
                 try {
-                    if (transactionCompletionPending && targetFinished.getCount() == 0) {
+                    if (!transactionOutcomeUnknown && transactionCompletionPending && targetFinished.getCount() == 0) {
                         completeTransaction(monitor, DBGTransactionAction.ROLLBACK);
                     }
-                    if (targetFinished.getCount() == 0) {
+                    if (!transactionOutcomeUnknown && targetFinished.getCount() == 0) {
                         try {
                             turnOff(monitor);
                         } catch (DBGException e) {
@@ -861,6 +885,9 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     private void turnOff(DBRProgressMonitor monitor) throws DBGException {
         try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Disable PL/SQL debugger");
              PreparedStatement statement = session.prepareStatement("SELECT " + API + "turn_off(?::oid)")) {
+            if (closing) {
+                session.setNetworkTimeout(Runnable::run, TRANSACTION_NETWORK_TIMEOUT_MS);
+            }
             statement.setLong(1, routine.getObjectId());
             statement.execute();
         } catch (SQLException e) {

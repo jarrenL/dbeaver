@@ -33,6 +33,8 @@ public class PostgreSQLMessages extends NLS {
     public static String global_variable_system_user_description;
     public static String global_variable_user_description;
     public static String error_multi_database_mode_disabled_description;
+    public static String native_password_pipe_invalid;
+    public static String native_password_pipe_write_error;
 
     static {
         // initialize resource bundle

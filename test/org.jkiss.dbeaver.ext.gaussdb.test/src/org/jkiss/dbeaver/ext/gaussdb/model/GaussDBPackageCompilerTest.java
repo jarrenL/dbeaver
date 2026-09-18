@@ -138,6 +138,31 @@ public class GaussDBPackageCompilerTest {
         );
 
         Assertions.assertEquals(23, error.getLine());
-        Assertions.assertSame(GaussDBPackageCompileTarget.BODY, error.getSourcePart());
+        Assertions.assertSame(GaussDBPackageCompileTarget.ALL, error.getSourcePart());
+    }
+
+    @Test
+    public void missingOrDeniedDiagnosticsAreNotSourceErrors() throws Exception {
+        for (String state : java.util.List.of("42P01", "42501", "08006")) {
+            var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+            var failure = new SQLException("diagnostics unavailable", state);
+            Mockito.when(session.prepareStatement(Mockito.anyString())).thenThrow(failure);
+            var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+            var error = Assertions.assertThrows(org.jkiss.dbeaver.DBException.class,
+                () -> GaussDBPackageCompiler.readCompilationDiagnostics(session, log,
+                    Mockito.mock(GaussDBPackage.class), GaussDBPackageCompileTarget.ALL));
+            Assertions.assertSame(failure, error.getCause());
+            Assertions.assertTrue(error.getMessage().contains("diagnostics"));
+            Assertions.assertTrue(log.getErrorStack().isEmpty());
+        }
+    }
+
+    @Test
+    public void explicitTargetIsPreservedButAllNeverGuessesFromErrorText() {
+        var failure = new SQLException("referenced package body failed near line 7", "42601");
+        Assertions.assertEquals(GaussDBPackageCompileTarget.SPECIFICATION,
+            GaussDBPackageCompiler.toCompileError(failure, GaussDBPackageCompileTarget.SPECIFICATION).getSourcePart());
+        Assertions.assertEquals(GaussDBPackageCompileTarget.ALL,
+            GaussDBPackageCompiler.toCompileError(failure, GaussDBPackageCompileTarget.ALL).getSourcePart());
     }
 }

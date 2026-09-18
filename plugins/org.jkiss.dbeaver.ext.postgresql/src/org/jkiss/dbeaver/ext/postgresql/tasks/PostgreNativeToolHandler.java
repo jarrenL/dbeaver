@@ -18,11 +18,15 @@ package org.jkiss.dbeaver.ext.postgresql.tasks;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
+import org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.model.task.DBTTask;
 import org.jkiss.dbeaver.tasks.nativetool.AbstractNativeToolHandler;
 import org.jkiss.dbeaver.tasks.nativetool.AbstractNativeToolSettings;
 import org.jkiss.dbeaver.tasks.nativetool.NativeToolUtils;
@@ -36,6 +40,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
 
@@ -105,17 +110,64 @@ public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeTo
 
     @Override
     protected void setupProcessParameters(DBRProgressMonitor monitor, SETTINGS settings, PROCESS_ARG arg, ProcessBuilder process) {
-        String userPassword = settings.getToolUserPassword();
-        if (CommonUtils.isEmpty(userPassword)) {
-            userPassword = getDataSourcePassword(monitor, settings);
+        if (this instanceof PostgreDatabaseRestoreHandler || this instanceof PostgreDatabaseBackupAllHandler) {
+            // These tasks do not use stdout as a payload. Their log reader consumes
+            // stderr only; leaving stdout piped can deadlock a verbose native tool.
+            process.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         }
-        if (!CommonUtils.isEmpty(userPassword)) {
-            process.environment().put("PGPASSWORD", userPassword);
+        if (usesPasswordPipe(settings)) {
+            process.environment().remove("PGPASSWORD");
+        } else {
+            String userPassword = nativePassword(monitor, settings);
+            if (!CommonUtils.isEmpty(userPassword)) {
+                process.environment().put("PGPASSWORD", userPassword);
+            }
         }
         DBPDataSourceContainer container = settings.getDataSourceContainer();
         if (container.getDataSource() instanceof PostgreDataSource dataSource && settings.getClientHome() != null) {
             dataSource.getServerType().configureNativeToolEnvironment(settings.getClientHome(), process.environment());
         }
+    }
+
+    private boolean usesPasswordPipe(SETTINGS settings) {
+        return settings.getDataSourceContainer().getDataSource() instanceof PostgreDataSource source
+            && source.getServerType() != null && source.getServerType().usesNativePasswordPipe();
+    }
+
+    private String nativePassword(DBRProgressMonitor monitor, SETTINGS settings) {
+        String password = settings.getToolUserPassword();
+        return CommonUtils.isEmpty(password) ? getDataSourcePassword(monitor, settings) : password;
+    }
+
+    /** Authentication bytes must never be placed in argv or logs. */
+    protected void writeNativePassword(DBRProgressMonitor monitor, SETTINGS settings, Process process) throws IOException {
+        if (!usesPasswordPipe(settings)) {
+            return;
+        }
+        String password = CommonUtils.notEmpty(nativePassword(monitor, settings));
+        if (password.indexOf('\n') >= 0 || password.indexOf('\r') >= 0 || password.indexOf('\0') >= 0) {
+            process.destroy();
+            throw new IOException(PostgreSQLMessages.native_password_pipe_invalid);
+        }
+        try {
+            var input = process.getOutputStream();
+            input.write((password + "\n").getBytes(StandardCharsets.UTF_8));
+            input.flush();
+            // Script execution appends its SQL after the authentication line.
+            if (!(this instanceof PostgreScriptExecuteHandler)) {
+                input.close();
+            }
+        } catch (IOException e) {
+            process.destroy();
+            throw new IOException(PostgreSQLMessages.native_password_pipe_write_error, e);
+        }
+    }
+
+    @Override
+    protected void startProcessHandler(DBRProgressMonitor monitor, DBTTask task, SETTINGS settings, PROCESS_ARG arg,
+                                       ProcessBuilder builder, Process process, Log log) throws IOException, DBException {
+        writeNativePassword(monitor, settings, process);
+        super.startProcessHandler(monitor, task, settings, arg, builder, process, log);
     }
 
     @Override
@@ -150,6 +202,9 @@ public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeTo
         cmd.add("--username=" + toolUserName);
 
         settings.addExtraCommandArgs(cmd);
+        if (usesPasswordPipe(settings)) {
+            cmd.add("--pipeline");
+        }
     }
 
     public boolean isVerbose() {

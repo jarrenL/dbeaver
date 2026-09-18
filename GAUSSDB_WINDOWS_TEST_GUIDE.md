@@ -1,6 +1,10 @@
 # GaussDB 适配版 DBeaver：Windows 测试指南
 
-日期：2026-09-16。目标代码：`jarrenL/dbeaver` 的 `feature/gaussdb-compatibility` 分支。
+日常安装和跨平台使用步骤请先阅读 [macOS / Windows / Linux 使用指南](GAUSSDB_CROSS_PLATFORM_USER_GUIDE.md)；本文侧重 Windows 验收测试。
+
+日期：2026-09-17。目标代码：`jarrenL/dbeaver` 的 `feature/gaussdb-compatibility` 分支。
+
+09-17 审查修复尚未提交/推送时，远端 clone 不包含这些改动。验收必须记录实际源码提交及工作区状态，并确认产品由对应源码重新构建，不能直接沿用旧候选包。
 
 ## 1. 测试范围和状态
 
@@ -35,7 +39,7 @@ java -version
 
 ### 2.2 构建入口
 
-仓库提供 `tools/build.cmd`，它会克隆缺失的dbeaver-common并启用appstore等配置。为显式控制本轮构建，可在dbeaver根目录使用：
+仓库提供 `tools/build.cmd`，它会克隆缺失的dbeaver-common，并传入产品 profile 及 `appstore`。当前没有对应的 `appstore` profile 定义；Maven 3 通常会给出未找到 profile 的警告，不能将其解释为启用了某个发布配置。为显式控制本轮构建，可在dbeaver根目录使用：
 
 ```powershell
 ..\dbeaver-common\mvnw.cmd package -f product\aggregate\pom.xml -Pproduct-dbeaver-ce,product-dbeaver-eclipse-ce -T 1C
@@ -73,6 +77,10 @@ Test-NetConnection -ComputerName $dbHost -Port $dbPort
 由DBA提供地址、端口、验收数据库名、账号、兼容模式、部署类型及原厂JDBC驱动；确认服务器防火墙和数据库访问规则允许测试机的实际出口IP。使用内网/VPN或经批准的SSH隧道，不直接开放公网，不用trust规则绕过认证。服务器要求TLS时按DBA要求配置证书及校验，不关闭校验来掩盖连接问题。
 
 在DBeaver新建GaussDB连接，填写上述信息，在驱动设置中配置匹配的JDBC jar，再执行“测试连接”。Windows无需安装服务器组件、Docker或WSL。网络端口可达只证明TCP通，不代表数据库认证和权限正确。
+
+驱动条目必须与原厂 jar 的驱动类和 URL 协议相匹配：`gaussdb-jdbc-native` 使用 `com.huawei.gaussdb.jdbc.Driver` / `jdbc:gaussdb:`；`gaussdb-jdbc` 使用 `org.postgresql.Driver` / `jdbc:postgresql:`。M 模式另有 `gaussdb-jdbc-m` 配置。不要仅替换 jar 却沿用错误的驱动类/URL，也不要仅凭默认下载项的版本号判定适配了客户版本；记录实际 jar 版本及 SHA-256。
+
+升级到 09-17 断点隔离修复后，旧 workspace 中缺少数据库标识的 GaussDB 断点不会自动下发。请删除并重新创建这些断点，再验证同一数据源下两个库中的断点互不影响；数据库名区分大小写，不做模糊匹配。
 
 用原厂gsql/JDBC先确认：版本、连接成功、简单建表/INSERT/COMMIT/ROLLBACK成功。分布式环境必须经CN执行，不能直连DN成功就算集群成功。取证SQL：
 

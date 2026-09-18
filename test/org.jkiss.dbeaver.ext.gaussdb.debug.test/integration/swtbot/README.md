@@ -63,6 +63,16 @@ are deterministic callback interleavings, not long-running load tests. Cross-sch
 `cross-schema-gaussdb.sql` and `cross-schema-postgresql.sql`, for disposable acceptance databases only.
 
 `OK` in a result means the UI action completed, **not that a requirement passed**.
+
+`parameter-fixture` opens the **production** `GaussDBDebugPanelRoutine` in a test shell with one
+synthetic parameter row and a no-op configuration container. It allows reproducible cell/Tab/Enter
+regression without a database connection. It does **not** exercise routine selection, parameter
+metadata, launch configuration persistence, or SQL invocation. Observe the resulting row mode and
+editor disposal; merely returning `OK` or calling `focus` is not sufficient evidence of focus loss.
+On Linux use a running window manager alongside Xvfb, and preserve the product VM options with
+`--launcher.appendVmargs`. A fresh user may be blocked in onboarding before the IStartup queue runs;
+use the existing configured test account, never silently accept license terms in an automation.
+
 Acceptance must assert the resulting widget state and, where relevant, independent
 database results. Shell screenshots obtained through SWTBot's desktop capture can
 be blank on macOS; a blank capture is not visual evidence.

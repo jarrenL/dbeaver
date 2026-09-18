@@ -77,6 +77,30 @@ public final class Bot implements IStartup {
     }
 
     private void execute(String[] args, PrintWriter out) throws Exception {
+        if (args[0].equals("parameter-fixture")) {
+            display.syncExec(() -> {
+                try {
+                    Class<?> type = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.ext.gaussdb.debug.ui")
+                        .loadClass("org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal.GaussDBDebugPanelRoutine");
+                    Class<?> containerType = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.debug.ui")
+                        .loadClass("org.jkiss.dbeaver.debug.ui.DBGConfigurationPanelContainer");
+                    Object container = java.lang.reflect.Proxy.newProxyInstance(containerType.getClassLoader(),
+                        new Class<?>[]{containerType}, (proxy, method, values) -> null);
+                    Object panel = type.getConstructor().newInstance();
+                    Shell shell = new Shell(display, SWT.SHELL_TRIM);
+                    shell.setText("GaussDB parameter widget acceptance (synthetic row)");
+                    shell.setLayout(new org.eclipse.swt.layout.GridLayout(1, false));
+                    type.getMethod("createPanel", Composite.class, containerType).invoke(panel, shell, container);
+                    var field = type.getDeclaredField("parametersTable"); field.setAccessible(true);
+                    Table table = (Table) field.get(panel);
+                    TableItem item = new TableItem(table, SWT.NONE);
+                    item.setText(new String[]{"p", "", "integer", "Value"});
+                    shell.setSize(780, 360); shell.open();
+                    out.println("Production panel; synthetic parameter row; no database/launch lifecycle claim");
+                } catch (Exception e) { throw new IllegalStateException(e); }
+            });
+            return;
+        }
         if (args[0].equals("dump")) {
             display.syncExec(() -> {
                 widgets.clear();

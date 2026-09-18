@@ -341,6 +341,10 @@ public interface PostgreServerExtension {
         return true;
     }
 
+    default boolean usesNativePasswordPipe() {
+        return false;
+    }
+
     /** Adds server-specific environment variables required by native client binaries. */
     default void configureNativeToolEnvironment(
         @NotNull DBPNativeClientLocation clientHome,

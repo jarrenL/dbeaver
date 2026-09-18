@@ -31,6 +31,7 @@ import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.jkiss.dbeaver.ext.gaussdb.GaussDBConstants;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.gaussdb.ui.internal.GaussDBMessages;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageCompileBatch;
@@ -49,6 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class GaussDBPackageCompileHandler extends AbstractHandler {
+    private static final Log log = Log.getLog(GaussDBPackageCompileHandler.class);
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
         IWorkbenchPart activePart = HandlerUtil.getActivePart(event);
@@ -89,6 +91,11 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
                 monitor.beginTask("Compile GaussDB package", packages.size());
                 try {
                     GaussDBPackageCompileBatch.Result batch = GaussDBPackageCompileBatch.compile(monitor, packages, target);
+                    if (batch.canceled() && batch.failure() != null) {
+                        // Cancellation stays cancellation in the UI, but preserve a
+                        // coincident failure (including driver cancellation details).
+                        log.debug("Package compilation interrupted during cancellation", batch.failure());
+                    }
                     List<GaussDBPackageCompileResultsDialog.Result> results = batch.diagnostics().stream()
                         .map(item -> new GaussDBPackageCompileResultsDialog.Result(item.object(), item.error())).toList();
                     UIUtils.asyncExec(() -> {

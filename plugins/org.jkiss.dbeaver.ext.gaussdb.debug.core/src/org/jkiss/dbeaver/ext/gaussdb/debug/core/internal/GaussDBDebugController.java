@@ -8,6 +8,7 @@ package org.jkiss.dbeaver.ext.gaussdb.debug.core.internal;
 import org.jkiss.dbeaver.debug.DBGBaseController;
 import org.jkiss.dbeaver.debug.DBGBreakpointDescriptor;
 import org.jkiss.dbeaver.debug.DBGException;
+import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugConstants;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 
@@ -36,6 +37,13 @@ public class GaussDBDebugController extends DBGBaseController {
 
     @Override
     public DBGBreakpointDescriptor describeBreakpoint(Map<String, Object> attributes) {
+        // OIDs are database-local. Old markers without a database must be recreated;
+        // guessing from the active database could silently attach to another routine.
+        Object database = attributes.get(GaussDBDebugConstants.ATTR_DATABASE_NAME);
+        if (!(database instanceof String name) || name.isEmpty()
+            || !name.equals(getDebugConfiguration().get(GaussDBDebugConstants.ATTR_DATABASE_NAME))) {
+            return null;
+        }
         return GaussDBDebugBreakpointDescriptor.fromMap(attributes);
     }
 }

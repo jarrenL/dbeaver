@@ -128,6 +128,11 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
                     item.setText(3, modeLabels()[selected]);
                 } else {
                     String value = ((Text) control).getText();
+                    // Focus loss and traversal save even an untouched cell. Preserve
+                    // explicit NULL/DEFAULT unless the displayed value actually changed.
+                    if (value.equals(item.getText(1))) {
+                        return;
+                    }
                     item.setText(1, value);
                     parameterValues.put(parameter, value);
                     parameterModes.put(parameter, "VALUE");

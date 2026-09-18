@@ -13,6 +13,7 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -276,16 +277,25 @@ class GaussDBDebugSessionTest {
     @Test
     void overloadedDefaultTargetIsRejectedBeforeExecutingTheRoutine() throws Exception {
         query(DEFAULT_OVERLOAD_QUERY, true, true, 0);
-        assertThrows(DBGException.class, () -> session.validateDefaultInvocation());
+        assertThrows(DBGException.class, () -> session.validateDefaultInvocation(new VoidProgressMonitor()));
         verify(connection, never()).commit();
     }
 
     @Test
     void unambiguousDefaultTargetPassesCatalogValidation() throws Exception {
         var statement = query(DEFAULT_OVERLOAD_QUERY, false, false, 0);
-        session.validateDefaultInvocation();
+        session.validateDefaultInvocation(new VoidProgressMonitor());
         verify(statement).setLong(eq(1), anyLong());
+        verify(statement).setQueryTimeout(10);
         verify(statement).executeQuery();
+    }
+
+    @Test
+    void canceledDefaultValidationDoesNotQuery() {
+        var canceled = mock(DBRProgressMonitor.class);
+        when(canceled.isCanceled()).thenReturn(true);
+        assertThrows(DBGException.class, () -> session.validateDefaultInvocation(canceled));
+        verifyNoInteractions(connection);
     }
 
     @Test
@@ -299,6 +309,23 @@ class GaussDBDebugSessionTest {
         session.completeTransaction(monitor, DBGTransactionAction.ROLLBACK);
         verify(connection).rollback();
         assertFalse(session.isTransactionCompletionPending());
+    }
+
+    @Test
+    void commitBoundsInfiniteNetworkWaitAndRestoresPreviousTimeout() throws Exception {
+        completedTarget();
+        session.completeTransaction(monitor, DBGTransactionAction.COMMIT);
+        var order = inOrder(connection);
+        order.verify(connection).setNetworkTimeout(any(), eq(10000));
+        order.verify(connection).commit();
+        order.verify(connection).setNetworkTimeout(any(), eq(0));
+    }
+
+    @Test
+    void commitPreservesShorterUserNetworkTimeout() throws Exception {
+        completedTarget(); when(connection.getNetworkTimeout()).thenReturn(1200);
+        session.completeTransaction(monitor, DBGTransactionAction.COMMIT);
+        verify(connection, times(2)).setNetworkTimeout(any(), eq(1200));
     }
 
     @Test
