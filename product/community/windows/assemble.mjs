@@ -42,13 +42,13 @@ const files = [], directories = [];
 function walk(dir, relative = '') {
   for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
     const rel = path.join(relative, entry.name);
-    assert(!/[\r\n"$]/.test(rel), 'Unsafe NSIS filename');
+    assert(!/[\r\n"]/.test(rel), 'Unsafe NSIS filename');
     if (entry.isDirectory()) { walk(path.join(dir, entry.name), rel); directories.push(rel); }
     else { assert(entry.isFile(), 'Symlinks not supported'); files.push(rel); }
   }
 }
 walk(payload);
-const nsisPath = name => '$INSTDIR\\' + name.split(path.sep).join('\\');
+const nsisPath = name => '$INSTDIR\\' + name.split('$').join('$$').split(path.sep).join('\\');
 fs.writeFileSync(path.join(output, 'remove-files.nsh'),
   files.map(name => `Delete "${nsisPath(name)}"`).concat(directories.map(name => `RMDir "${nsisPath(name)}"`)).join('\n') + '\n');
 console.log(`Validated x86_64 launchers/JRE, four GaussDB bundles, no test plugins. Packaged ${files.length} files.`);
