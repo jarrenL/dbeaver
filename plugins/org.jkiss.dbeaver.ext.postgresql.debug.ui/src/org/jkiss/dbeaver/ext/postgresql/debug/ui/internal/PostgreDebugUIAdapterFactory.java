@@ -35,7 +35,8 @@ public class PostgreDebugUIAdapterFactory implements IAdapterFactory {
             if (adaptableObject instanceof DBPDataSourceContainer) {
                 DBPDataSourceContainer sourceContainer = (DBPDataSourceContainer) adaptableObject;
                 DBPDataSource dataSource = sourceContainer.getDataSource();
-                if (dataSource instanceof PostgreDataSource) {
+                if (dataSource instanceof PostgreDataSource &&
+                    "postgresql".equals(sourceContainer.getDriver().getProviderId())) {
                     return adapterType.cast(debugEditorAdvisor);
                 }
             }

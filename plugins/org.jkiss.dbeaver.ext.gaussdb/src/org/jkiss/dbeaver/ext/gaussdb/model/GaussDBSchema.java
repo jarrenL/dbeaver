@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +29,11 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
 import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectLookupCache;
 import org.jkiss.dbeaver.model.meta.Association;
+import org.jkiss.dbeaver.model.meta.ForTest;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 
 import java.sql.SQLException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -62,15 +64,35 @@ public class GaussDBSchema extends PostgreSchema {
 
     @Override
     public boolean isSystem() {
-        return this.oid < 16384 && !this.name.toLowerCase(Locale.ENGLISH).contains("public");
+        String lowerName = this.name.toLowerCase(Locale.ENGLISH);
+        if ("public".equals(lowerName)) {
+            return false;
+        }
+        if ("dbe_perf".equals(lowerName) || "dbe_pldeveloper".equals(lowerName) || "mls".equals(lowerName)) {
+            return true;
+        }
+        return this.oid < 16384;
     }
-    
+
+    @Override
     public boolean isUtility() {
-        return false;
+        return isUtilitySchema(name);
     }
 
     public static boolean isUtilitySchema(String schema) {
-        return false;
+        if (schema == null) {
+            return false;
+        }
+        String lower = schema.toLowerCase(Locale.ENGLISH);
+        return "information_schema".equals(lower) ||
+            "dbe_perf".equals(lower) ||
+            PostgreSchema.isUtilitySchema(lower);
+    }
+
+    @NotNull
+    @Override
+    protected TableCache createTableCache() {
+        return new GaussDBTableCache();
     }
 
     public ProceduresCache getGaussDBProceduresCache() {
@@ -86,18 +108,61 @@ public class GaussDBSchema extends PostgreSchema {
         return packageCache.getAllObjects(monitor, this);
     }
 
+    @ForTest
+    boolean handlePackageCacheReadError(@NotNull Exception error) {
+        return packageCache.handleCacheReadError(error);
+    }
+
     @Association
     public List<GaussDBProcedure> getGaussDBProcedures(DBRProgressMonitor monitor) throws DBException {
-        List<GaussDBProcedure> list = getGaussDBProceduresCache().getAllObjects(monitor, this).stream()
-            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.p).collect(Collectors.toList());
-        return list;
+        return getGaussDBProceduresCache().getAllObjects(monitor, this).stream()
+            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.p)
+            .collect(Collectors.toList());
     }
 
     @Association
     public List<GaussDBFunction> getGaussDBFunctions(DBRProgressMonitor monitor) throws DBException {
-        List<GaussDBFunction> list = getGaussDBFunctionsCache().getAllObjects(monitor, this).stream()
-            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.f).collect(Collectors.toList());
-        return list;
+        return getGaussDBFunctionsCache().getAllObjects(monitor, this).stream()
+            .filter(e -> e.getPropackageid() == 0 && e.getKind() == PostgreProcedureKind.f)
+            .collect(Collectors.toList());
+    }
+
+    // ---- Shared SQL builder for procedure/function lookup ----
+
+    /**
+     * Build the common SQL query for looking up procedures and functions from pg_proc.
+     * Both ProceduresCache and FunctionsCache use this to avoid code duplication.
+     */
+    static JDBCPreparedStatement buildProceduresLookupStatement(
+        @NotNull JDBCSession session,
+        @NotNull PostgreSchema owner,
+        @Nullable PostgreProcedure object,
+        @Nullable String objectName,
+        @NotNull PostgreProcedureKind procedureKind
+    ) throws SQLException {
+        PostgreServerExtension serverType = owner.getDataSource().getServerType();
+        String oidColumn = serverType.getProceduresOidColumn();
+        boolean versionAtLeast7 = session.getDataSource().isServerVersionAtLeast(7, 2);
+        JDBCPreparedStatement dbStat = session.prepareStatement(
+            "SELECT p." + oidColumn + " as poid,p.*,"
+                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
+                + " as arg_defaults,d.description\n"
+                + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
+                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
+                + (versionAtLeast7 ? " AND d.classoid='pg_proc'::regclass AND d.objsubid=0" : "")
+                + "\nWHERE p.pronamespace=? AND p.prokind=?"
+                + (object == null ? "" : " AND p." + oidColumn + "=?")
+                + (object != null || objectName == null ? "" : " AND p.proname=?")
+                + "\nORDER BY p.proname"
+        );
+        dbStat.setLong(1, owner.getObjectId());
+        dbStat.setString(2, procedureKind.name());
+        if (object != null) {
+            dbStat.setLong(3, object.getObjectId());
+        } else if (objectName != null) {
+            dbStat.setString(3, objectName);
+        }
+        return dbStat;
     }
 
     class PackageCache extends JDBCObjectCache<GaussDBSchema, GaussDBPackage> {
@@ -107,7 +172,15 @@ public class GaussDBSchema extends PostgreSchema {
         protected JDBCStatement prepareObjectsStatement(@NotNull JDBCSession session,
             @NotNull GaussDBSchema owner) throws SQLException {
             final JDBCPreparedStatement dbStat = session
-                .prepareStatement("select g.oid, g.pkgnamespace, g.pkgname as name from gs_package g where g.pkgnamespace = ?");
+                .prepareStatement(
+                    "SELECT g.oid,g.pkgnamespace,g.pkgname AS name," +
+                        "spec.valid::text AS spec_valid,body.valid::text AS body_valid," +
+                        "(body.object_oid IS NOT NULL) AS body_present " +
+                        "FROM pg_catalog.gs_package g " +
+                        "LEFT JOIN pg_catalog.pg_object spec ON spec.object_oid=g.oid AND spec.object_type='S' " +
+                        "LEFT JOIN pg_catalog.pg_object body ON body.object_oid=g.oid AND body.object_type='B' " +
+                        "WHERE g.pkgnamespace=?"
+                );
             dbStat.setLong(1, GaussDBSchema.this.getObjectId());
             return dbStat;
         }
@@ -117,6 +190,58 @@ public class GaussDBSchema extends PostgreSchema {
             @NotNull JDBCResultSet dbResult) throws SQLException, DBException {
             return new GaussDBPackage(session, owner, dbResult);
         }
+
+        @Override
+        protected boolean handleCacheReadError(@NotNull Exception error) {
+            if (GaussDBMetadataErrorHandler.isOptionalMetadataError(error)) {
+                setCache(Collections.emptyList());
+                return true;
+            }
+            return false;
+        }
+    }
+
+    class GaussDBTableCache extends TableCache {
+        @NotNull
+        @Override
+        public JDBCStatement prepareLookupStatement(
+            @NotNull JDBCSession session,
+            @NotNull PostgreTableContainer container,
+            @Nullable PostgreTableBase object,
+            @Nullable String objectName
+        ) throws SQLException {
+            boolean hasPartitionCatalog =
+                ((GaussDBDataSource) GaussDBSchema.this.getDataSource()).getServerInfo().hasRelation("pg_partition");
+            String partitionColumns = hasPartitionCatalog
+                ? "c.parttype::text AS gauss_parttype," +
+                    "(SELECT p.partstrategy::text FROM pg_catalog.pg_partition p " +
+                    "WHERE p.parentid=c.oid AND p.parttype='r' LIMIT 1) AS gauss_partstrategy," +
+                    "(SELECT array_to_string(ARRAY(SELECT a.attname FROM " +
+                    "generate_subscripts(p.partkey::smallint[],1) i " +
+                    "JOIN pg_catalog.pg_attribute a ON a.attrelid=p.parentid " +
+                    "AND a.attnum=(p.partkey::smallint[])[i] ORDER BY i), ', ') " +
+                    "FROM pg_catalog.pg_partition p WHERE p.parentid=c.oid " +
+                    "AND p.parttype='r' LIMIT 1) AS gauss_partkey"
+                : "NULL::text AS gauss_parttype,NULL::text AS gauss_partstrategy,NULL::text AS gauss_partkey";
+            String sql = "SELECT c.oid,c.*,d.description," + partitionColumns +
+                "\nFROM pg_catalog.pg_class c" +
+                "\nLEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=c.oid " +
+                "AND d.objsubid=0 AND d.classoid='pg_class'::regclass" +
+                "\nWHERE c.relnamespace=? AND c.relkind not in ('i','I','c')" +
+                (object == null && objectName == null ? "" : " AND c.relname=?");
+            JDBCPreparedStatement statement = session.prepareStatement(sql);
+            statement.setLong(1, getObjectId());
+            if (object != null || objectName != null) {
+                statement.setString(2, object != null ? object.getName() : objectName);
+            }
+            return statement;
+        }
+    }
+
+    @Override
+    protected String getTableColumnsQueryExtraParameters(PostgreTableContainer owner, PostgreTableBase forTable) {
+        GaussDBServerInfo info = ((GaussDBDataSource) getDataSource()).getServerInfo();
+        return info.hasColumn("pg_attrdef", "adgencol") ? ",ad.adgencol AS attgenerated" : "";
     }
 
     public static class ProceduresCache extends JDBCObjectLookupCache<GaussDBSchema, GaussDBProcedure> {
@@ -129,19 +254,7 @@ public class GaussDBSchema extends PostgreSchema {
         @Override
         public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull GaussDBSchema owner,
             @Nullable GaussDBProcedure object, @Nullable String objectName) throws SQLException {
-            PostgreServerExtension serverType = owner.getDataSource().getServerType();
-            String oidColumn = serverType.getProceduresOidColumn(); // Hack for Redshift SP support
-            JDBCPreparedStatement dbStat = session.prepareStatement("SELECT p." + oidColumn + " as poid,p.*,"
-                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
-                + " as arg_defaults,d.description\n" + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
-                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
-                + (session.getDataSource().isServerVersionAtLeast(7, 2) ? " AND d.objsubid = 0" : "") + // no links to columns
-                "\nWHERE p.pronamespace=?" + (object == null ? "" : " AND p." + oidColumn + "=?") + "\nORDER BY p.proname");
-            dbStat.setLong(1, owner.getObjectId());
-            if (object != null) {
-                dbStat.setLong(2, object.getObjectId());
-            }
-            return dbStat;
+            return buildProceduresLookupStatement(session, owner, object, objectName, PostgreProcedureKind.p);
         }
 
         @Override
@@ -149,7 +262,6 @@ public class GaussDBSchema extends PostgreSchema {
             @NotNull JDBCResultSet dbResult) throws SQLException, DBException {
             return new GaussDBProcedure(session.getProgressMonitor(), owner, dbResult);
         }
-
     }
 
     public static class FunctionsCache extends JDBCObjectLookupCache<GaussDBSchema, GaussDBFunction> {
@@ -162,19 +274,7 @@ public class GaussDBSchema extends PostgreSchema {
         @Override
         public JDBCStatement prepareLookupStatement(@NotNull JDBCSession session, @NotNull GaussDBSchema owner,
             @Nullable GaussDBFunction object, @Nullable String objectName) throws SQLException {
-            PostgreServerExtension serverType = owner.getDataSource().getServerType();
-            String oidColumn = serverType.getProceduresOidColumn(); // Hack for Redshift SP support
-            JDBCPreparedStatement dbStat = session.prepareStatement("SELECT p." + oidColumn + " as poid,p.*,"
-                + (session.getDataSource().isServerVersionAtLeast(8, 4) ? "pg_catalog.pg_get_expr(p.proargdefaults, 0)" : "NULL")
-                + " as arg_defaults,d.description\n" + "FROM pg_catalog." + serverType.getProceduresSystemTable() + " p\n"
-                + "LEFT OUTER JOIN pg_catalog.pg_description d ON d.objoid=p." + oidColumn
-                + (session.getDataSource().isServerVersionAtLeast(7, 2) ? " AND d.objsubid = 0" : "") + // no links to columns
-                "\nWHERE p.pronamespace=?" + (object == null ? "" : " AND p." + oidColumn + "=?") + "\nORDER BY p.proname");
-            dbStat.setLong(1, owner.getObjectId());
-            if (object != null) {
-                dbStat.setLong(2, object.getObjectId());
-            }
-            return dbStat;
+            return buildProceduresLookupStatement(session, owner, object, objectName, PostgreProcedureKind.f);
         }
 
         @Override
@@ -182,7 +282,6 @@ public class GaussDBSchema extends PostgreSchema {
             @NotNull JDBCResultSet dbResult) throws SQLException, DBException {
             return new GaussDBFunction(session.getProgressMonitor(), owner, dbResult);
         }
-
     }
 
     public class ConstraintCache extends PostgreSchema.ConstraintCache {
@@ -195,7 +294,7 @@ public class GaussDBSchema extends PostgreSchema {
             StringBuilder sql = new StringBuilder(
                 "SELECT c.oid,c.*,t.relname as tabrelname,rt.relnamespace as refnamespace,d.description" +
                     (!getDataSource().getServerType().supportsPGConstraintExpressionColumn() ? ", null as consrc_copy" :
-                        ", case when c.contype='c' then " + (isMMode(container) ? "substring" : "\"substring\"") +
+                        ", case when c.contype='c' then " + (usesUnquotedSubstringFunction(container) ? "substring" : "\"substring\"") +
                             "(pg_get_constraintdef(c.oid), 7) else null end consrc_copy") +
                     "\nFROM pg_catalog.pg_constraint c" +
                     "\nINNER JOIN pg_catalog.pg_class t ON t.oid=c.conrelid" +
@@ -224,10 +323,13 @@ public class GaussDBSchema extends PostgreSchema {
         return this.constraintCache;
     }
 
-    @NotNull
-    private boolean isMMode(@NotNull PostgreTableContainer tableContainer) {
+    /**
+     * M is an independent compatibility mode whose catalog accepts the built-in function as
+     * {@code substring}; other modes require the quoted {@code "substring"} form in this query.
+     */
+    private boolean usesUnquotedSubstringFunction(@NotNull PostgreTableContainer tableContainer) {
         GaussDBDatabase database = (GaussDBDatabase) tableContainer.getDatabase();
         String compatibilityMode = database.getDatabaseCompatibleMode();
-        return GaussDBConstants.GAUSSDB_M_COMPATIBLE_MODE.equals(compatibilityMode);
+        return GaussDBConstants.GAUSSDB_M_COMPATIBLE_MODE.equalsIgnoreCase(compatibilityMode);
     }
 }

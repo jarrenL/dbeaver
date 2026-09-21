@@ -88,6 +88,11 @@ public class PostgreDebugVariable implements DBGVariable<String> {
         return constant;
     }
 
+    @Override
+    public boolean isReadOnly() {
+        return constant;
+    }
+
     public boolean isNotnull() {
         return notnull;
     }

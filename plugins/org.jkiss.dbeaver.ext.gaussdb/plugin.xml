@@ -5,9 +5,14 @@
         <serverType id="gaussdb" name="GaussDB" class="org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB" logo="icons/gaussdb_logo.png" customURL="true" turnOffPreparedStatements="true"/>
     </extension>
 
+    <extension point="org.jkiss.dbeaver.sqlInsertMethod">
+        <method id="gaussdbInsertIgnore" class="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBInsertReplaceMethodIgnore" label="%insert.method.ignore.label" description="%insert.method.ignore.description"/>
+        <method id="gaussdbReplace" class="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBInsertReplaceMethod" label="%insert.method.replace.label" description="%insert.method.replace.description"/>
+    </extension>
+
     <extension point="org.jkiss.dbeaver.sqlDialect">
         <dialect id="gaussdb" parent="basic" class="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialect" label="GaussDB" description="GaussDB dialect." icon="icons/gaussdb_icon.png">
-            <property name="insertMethods" value="pgInsertIgnore,pgReplaceIgnore"/>
+            <property name="insertMethods" value="gaussdbInsertIgnore,gaussdbReplace"/>
             <keywords value=""/>
             <execKeywords value=""/>
             <ddlKeywords value=""/>
@@ -40,12 +45,60 @@
                     <property name="connectTimeout" value="20"/>
                     <property name="prepareThreshold" value="0"/>
                 </driver>
+                <driver
+                        id="gaussdb-jdbc-m"
+                        label="%driver.gaussdb.m.label"
+                        icon="icons/gaussdb_icon.png"
+                        iconBig="icons/gaussdb_icon_big.png"
+                        class="org.postgresql.Driver"
+                        sampleURL="jdbc:postgresql://{host}[:{port}]/[{database}]"
+                        useURL="false"
+                        defaultPort="5432"
+                        description="%driver.gaussdb.m.description"
+                        supportedConfigurationTypes="MANUAL,URL"
+                        categories="sql">
+                    <!-- The server-matching gsjdbc4.jar must be selected in Driver Manager. -->
+                    <file type="jar" path="drivers/gaussdb/gsjdbc4" optional="true" bundle="drivers.gaussdb"/>
+                    <parameter name="serverType" value="gaussdb"/>
+                    <property name="loginTimeout" value="20"/>
+                    <property name="connectTimeout" value="20"/>
+                    <property name="prepareThreshold" value="0"/>
+                    <property name="mCompatible" value="true"/>
+                    <property name="yearIsDateType" value="true"/>
+                    <property name="loadBalanceHosts" value="false"/>
+                    <property name="autoBalance" value="false"/>
+                    <property name="ApplicationName" value="DBeaver"/>
+                </driver>
+                <driver
+                        id="gaussdb-jdbc-native"
+                        label="%driver.gaussdb.native.label"
+                        icon="icons/gaussdb_icon.png"
+                        iconBig="icons/gaussdb_icon_big.png"
+                        class="com.huawei.gaussdb.jdbc.Driver"
+                        sampleURL="jdbc:gaussdb://{host}[:{port}]/[{database}]"
+                        useURL="false"
+                        defaultPort="8000"
+                        description="%driver.gaussdb.native.description"
+                        supportedConfigurationTypes="MANUAL,URL"
+                        categories="sql">
+                    <!-- The server-matching gaussdbjdbc.jar must be selected in Driver Manager. -->
+                    <file type="jar" path="drivers/gaussdb/native" optional="true" bundle="drivers.gaussdb"/>
+                    <parameter name="serverType" value="gaussdb"/>
+                    <property name="loginTimeout" value="20"/>
+                    <property name="connectTimeout" value="20"/>
+                    <property name="prepareThreshold" value="0"/>
+                    <property name="binaryTransfer" value="false"/>
+                    <property name="loadBalanceHosts" value="false"/>
+                    <property name="autoBalance" value="false"/>
+                    <property name="ApplicationName" value="DBeaver"/>
+                </driver>
             </drivers>
 
             <treeInjection path="postgresql/database/schema/procedure" remove="true"/>
             <treeInjection path="postgresql/database/schema" after="index">
                 <folder type="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure" label="%tree.procedures.node.name"
-                        icon="#procedures" description="%tree.procedures.node.tip">
+                        icon="#procedures" description="%tree.procedures.node.tip"
+                        visibleIf="connected &amp;&amp; object.database.isStoredProcedureSupported()">
                     <items label="%tree.procedure.node.name" itemLabel="%tree.procedure.node.name" path="procedure"
                            property="gaussDBProcedures" icon="#procedure">
                         <folder label="%tree.procedure_columns.node.name" icon="#columns"
@@ -91,6 +144,17 @@
                 </folder>
             </treeInjection>
         </datasource>
+    </extension>
+
+    <extension point="org.jkiss.dbeaver.dataTypeProvider">
+        <provider
+                class="org.jkiss.dbeaver.ext.gaussdb.model.data.GaussDBValueHandlerProvider"
+                id="GaussDBValueHandlerProvider"
+                label="GaussDB value handlers"
+                description="GaussDB vector, HLL, and PostgreSQL-compatible value handlers">
+            <datasource id="gaussdb"/>
+            <type name="*"/>
+        </provider>
     </extension>
 
     <extension point="org.jkiss.dbeaver.objectManager">

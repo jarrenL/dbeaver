@@ -169,7 +169,11 @@ public class PostgreDataTypeCache extends JDBCObjectCache<PostgreSchema, Postgre
 
     static String getBaseTypeNameClause(@NotNull PostgreDataSource dataSource) {
         if (dataSource.isServerVersionAtLeast(7, 3)) {
-            return "format_type(nullif(t.typbasetype, 0), t.typtypmod) as base_type_name";
+            // Keep the NULL value typed as oid. Some PostgreSQL-compatible servers overload NULLIF
+            // in a way that resolves the expression as a vendor-specific type and then fails in
+            // format_type (GaussDB M compatibility mode is one example).
+            return "format_type(CASE WHEN t.typbasetype = 0 THEN NULL::oid ELSE t.typbasetype END, " +
+                "t.typtypmod) as base_type_name";
         } else {
             return "NULL as base_type_name";
         }

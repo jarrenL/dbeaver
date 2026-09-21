@@ -1127,6 +1127,14 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema>
             }
         }
 
+        valueType = database.getDataSource().getServerType().resolveDataTypeValueType(
+            name,
+            typeId,
+            typeCategory,
+            typeLength,
+            valueType
+        );
+
         return new PostgreDataType(
             session,
             dataTypeSchema,

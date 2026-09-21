@@ -189,7 +189,8 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
         if (breakpoints != null) {
             for (IBreakpoint bp : breakpoints) {
                 DBGBreakpointDescriptor descriptor = describeBreakpoint(bp);
-                if (descriptor != null) {
+                if (descriptor != null && bp.isEnabled() &&
+                    DebugPlugin.getDefault().getBreakpointManager().isEnabled()) {
                     try {
                         session.addBreakpoint(dbm, descriptor);
                     } catch (DBGException e) {
@@ -302,6 +303,14 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public void breakpointAdded(IBreakpoint breakpoint) {
+        try {
+            if (!breakpoint.isEnabled() || !DebugPlugin.getDefault().getBreakpointManager().isEnabled()) {
+                return;
+            }
+        } catch (CoreException e) {
+            log.error("Unable to read breakpoint state", e);
+            return;
+        }
         if (!terminated) {
             DBGBreakpointDescriptor descriptor = describeBreakpoint(breakpoint);
             if (descriptor == null) {
@@ -343,12 +352,38 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public void breakpointChanged(IBreakpoint breakpoint, IMarkerDelta delta) {
-        if (supportsBreakpoint(breakpoint)) {
+        if (!terminated && supportsBreakpoint(breakpoint)) {
             try {
                 if (breakpoint.isEnabled() && DebugPlugin.getDefault().getBreakpointManager().isEnabled()) {
-                    breakpointAdded(breakpoint);
+                    DBGBreakpointDescriptor descriptor = describeBreakpoint(breakpoint);
+                    if (descriptor != null) {
+                        RuntimeUtils.runTask(
+                            monitor -> {
+                                try {
+                                    session.enableBreakpoint(monitor, descriptor);
+                                } catch (DBGException e) {
+                                    throw new InvocationTargetException(e);
+                                }
+                            },
+                            "Enable session breakpoint",
+                            BREAKPOINT_ACTION_TIMEOUT
+                        );
+                    }
                 } else {
-                    breakpointRemoved(breakpoint, null);
+                    DBGBreakpointDescriptor descriptor = describeBreakpoint(breakpoint);
+                    if (descriptor != null) {
+                        RuntimeUtils.runTask(
+                            monitor -> {
+                                try {
+                                    session.disableBreakpoint(monitor, descriptor);
+                                } catch (DBGException e) {
+                                    throw new InvocationTargetException(e);
+                                }
+                            },
+                            "Disable session breakpoint",
+                            BREAKPOINT_ACTION_TIMEOUT
+                        );
+                    }
                 }
             } catch (CoreException e) {
                 // do nothing
@@ -360,11 +395,7 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
     public void breakpointManagerEnablementChanged(boolean enabled) {
         IBreakpoint[] breakpoints = DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(DBGConstants.BREAKPOINT_ID_DATABASE_LINE);
         for (IBreakpoint breakpoint : breakpoints) {
-            if (enabled) {
-                breakpointAdded(breakpoint);
-            } else {
-                breakpointRemoved(breakpoint, null);
-            }
+            breakpointChanged(breakpoint, null);
         }
     }
 

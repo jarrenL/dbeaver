@@ -30,7 +30,10 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBServerInfo;
+import org.jkiss.dbeaver.ext.gaussdb.ui.internal.GaussDBMessages;
 import org.jkiss.dbeaver.ext.postgresql.PostgreMessages;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreCharset;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
@@ -57,6 +60,7 @@ public class GaussDBCreateDatabaseDialog extends BaseDialog {
     private PostgreCharset encoding;
     private PostgreTablespace tablespace;
     private String compatibleMode;
+    private Combo deploymentType;
     private Combo dbCompatibleMode;
     private Combo userCombo;
     private Combo encodingCombo;
@@ -96,14 +100,33 @@ public class GaussDBCreateDatabaseDialog extends BaseDialog {
         supportsEncodings(supportsEncodings, groupDefinition);
         supportsTablespaces(supportsTablespaces, groupDefinition);
 
-        dbCompatibleMode = UIUtils.createLabelCombo(groupDefinition, "DataBase Compatibility Mode",
+        deploymentType = UIUtils.createLabelCombo(groupDefinition, GaussDBMessages.dialog_create_database_deployment_type,
             SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY);
+        deploymentType.setItems(new String[] {
+            GaussDBMessages.dialog_create_database_deployment_centralized,
+            GaussDBMessages.dialog_create_database_deployment_distributed
+        });
+        selectDefaultDeployment();
+        deploymentType.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                updateCompatibleMode();
+            }
+        });
+
+        dbCompatibleMode = UIUtils.createLabelCombo(groupDefinition, GaussDBMessages.dialog_create_database_compatibility_mode,
+            SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY);
+        for (DBCompatibilityEnum mode : DBCompatibilityEnum.values()) {
+            dbCompatibleMode.add(mode.getText());
+        }
+        dbCompatibleMode.select(DBCompatibilityEnum.POSTGRES.ordinal());
         dbCompatibleMode.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                compatibleMode = dbCompatibleMode.getText();
+                updateCompatibleMode();
             }
         });
+        updateCompatibleMode();
 
         scheduleLoadUsersJob(supportsRoles, supportsEncodings, supportsTablespaces);
 
@@ -221,6 +244,29 @@ public class GaussDBCreateDatabaseDialog extends BaseDialog {
 
     public String getCompatibleMode() {
         return this.compatibleMode;
+    }
+
+    private void selectDefaultDeployment() {
+        GaussDBServerInfo.Deployment deployment = dataSource.getServerInfo().getDeployment();
+        if (deployment == GaussDBServerInfo.Deployment.CENTRALIZED) {
+            deploymentType.select(0);
+            deploymentType.setEnabled(false);
+        } else {
+            deploymentType.select(1);
+            if (deployment == GaussDBServerInfo.Deployment.DISTRIBUTED) {
+                deploymentType.setEnabled(false);
+            }
+        }
+    }
+
+    private void updateCompatibleMode() {
+        int modeIndex = dbCompatibleMode.getSelectionIndex();
+        if (modeIndex < 0) {
+            compatibleMode = null;
+            return;
+        }
+        DBCompatibilityEnum mode = DBCompatibilityEnum.values()[modeIndex];
+        compatibleMode = deploymentType.getSelectionIndex() == 0 ? mode.getcValue() : mode.getdValue();
     }
 
     public String getName() {

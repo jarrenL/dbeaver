@@ -21,6 +21,8 @@ import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
 import org.jkiss.dbeaver.model.DBIcon;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
+import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.edit.DBEObjectConfigurator;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -48,10 +50,13 @@ public class GaussDBPackageConfigurator implements DBEObjectConfigurator<GaussDB
                 }
                 String packName = editPage.getEntityName();
                 gaussdbPackage.setName(packName);
+                String qualifiedName = DBUtils.getObjectFullName(gaussdbPackage, DBPEvaluationContext.DDL);
                 gaussdbPackage.setObjectDefinitionText(
-                    "CREATE OR REPLACE PACKAGE " + packName + "\n" + "AS\n" + "-- Package header\n" + "END " + packName + ";");
+                    "CREATE OR REPLACE PACKAGE " + qualifiedName + "\n" + "AS\n" +
+                        "-- Package header\n" + "END " + packName + ";");
                 gaussdbPackage.setExtendedDefinitionText(
-                    "CREATE OR REPLACE PACKAGE BODY " + packName + "\n" + "AS\n" + "-- Package body\n" + "END " + packName + ";");
+                    "CREATE OR REPLACE PACKAGE BODY " + qualifiedName + "\n" + "AS\n" +
+                        "-- Package body\n" + "END " + packName + ";");
                 return gaussdbPackage;
             }
         }.execute();

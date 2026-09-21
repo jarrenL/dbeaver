@@ -38,13 +38,19 @@ public class PostgreDebugObjectAdapterFactory implements IAdapterFactory {
                 adaptableObject = editorPart.getEditorInput();
             }
             if (adaptableObject instanceof PostgreSourceViewEditor viewEditor && viewEditor.getSourceObject() instanceof PostgreProcedure) {
-                return adapterType.cast(DEBUG_OBJECT);
+                PostgreProcedure procedure = (PostgreProcedure) viewEditor.getSourceObject();
+                return "postgresql".equals(procedure.getDataSource().getContainer().getDriver().getProviderId())
+                    ? adapterType.cast(DEBUG_OBJECT) : null;
             }
             if (adaptableObject instanceof IDatabaseEditorInput dei && dei.getDatabaseObject() instanceof PostgreProcedure) {
-                return adapterType.cast(DEBUG_OBJECT);
+                PostgreProcedure procedure = (PostgreProcedure) dei.getDatabaseObject();
+                return "postgresql".equals(procedure.getDataSource().getContainer().getDriver().getProviderId())
+                    ? adapterType.cast(DEBUG_OBJECT) : null;
             }
             if (adaptableObject instanceof DBNDatabaseNode databaseNode && databaseNode.getObject() instanceof PostgreProcedure) {
-                return adapterType.cast(DEBUG_OBJECT);
+                PostgreProcedure procedure = (PostgreProcedure) databaseNode.getObject();
+                return "postgresql".equals(procedure.getDataSource().getContainer().getDriver().getProviderId())
+                    ? adapterType.cast(DEBUG_OBJECT) : null;
             }
         }
         return null;

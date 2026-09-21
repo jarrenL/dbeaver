@@ -35,6 +35,14 @@ public interface DBGSession {
 
     void removeBreakpoint(DBRProgressMonitor monitor, DBGBreakpointDescriptor descriptor) throws DBGException;
 
+    default void enableBreakpoint(DBRProgressMonitor monitor, DBGBreakpointDescriptor descriptor) throws DBGException {
+        addBreakpoint(monitor, descriptor);
+    }
+
+    default void disableBreakpoint(DBRProgressMonitor monitor, DBGBreakpointDescriptor descriptor) throws DBGException {
+        removeBreakpoint(monitor, descriptor);
+    }
+
     boolean canStepInto();
 
     boolean canStepOver();
@@ -62,5 +70,13 @@ public interface DBGSession {
     String getSource(DBGStackFrame stack) throws DBGException;
 
     void closeSession(DBRProgressMonitor monitor) throws DBGException;
+
+    default boolean isTransactionCompletionPending() {
+        return false;
+    }
+
+    default void completeTransaction(DBRProgressMonitor monitor, DBGTransactionAction action) throws DBGException {
+        throw new DBGException("Debug session does not support transaction completion");
+    }
 
 }

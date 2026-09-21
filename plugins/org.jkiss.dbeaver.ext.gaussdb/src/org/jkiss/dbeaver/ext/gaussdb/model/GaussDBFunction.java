@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,19 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import java.sql.ResultSet;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 
+/**
+ * GaussDB function — extends GaussDBProcedure since GaussDB treats functions
+ * and procedures through the same pg_proc table, differing only by prokind.
+ * This class exists primarily for type identification in the object tree
+ * and editor registration. All DDL logic is inherited from GaussDBProcedure.
+ */
 public class GaussDBFunction extends GaussDBProcedure {
 
     public GaussDBFunction(DBRProgressMonitor monitor, PostgreSchema schema, ResultSet dbResult) {
@@ -30,5 +40,12 @@ public class GaussDBFunction extends GaussDBProcedure {
 
     public GaussDBFunction(PostgreSchema schema) {
         super(schema);
+        setKind(PostgreProcedureKind.f);
+    }
+
+    @Override
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+        GaussDBSchema schema = (GaussDBSchema) getContainer();
+        return schema.getGaussDBFunctionsCache().refreshObject(monitor, schema, this);
     }
 }

@@ -103,8 +103,9 @@ public class PostgreCopyLoader implements DBSDataBulkLoader, DBSDataBulkLoader.B
             Connection pgConnection = ((JDBCSession) session).getOriginal();
             ClassLoader driverClassLoader = pgConnection.getClass().getClassLoader();
 
-            Class<?> baseConnectionClass = Class.forName("org.postgresql.core.BaseConnection", true, driverClassLoader);
-            Class<?> copyManagerClass = Class.forName("org.postgresql.copy.CopyManager", true, driverClassLoader);
+            String driverPackage = dataSource.getServerType().getJDBCDriverPackage();
+            Class<?> baseConnectionClass = Class.forName(driverPackage + ".core.BaseConnection", true, driverClassLoader);
+            Class<?> copyManagerClass = Class.forName(driverPackage + ".copy.CopyManager", true, driverClassLoader);
 
             // Get method copyIn(final String sql, Reader from, int bufferSize)
             copyInMethod = copyManagerClass.getMethod("copyIn", String.class, Reader.class, Integer.TYPE);

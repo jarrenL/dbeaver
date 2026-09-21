@@ -34,6 +34,17 @@ public class PostgreServerOutputReader extends AsyncServerOutputReader implement
     private static final Character SERVER_ERROR_MESSAGE_SEVERITY_LOCALIZED = 'S';
     private static final Character SERVER_ERROR_MESSAGE_SEVERITY = 'V';
 
+    @Nullable
+    private final PostgreServerExtension serverExtension;
+
+    public PostgreServerOutputReader() {
+        this.serverExtension = null;
+    }
+
+    public PostgreServerOutputReader(@NotNull PostgreServerExtension serverExtension) {
+        this.serverExtension = serverExtension;
+    }
+
     @NotNull
     @Override
     public DBCOutputSeverity[] getSupportedSeverities(@NotNull DBCExecutionContext context) {
@@ -51,8 +62,11 @@ public class PostgreServerOutputReader extends AsyncServerOutputReader implement
      * @see <a href="https://www.postgresql.org/docs/current/protocol-error-fields.html">55.8. Error and Notice Message Fields</a>
      */
     @Nullable
-    private static DBCOutputSeverity getSeverity(@NotNull Throwable warning) {
-        if (!PSQL_WARNING_CLASS.equals(warning.getClass().getName())) {
+    private DBCOutputSeverity getSeverity(@NotNull Throwable warning) {
+        boolean isPSQLWarning = serverExtension == null
+            ? PSQL_WARNING_CLASS.equals(warning.getClass().getName())
+            : serverExtension.isPSQLWarning(warning);
+        if (!isPSQLWarning) {
             return null;
         }
         try {

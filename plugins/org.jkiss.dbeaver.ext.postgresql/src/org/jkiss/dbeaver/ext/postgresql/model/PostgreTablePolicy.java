@@ -23,6 +23,7 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.meta.IPropertyValueListProvider;
+import org.jkiss.dbeaver.model.meta.IPropertyValueValidator;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
@@ -134,7 +135,7 @@ public class PostgreTablePolicy implements DBSObject, DBPNamedObject2, DBPSaveab
     }
 
     @NotNull
-    @Property(order = 4, viewable = true, editable = true)
+    @Property(order = 4, viewable = true, editable = true, listProvider = PolicyEventListProvider.class)
     public PolicyEvent getEvent() {
         return event;
     }
@@ -154,7 +155,7 @@ public class PostgreTablePolicy implements DBSObject, DBPNamedObject2, DBPSaveab
     }
 
     @NotNull
-    @Property(order = 6, viewable = true, editable = true, updatable = true)
+    @Property(order = 6, viewable = true, editable = true, updatable = true, visibleIf = PolicyCheckValidator.class)
     public String getCheck() {
         return check;
     }
@@ -205,7 +206,7 @@ public class PostgreTablePolicy implements DBSObject, DBPNamedObject2, DBPSaveab
             sql.append("\n USING (").append(using).append(")");
         }
 
-        if (CommonUtils.isNotEmpty(check)) {
+        if (table.getDataSource().getServerType().supportsPolicyWithCheck() && CommonUtils.isNotEmpty(check)) {
             sql.append("\n WITH CHECK (").append(check).append(")");
         }
 
@@ -248,6 +249,29 @@ public class PostgreTablePolicy implements DBSObject, DBPNamedObject2, DBPSaveab
         @Override
         public String getName() {
             return name;
+        }
+    }
+
+    public static class PolicyEventListProvider implements IPropertyValueListProvider<PostgreTablePolicy> {
+        @Override
+        public boolean allowCustomValue() {
+            return false;
+        }
+
+        @NotNull
+        @Override
+        public Object[] getPossibleValues(@Nullable PostgreTablePolicy object) {
+            if (object != null && !object.table.getDataSource().getServerType().supportsPolicyInsertEvent()) {
+                return new PolicyEvent[]{PolicyEvent.ALL, PolicyEvent.SELECT, PolicyEvent.UPDATE, PolicyEvent.DELETE};
+            }
+            return PolicyEvent.values();
+        }
+    }
+
+    public static class PolicyCheckValidator implements IPropertyValueValidator<PostgreTablePolicy, Object> {
+        @Override
+        public boolean isValidValue(@NotNull PostgreTablePolicy object, @Nullable Object value) {
+            return object.table.getDataSource().getServerType().supportsPolicyWithCheck();
         }
     }
 

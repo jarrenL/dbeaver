@@ -1,0 +1,17 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: %Bundle-Name
+Bundle-SymbolicName: org.jkiss.dbeaver.ext.gaussdb.debug.ui;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Vendor: %Bundle-Vendor
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Bundle-ActivationPolicy: lazy
+Require-Bundle: org.jkiss.dbeaver.debug.core,
+ org.jkiss.dbeaver.debug.ui,
+ org.jkiss.dbeaver.ext.gaussdb,
+ org.jkiss.dbeaver.ext.gaussdb.ui,
+ org.jkiss.dbeaver.ext.gaussdb.debug.core,
+ org.jkiss.dbeaver.ext.postgresql.ui,
+ org.eclipse.ui
+Automatic-Module-Name: org.jkiss.dbeaver.ext.gaussdb.debug.ui
+Bundle-Localization: OSGI-INF/l10n/bundle

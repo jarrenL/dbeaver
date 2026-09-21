@@ -37,7 +37,7 @@ public class GaussDBFunctionConfigurator implements DBEObjectConfigurator<GaussD
 
     protected static final Log log = Log.getLog(GaussDBFunctionConfigurator.class);
 
-    public static boolean isFunction = true;
+    private static final boolean isFunction = true;
 
     @NotNull
     @Override
@@ -58,11 +58,6 @@ public class GaussDBFunctionConfigurator implements DBEObjectConfigurator<GaussD
                 if (language != null) {
                     newProcedure.setLanguage(language);
                 }
-                String function = "CREATE [OR REPLACE] FUNCTION " + newProcedure.getFullQualifiedSignature()
-                    + " ([ parameter [IN|OUT|INOUT] datatype[,parameter [IN|OUT|INOUT] datatype] ])\r\n" + " RETURNS "
-                    + newProcedure.getReturnType().getDefaultValue() + "\r\n" + " LANGUAGE " + language.getName() + "\r\n" + "\r\n"
-                    + "AS\r\n" + "\r\n" + " '/*iso file path and name*/',$$/*function name*/$$";
-                newProcedure.setObjectDefinitionText(function);
                 return newProcedure;
             }
         }.execute();

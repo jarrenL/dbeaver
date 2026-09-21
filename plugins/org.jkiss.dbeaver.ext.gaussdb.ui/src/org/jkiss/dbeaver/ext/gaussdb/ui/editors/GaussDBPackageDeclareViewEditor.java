@@ -17,13 +17,26 @@
 
 package org.jkiss.dbeaver.ext.gaussdb.ui.editors;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.gaussdb.GaussDBConstants;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreScriptObject;
 import org.jkiss.dbeaver.ext.postgresql.ui.editors.PostgreSourceViewEditor;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 
 public class GaussDBPackageDeclareViewEditor extends PostgreSourceViewEditor {
+
+    @Override
+    protected String getCompileCommandId() {
+        return GaussDBConstants.CMD_COMPILE_PACKAGE_SPECIFICATION;
+    }
+
+    @Override
+    public void runPostSaveCommands(@NotNull java.util.Map<String, Object> context) {
+        // CREATE OR REPLACE already compiles the changed source. Keep ALTER PACKAGE
+        // as an explicit user action instead of compiling the same source twice.
+    }
 
     @Override
     protected boolean isReadOnly() {
@@ -35,7 +48,7 @@ public class GaussDBPackageDeclareViewEditor extends PostgreSourceViewEditor {
         PostgreScriptObject object = getSourceObject();
         if (object instanceof GaussDBPackage) {
             GaussDBPackage sourceObject = (GaussDBPackage) object;
-            return sourceObject.getObjectDefinitionText();
+            return sourceObject.getDeclarationText(monitor);
         }
         return "";
     }

@@ -26,6 +26,15 @@ public class GaussDBMessages extends NLS {
     public static String dialog_struct_create_procedure_title;
     public static String dialog_struct_create_function_title;
     public static String dialog_struct_create_procedure_container;
+    public static String dialog_struct_create_function_language;
+    public static String dialog_struct_create_function_return_type;
+    public static String dialog_struct_create_function_language_required;
+    public static String dialog_struct_create_function_return_type_required;
+
+    public static String dialog_create_database_deployment_type;
+    public static String dialog_create_database_deployment_centralized;
+    public static String dialog_create_database_deployment_distributed;
+    public static String dialog_create_database_compatibility_mode;
 
     public static String tree_procedures_node_name;
     public static String tree_functions_node_name;

@@ -16,7 +16,10 @@
  */
 package org.jkiss.dbeaver.ext.postgresql.tasks;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
@@ -29,6 +32,11 @@ import org.jkiss.utils.IOUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Comparator;
 import java.util.List;
 
 public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeToolSettings<BASE_OBJECT>, BASE_OBJECT extends DBSObject, PROCESS_ARG>
@@ -36,6 +44,63 @@ public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeTo
 
     public boolean isUseStreamTransfer(String targetFile) {
         return !IOUtils.isLocalFile(targetFile);
+    }
+
+    protected boolean requiresLocalTransferFile(SETTINGS settings, String file) {
+        if (!isUseStreamTransfer(file)) {
+            return false;
+        }
+        DBPDataSourceContainer container = settings.getDataSourceContainer();
+        return container.getDataSource() instanceof PostgreDataSource dataSource &&
+            !dataSource.getServerType().supportsNativeToolStreaming();
+    }
+
+    protected static void copyTransferPath(@NotNull Path source, @NotNull Path target) throws IOException {
+        if (!Files.isDirectory(source)) {
+            Path parent = target.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        Files.createDirectories(target);
+        try (var paths = Files.walk(source)) {
+            try {
+                paths.forEach(path -> {
+                    try {
+                        Path relative = source.relativize(path);
+                        Path destination = target.resolve(relative.toString());
+                        if (Files.isDirectory(path)) {
+                            Files.createDirectories(destination);
+                        } else {
+                            Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
+            } catch (UncheckedIOException e) {
+                throw e.getCause();
+            }
+        }
+    }
+
+    protected static void deleteLocalTransferPath(@Nullable Path path) {
+        if (path == null || !Files.exists(path)) {
+            return;
+        }
+        try (var paths = Files.walk(path)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(candidate -> {
+                try {
+                    Files.deleteIfExists(candidate);
+                } catch (IOException e) {
+                    // Temporary transfer files are also cleaned by the operating system.
+                }
+            });
+        } catch (IOException e) {
+            // Temporary transfer files are also cleaned by the operating system.
+        }
     }
 
     @Override
@@ -47,6 +112,10 @@ public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeTo
         if (!CommonUtils.isEmpty(userPassword)) {
             process.environment().put("PGPASSWORD", userPassword);
         }
+        DBPDataSourceContainer container = settings.getDataSourceContainer();
+        if (container.getDataSource() instanceof PostgreDataSource dataSource && settings.getClientHome() != null) {
+            dataSource.getServerType().configureNativeToolEnvironment(settings.getClientHome(), process.environment());
+        }
     }
 
     @Override
@@ -54,13 +123,18 @@ public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeTo
         boolean isRestoreByPsql = this instanceof PostgreDatabaseRestoreHandler
             && settings instanceof PostgreBackupRestoreSettings postgreBackupRestoreSettings
             && postgreBackupRestoreSettings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.PLAIN;
-        File dumpBinary = RuntimeUtils.getNativeClientBinary(
-            settings.getClientHome(), PostgreConstants.BIN_FOLDER,
-            this instanceof PostgreDatabaseBackupHandler ? "pg_dump" :
+        DBPDataSourceContainer dataSourceContainer = settings.getDataSourceContainer();
+        String toolName = this instanceof PostgreDatabaseBackupHandler ? "pg_dump" :
                 isRestoreByPsql ? "psql" :
                     this instanceof PostgreDatabaseRestoreHandler ? "pg_restore" :
                         this instanceof PostgreDatabaseBackupAllHandler ? "pg_dumpall" :
-                            "psql"
+                            "psql";
+        if (dataSourceContainer.getDataSource() instanceof PostgreDataSource dataSource) {
+            toolName = dataSource.getServerType().getNativeToolName(toolName);
+        }
+        File dumpBinary = RuntimeUtils.getNativeClientBinary(
+            settings.getClientHome(), PostgreConstants.BIN_FOLDER,
+            toolName
         ); //$NON-NLS-1$
         String dumpPath = dumpBinary.getAbsolutePath();
         cmd.add(dumpPath);
@@ -68,7 +142,6 @@ public abstract class PostgreNativeToolHandler<SETTINGS extends AbstractNativeTo
         if (isVerbose() && !isRestoreByPsql) {
             cmd.add("--verbose");
         }
-        DBPDataSourceContainer dataSourceContainer = settings.getDataSourceContainer();
         NativeToolUtils.addHostAndPortParamsToCmd(dataSourceContainer, cmd);
         String toolUserName = settings.getToolUserName();
         if (CommonUtils.isEmpty(toolUserName)) {

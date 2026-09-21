@@ -626,7 +626,7 @@ public class PostgreDataSource extends JDBCDataSource implements DBSInstanceCont
         if (adapter == DBSStructureAssistant.class) {
             return adapter.cast(new PostgreStructureAssistant(this));
         } else if (adapter == DBCServerOutputReader.class) {
-            return adapter.cast(new PostgreServerOutputReader());
+            return adapter.cast(new PostgreServerOutputReader(getServerType()));
         } else if (adapter == DBAServerSessionManager.class) {
             return adapter.cast(new PostgreSessionManager(this));
         } else if (adapter == DBCQueryPlanner.class) {
@@ -879,7 +879,7 @@ public class PostgreDataSource extends JDBCDataSource implements DBSInstanceCont
     @Override
     public ErrorPosition[] getErrorPosition(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext context, @NotNull String query, @NotNull Throwable error) {
         Throwable rootCause = CommonUtils.getRootCause(error);
-        if (PostgreConstants.PSQL_EXCEPTION_CLASS_NAME.equals(rootCause.getClass().getName())) {
+        if (getServerType().isPSQLException(rootCause)) {
             try {
                 Object serverErrorMessage = BeanUtils.readObjectProperty(rootCause, "serverErrorMessage");
                 if (serverErrorMessage != null) {

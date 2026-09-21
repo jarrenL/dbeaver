@@ -112,7 +112,7 @@ public class PostgreTablePolicyManager
             sql.append("\n\tUSING (").append(policy.getUsing()).append(")");
         }
 
-        if (command.hasProperty("check")) {
+        if (policy.getParentObject().getDataSource().getServerType().supportsPolicyWithCheck() && command.hasProperty("check")) {
             sql.append("\n\tWITH CHECK (").append(policy.getCheck()).append(")");
         }
 

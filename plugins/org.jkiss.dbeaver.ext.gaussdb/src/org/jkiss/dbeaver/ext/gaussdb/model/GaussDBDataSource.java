@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2024 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,27 +18,53 @@
 package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
+import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.ResultSet;
 
 public class GaussDBDataSource extends PostgreDataSource {
+    private static final Log log = Log.getLog(GaussDBDataSource.class);
+
+    /**
+     * GaussDB's catalog is derived from PostgreSQL but its product version is not a PostgreSQL version.
+     * Use the oldest catalog level required by this plugin and never opt into newer PostgreSQL catalog SQL
+     * (notably the PostgreSQL 10 partition columns, which GaussDB does not expose in pg_class).
+     */
+    private static final int POSTGRESQL_CATALOG_COMPATIBILITY_MAJOR = 9;
+    private static final int POSTGRESQL_CATALOG_COMPATIBILITY_MINOR = 2;
 
     private PostgreServerExtension serverExtension;
-    
+    private volatile GaussDBServerInfo serverInfo;
+
     public GaussDBDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException {
         super(monitor, container, new GaussDBDialect());
     }
 
     @Override
-    public void initialize(@NotNull DBRProgressMonitor monitor) throws DBException {
-        super.initialize(monitor);
+    protected void initializeRemoteInstance(@NotNull DBRProgressMonitor monitor) throws DBException {
+        super.initializeRemoteInstance(monitor);
+        try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read GaussDB server information")) {
+            session.enableLogging(false);
+            serverInfo = GaussDBServerInfo.read(session);
+        } catch (Exception e) {
+            log.debug("Error reading GaussDB server information", e);
+            serverInfo = GaussDBServerInfo.unknown();
+        }
+    }
+
+    @NotNull
+    public GaussDBServerInfo getServerInfo() {
+        GaussDBServerInfo info = serverInfo;
+        return info == null ? GaussDBServerInfo.unknown() : info;
     }
 
     @NotNull
@@ -69,10 +95,10 @@ public class GaussDBDataSource extends PostgreDataSource {
 
     @Override
     public boolean isServerVersionAtLeast(int major, int minor) {
-        // Reserved: Modify the logic for determining the PG version.
-        return super.isServerVersionAtLeast(major, minor);
+        return major < POSTGRESQL_CATALOG_COMPATIBILITY_MAJOR ||
+            major == POSTGRESQL_CATALOG_COMPATIBILITY_MAJOR && minor <= POSTGRESQL_CATALOG_COMPATIBILITY_MINOR;
     }
-    
+
     @Override
     public PostgreServerExtension getServerType() {
         if (serverExtension == null) {
