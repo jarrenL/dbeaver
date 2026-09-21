@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GaussDBDebugProtocolTest {
     @Test
-    void markerAdapterChecksActualLanguageIncludingMMode() throws Exception {
+    void markerAdapterRejectsMAndChecksOracleRoutineLanguage() throws Exception {
         var routine = org.mockito.Mockito.mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure.class,
             org.mockito.Mockito.RETURNS_DEEP_STUBS);
         org.mockito.Mockito.when(routine.getDataSource().getContainer().getDriver().getProviderId()).thenReturn("gaussdb");
@@ -35,7 +35,13 @@ class GaussDBDebugProtocolTest {
         org.mockito.Mockito.when(language.getName()).thenReturn("sql");
         assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
         org.mockito.Mockito.when(language.getName()).thenReturn("plpgsql");
+        assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(routine.getDatabase().getCompatibility())
+            .thenReturn(org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum.ORACLE);
         assertNotNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(language.getName()).thenReturn("sql");
+        assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(language.getName()).thenReturn("plpgsql");
         org.mockito.Mockito.when(routine.getDatabase().getCompatibility())
             .thenReturn(org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum.POSTGRES);
         assertNotNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));

@@ -1,5 +1,7 @@
 # DBeaver GaussDB 适配说明
 
+> 2026-09-21 工行需求澄清：O（Oracle）模式承载 PL/SQL 调试及 Package，M 模式只要求基础功能。当前 26.1.5 分支范围以 [范围核对报告](../../ICBC_REQUIREMENTS_SCOPE_20260921.md) 为准；下文保留历史适配记录。
+
 > 跨 schema 调试及竞态的后续实测、修复和仍未闭环的 PostgreSQL 边界见
 > [GAUSSDB_CROSS_SCHEMA_RACE_ACCEPTANCE_20260909.md](GAUSSDB_CROSS_SCHEMA_RACE_ACCEPTANCE_20260909.md)。
 

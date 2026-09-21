@@ -31,6 +31,8 @@ public class DBCompatibilityEnumTest {
         Assertions.assertEquals("TD", DBCompatibilityEnum.TERADATA.getdValue());
         Assertions.assertEquals("Oracle", DBCompatibilityEnum.queryTextByValue("A"));
         Assertions.assertEquals("Oracle", DBCompatibilityEnum.queryTextByValue("ORA"));
+        Assertions.assertEquals("Oracle", DBCompatibilityEnum.queryTextByValue("O"));
+        Assertions.assertSame(DBCompatibilityEnum.ORACLE, DBCompatibilityEnum.fromValue("o"));
         Assertions.assertEquals("MySQL", DBCompatibilityEnum.queryTextByValue("B"));
         Assertions.assertEquals("MySQL", DBCompatibilityEnum.queryTextByValue("MYSQL"));
         Assertions.assertEquals("Teradata", DBCompatibilityEnum.queryTextByValue("C"));

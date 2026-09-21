@@ -84,6 +84,8 @@ abstract class GaussDBRoutineManager<ROUTINE extends GaussDBProcedure>
     @Override
     public boolean canCreateObject(@NotNull Object container) {
         return container instanceof GaussDBSchema schema
+            && schema.getDatabase() instanceof org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase database
+            && !database.isMCompatibility()
             && schema.getDataSource().getServerType().supportsFunctionCreate();
     }
 
@@ -138,6 +140,10 @@ abstract class GaussDBRoutineManager<ROUTINE extends GaussDBProcedure>
         @NotNull List<DBEPersistAction> actions,
         @NotNull ROUTINE routine
     ) throws DBException {
+        if (routine.getDatabase() instanceof org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase database
+            && database.isMCompatibility()) {
+            throw new DBException("Routine creation and replacement are not supported in M compatibility mode");
+        }
         actions.add(new SQLDatabasePersistAction("Create routine", routine.getCreateStatement(monitor), true));
     }
 

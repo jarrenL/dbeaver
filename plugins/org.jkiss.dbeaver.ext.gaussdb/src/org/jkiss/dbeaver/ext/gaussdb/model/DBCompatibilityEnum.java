@@ -85,11 +85,14 @@ public enum DBCompatibilityEnum {
     }
 
     /**
-     * Resolves either the centralized or distributed catalog representation.
+     * Resolves either catalog representation, including the Oracle compatibility O alias.
      */
     public static DBCompatibilityEnum fromValue(String value) {
         if (value == null) {
             return null;
+        }
+        if ("O".equalsIgnoreCase(value)) {
+            return ORACLE;
         }
         for (DBCompatibilityEnum compatibility : values()) {
             if (compatibility.cValue.equalsIgnoreCase(value) || compatibility.dValue.equalsIgnoreCase(value)) {

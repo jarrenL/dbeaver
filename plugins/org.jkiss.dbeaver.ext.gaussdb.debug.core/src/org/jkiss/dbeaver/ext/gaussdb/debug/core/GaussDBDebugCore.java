@@ -45,8 +45,8 @@ public final class GaussDBDebugCore {
     public static String getRoutineEligibilityError(DBRProgressMonitor monitor, GaussDBProcedure routine)
         throws DBException {
         DBCompatibilityEnum compatibility = routine.getDatabase().getCompatibility();
-        if (compatibility == null) {
-            return getRoutineEligibilityError(null, routine.isPersisted(), routine.getObjectId(), null);
+        if (compatibility == null || compatibility == DBCompatibilityEnum.M) {
+            return getRoutineEligibilityError(compatibility, routine.isPersisted(), routine.getObjectId(), null);
         }
         if (!routine.isPersisted() || routine.getObjectId() <= 0) {
             return getRoutineEligibilityError(compatibility, routine.isPersisted(), routine.getObjectId(), null);
@@ -69,9 +69,11 @@ public final class GaussDBDebugCore {
         if (compatibility == null) {
             return "The GaussDB compatibility mode is unknown; PL/SQL debugging cannot be enabled safely";
         }
-        // A compatibility label is not a server capability contract. Require a real,
-        // persisted procedural routine; session startup still validates API signatures
-        // and execution privileges before enabling the debugger, including in M mode.
+        if (compatibility == DBCompatibilityEnum.M) {
+            return "PL/SQL debugging is not supported in M compatibility mode";
+        }
+        // Supported modes still require a persisted procedural routine. Session startup
+        // independently validates debugger API signatures and execution privileges.
         if (!persisted || routineOid <= 0) {
             return "Save the routine before starting the debugger";
         }

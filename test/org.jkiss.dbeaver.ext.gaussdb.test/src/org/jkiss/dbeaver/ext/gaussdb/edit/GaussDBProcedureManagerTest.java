@@ -66,9 +66,16 @@ public class GaussDBProcedureManagerTest {
     }
 
     @Test
-    public void keepsFunctionCreationEnabledInMCompatibilityMode() {
+    public void disablesFunctionCreationInMCompatibilityMode() {
         Mockito.when(database.getDatabaseCompatibleMode()).thenReturn(GaussDBConstants.GAUSSDB_M_COMPATIBLE_MODE);
+        Mockito.when(database.isMCompatibility()).thenReturn(true);
 
+        Assertions.assertFalse(new GaussDBFunctionManager().canCreateObject(schema));
+    }
+
+    @Test
+    public void keepsFunctionCreationEnabledOutsideMCompatibilityMode() {
+        Mockito.when(database.isMCompatibility()).thenReturn(false);
         Assertions.assertTrue(new GaussDBFunctionManager().canCreateObject(schema));
     }
 }
