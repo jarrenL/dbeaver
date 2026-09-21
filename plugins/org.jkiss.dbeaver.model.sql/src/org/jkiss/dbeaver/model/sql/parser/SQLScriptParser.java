@@ -157,7 +157,8 @@ public class SQLScriptParser {
             boolean isControl = false;
             String delimiterText = null;
             try {
-                if (isPredicateEvaluationEnabled && tokenLength > 0 && !token.isWhitespace()) {
+                if (isPredicateEvaluationEnabled && tokenLength > 0 && !token.isWhitespace()
+                    && tokenType != SQLTokenType.T_COMMENT) {
                     String tokenText = document.get(tokenOffset, tokenLength);
                     predicateEvaluator.captureToken(new SQLTokenEntry(tokenText, tokenType, false));
                     newTokenCaptured = true;
@@ -219,6 +220,7 @@ public class SQLScriptParser {
                         hasBlocks = true;
                     }
                 } else if (tokenType == SQLTokenType.T_BLOCK_BEGIN) {
+                    boolean followsHeader = curBlock != null && curBlock.isHeader;
                     // Drop header block if it is followed by a regular block and
                     // that block is not preceded by the prefix e.g 'AS', because in many dialects
                     // there's no direct header block terminators
@@ -227,6 +229,12 @@ public class SQLScriptParser {
                         if (curBlock.isPredicateHeaderBlock || !ArrayUtils.containsIgnoreCase(dialect.getInnerBlockPrefixes(), lastKeyword)) {
                             curBlock = curBlock.parent;
                         }
+                    }
+                    if (!followsHeader && curBlock != null && curBlock.compound
+                        && SQLConstants.BLOCK_BEGIN.equalsIgnoreCase(document.get(tokenOffset, tokenLength))) {
+                        // The initialization section and declaration container
+                        // share a single END; nested routine headers do not.
+                        curBlock = curBlock.parent;
                     }
                     curBlock = new ScriptBlockInfo(curBlock, false);
                     curBlock.beginToken = document.get(tokenOffset, tokenLength);
@@ -288,12 +296,18 @@ public class SQLScriptParser {
                 if (isPredicateEvaluationEnabled && !token.isEOF() && newTokenCaptured) {
                     newTokenCaptured = false;
                     SQLParserActionKind actionKind = predicateEvaluator.evaluatePredicates();
-                    if (actionKind == SQLParserActionKind.BEGIN_BLOCK) {
+                    if (actionKind == SQLParserActionKind.BEGIN_BLOCK || actionKind == SQLParserActionKind.BEGIN_COMPOUND_BLOCK) {
                         // header blocks seems optional and we are in the block either way
                         while (curBlock != null && curBlock.isHeader) {
                             curBlock = curBlock.parent;
                         }
                         curBlock = new ScriptBlockInfo(curBlock, false);
+                        curBlock.compound = actionKind == SQLParserActionKind.BEGIN_COMPOUND_BLOCK;
+                        hasBlocks = true;
+                    }
+
+                    if (actionKind == SQLParserActionKind.NESTED_BLOCK_HEADER) {
+                        curBlock = new ScriptBlockInfo(curBlock, true, true);
                         hasBlocks = true;
                     }
 
@@ -1134,6 +1148,7 @@ public class SQLScriptParser {
         final ScriptBlockInfo parent;
         final String togglePattern;
         boolean isHeader; // block started by DECLARE, FUNCTION, etc
+        boolean compound;
         boolean isPredicateHeaderBlock;
         String beginToken;
 

@@ -150,6 +150,43 @@ class GaussDBDebugSessionTest {
     }
 
     @Test
+    void repeatedBreakpointNotificationsOnlyApplyStateTransitions() throws Exception {
+        validBreakpoint(0);
+        GaussDBDebugBreakpointDescriptor breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        session.addBreakpoint(monitor, breakpoint);
+        JDBCPreparedStatement enable = mock(JDBCPreparedStatement.class);
+        JDBCPreparedStatement disable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.enable_breakpoint(?)")).thenReturn(enable);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(disable);
+        // Notifications may carry a different descriptor for the same source line.
+        GaussDBDebugBreakpointDescriptor notification = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        session.enableBreakpoint(monitor, notification);
+        verifyNoInteractions(enable);
+        session.disableBreakpoint(monitor, notification);
+        session.disableBreakpoint(monitor, notification);
+        verify(disable).execute();
+        session.enableBreakpoint(monitor, notification);
+        session.enableBreakpoint(monitor, notification);
+        verify(enable).execute();
+        assertTrue(breakpoint.isEnabled());
+    }
+
+    @Test
+    void failedBreakpointTransitionRemainsRetryable() throws Exception {
+        validBreakpoint(0);
+        GaussDBDebugBreakpointDescriptor breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        session.addBreakpoint(monitor, breakpoint);
+        JDBCPreparedStatement disable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(disable);
+        when(disable.execute()).thenThrow(new SQLException("connection lost", "08006")).thenReturn(true);
+        assertThrows(DBGException.class, () -> session.disableBreakpoint(monitor, breakpoint));
+        assertTrue(breakpoint.isEnabled());
+        session.disableBreakpoint(monitor, breakpoint);
+        assertFalse(breakpoint.isEnabled());
+        verify(disable, times(2)).execute();
+    }
+
+    @Test
     void duplicateRegistrationDeletesOldServerBreakpointBeforeAdding() throws Exception {
         validBreakpoint(0);
         session.addBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(172034, 4));

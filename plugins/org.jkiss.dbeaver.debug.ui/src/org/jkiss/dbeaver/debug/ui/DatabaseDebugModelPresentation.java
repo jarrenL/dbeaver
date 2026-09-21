@@ -28,6 +28,7 @@ import org.eclipse.jface.viewers.ILabelProvider;
 import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorInput;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.model.WorkbenchLabelProvider;
@@ -45,6 +46,7 @@ import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.UITask;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.editors.entity.EntityEditor;
+import org.jkiss.dbeaver.ui.editors.sql.SQLEditorNested;
 import org.jkiss.dbeaver.ui.navigator.actions.NavigatorHandlerObjectOpen;
 
 import java.util.HashMap;
@@ -174,6 +176,34 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
             }
         }.execute();
 
+        // Eclipse positions the instruction pointer immediately after this method
+        // returns. On first open the nested editor still contains a loading
+        // placeholder, so that position is otherwise lost when source arrives.
+        // Source lookup runs off the UI thread; never wait on the display thread.
+        if (editorPart != null && Display.getCurrent() == null) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+            while (System.nanoTime() < deadline) {
+                Boolean loaded = new UITask<Boolean>() {
+                    @Override
+                    protected Boolean runTask() {
+                        SQLEditorNested<?> sourceEditor = editorPart.getAdapter(SQLEditorNested.class);
+                        // Restored editors initially expose a lazy input and no
+                        // nested source editor. Returning that input makes Eclipse
+                        // open a second editor before restoration has completed.
+                        return sourceEditor != null && sourceEditor.isDocumentLoaded();
+                    }
+                }.execute();
+                if (!Boolean.FALSE.equals(loaded)) {
+                    break;
+                }
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
         return editorPart == null ? null : editorPart.getEditorInput();
     }
 

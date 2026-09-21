@@ -599,6 +599,11 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                 addBreakpoint(monitor, requested);
                 return;
             }
+            // Marker changes can notify us more than once. The server rejects an
+            // enable request for an already enabled breakpoint.
+            if (breakpoint.isEnabled()) {
+                return;
+            }
             executeBreakpointCommand(monitor, "enable_breakpoint", breakpoint);
             breakpoint.setEnabled(true);
         } finally {
@@ -611,7 +616,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         acquireController(monitor);
         try {
             GaussDBDebugBreakpointDescriptor breakpoint = findMatchingBreakpoint(breakpoints, requireBreakpoint(descriptor));
-            if (breakpoint == null) {
+            if (breakpoint == null || !breakpoint.isEnabled()) {
                 return; // Disabled initial breakpoints have not been registered yet.
             }
             executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint);

@@ -47,6 +47,7 @@ public class GaussDBDataSource extends PostgreDataSource {
 
     public GaussDBDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException {
         super(monitor, container, new GaussDBDialect());
+        ((GaussDBDialect) getSQLDialect()).setDataSource(this);
     }
 
     @Override

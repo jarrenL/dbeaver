@@ -19,6 +19,9 @@ package org.jkiss.dbeaver.model.sql.parser;
 public enum SQLParserActionKind {
     SKIP_SUFFIX_TERM,
     BEGIN_BLOCK,
+    // A declaration container may have a final BEGIN section sharing its END.
+    BEGIN_COMPOUND_BLOCK,
+    NESTED_BLOCK_HEADER,
     CAPTURE_COMMAND,
     BLOCK_HEADER
 }

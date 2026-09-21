@@ -1,6 +1,6 @@
 # 麒麟 Linux x86_64 测试候选包（26.1.5）
 
-这是有已知问题的测试预览版，不是全部需求验收通过的正式交付。发布标记：gaussdb-kylin-2615-preview-20260921。
+这是修复后的测试预览版，不是全部需求验收通过的正式交付。新版发布标记：gaussdb-2615-preview-20260921-r2，同时提供 Linux 与 Windows x86_64 包。
 
 ## 安装
 
@@ -11,13 +11,13 @@
 5. 首次配置启用 Procedure debugger；选择 GaussDB Native，添加客户或供应商提供的版本匹配 JDBC jar，再填写真实数据库地址、端口、库名和账号。驱动因再分发许可未确认，不内置。
 6. O（Oracle）模式用于 PL/SQL/Package；M 仅验收基础连接、SQL、表和数据操作。不将 M 不支持 PL/SQL 列为缺陷。
 
-## 已知问题（不得忽略）
+## 本轮修复与验收边界
 
-- 断点重新启用曾报 invalid break point index / already enabled。
-- 首次进入跨 schema 子过程曾出现源码光标第1行而调用栈为第4行；后续断点定位正常，根因待确认。
-- SQL编辑器执行CREATE PACKAGE时存在语句拆分/末尾分号处理问题；包菜单编译正常不代表创建脚本正常。
+- 已修复断点重复启停错误，Linux GUI 重复启停及再次命中通过。
+- 已修复首次进入跨 schema 子过程源码定位竞态，Linux GUI 首次进入和调用栈导航通过。
+- 已修复 CREATE PACKAGE 拆分与分号处理；12 项解析单测及 GaussDB 507 上复杂包创建、编译、执行、删除的 Linux GUI 场景通过。
 - 新版批量删包GUI、M全部对象菜单、客户实际桌面云、两个指定金融版以及ARM64新版未完成本轮验收。
 
-详见 ICBC_2615_LINUX_GUI_ACCEPTANCE_20260921.md。本包源自已做GUI测试的干净产品副本，不包含SWTBot、测试工作区、密码、数据库服务端或gs_dump等原生工具。属于本地unsigned定制构建，不声称麒麟/Eclipse官方认证。
+修复与最新结果详见 ICBC_LINUX_FIX_PROGRESS_20260921.md 和 ICBC_COMPLEX_SYNTAX_ACCEPTANCE_20260921.md；ICBC_2615_LINUX_GUI_ACCEPTANCE_20260921.md 保留历史失败记录。本包源自已做GUI测试的干净产品副本，不包含SWTBot、测试工作区、密码、数据库服务端或gs_dump等原生工具。属于本地unsigned定制构建，不声称麒麟/Eclipse官方认证。Windows 包为同源交叉构建，尚未完成 Windows 实机 GUI 验证。
 
 源码以此发布tag固定；BUILD-MANIFEST.txt记录源码提交、产品时间戳、共享依赖和原生库来源。DBeaver及各插件许可证、JRE legal随包保留。SWT/Equinox/JRE对应源码在accompanying-sources.tar.gz；原生修改及构建方法见build-natives.sh和THIRD-PARTY-SOURCES.md。
