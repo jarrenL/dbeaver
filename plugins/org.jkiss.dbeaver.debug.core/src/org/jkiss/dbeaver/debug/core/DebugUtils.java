@@ -151,9 +151,9 @@ public class DebugUtils {
     }
 
     public static Map<String, Object> toBreakpointDescriptor(Map<String, Object> attributes) {
-        HashMap<String, Object> result = new HashMap<>();
-        result.put(IMarker.LINE_NUMBER, attributes.get(IMarker.LINE_NUMBER));
-        return result;
+        // Provider descriptors may carry a routine OID and other source identity.
+        // Keeping only LINE_NUMBER silently retargets or drops such breakpoints.
+        return new HashMap<>(attributes);
     }
     
     public static DBSObject findDatabaseObject(DBGController controller, Object identifier, DBRProgressMonitor monitor) throws DBException {

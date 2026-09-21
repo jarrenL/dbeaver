@@ -17,6 +17,8 @@
 package org.jkiss.dbeaver.debug.ui.internal;
 
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.debug.core.DebugEvent;
 import org.eclipse.debug.core.IDebugEventSetListener;
 import org.eclipse.debug.core.model.IDebugElement;
@@ -26,18 +28,22 @@ import org.eclipse.ui.IViewPart;
 import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.debug.DBGException;
 import org.jkiss.dbeaver.debug.DBGSession;
 import org.jkiss.dbeaver.debug.DBGTransactionAction;
+import org.jkiss.dbeaver.debug.DBGTransactionCompletion;
 import org.jkiss.dbeaver.debug.core.model.IDatabaseDebugTarget;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.utils.RuntimeUtils;
+import org.jkiss.dbeaver.model.runtime.AbstractJob;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
 
-import java.lang.reflect.InvocationTargetException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class DebugUIEventListener implements IDebugEventSetListener {
 
     private static final Log log = Log.getLog(DebugUIEventListener.class);
+    private final Set<DBGSession> completingTransactions = ConcurrentHashMap.newKeySet();
 
     @Override
     public void handleDebugEvents(DebugEvent[] events) {
@@ -60,44 +66,57 @@ public class DebugUIEventListener implements IDebugEventSetListener {
             return;
         }
         DBGSession session = target.getSession();
-        if (session == null || !session.isTransactionCompletionPending()) {
+        if (session == null || !session.isTransactionCompletionPending() || !completingTransactions.add(session)) {
             return;
         }
         UIUtils.asyncExec(() -> {
+            if (target.isTerminated() || target.getSession() != session || !session.isTransactionCompletionPending()) {
+                completingTransactions.remove(session);
+                return;
+            }
             int choice = new MessageDialog(
                 UIUtils.getActiveWorkbenchShell(),
-                "Complete debug transaction",
+                DebugUIMessages.DebugTransaction_title,
                 null,
-                "The debugged routine has finished. Commit or roll back its database changes?",
+                DebugUIMessages.DebugTransaction_question,
                 MessageDialog.QUESTION,
-                new String[] {"Commit", "Rollback"},
+                new String[] {DebugUIMessages.DebugTransaction_commit, DebugUIMessages.DebugTransaction_rollback},
                 1
             ).open();
             DBGTransactionAction action = choice == 0 ? DBGTransactionAction.COMMIT : DBGTransactionAction.ROLLBACK;
-            try {
-                RuntimeUtils.runTask(
-                    monitor -> {
-                        try {
-                            session.completeTransaction(monitor, action);
-                        } catch (DBGException e) {
-                            throw new InvocationTargetException(e);
+            // Do not use runTask's timed wait: it neither propagates task exceptions
+            // nor stops the JDBC operation when the wait expires.
+            AbstractJob job = new AbstractJob(DebugUIMessages.DebugTransaction_title) {
+                @Override
+                protected IStatus run(DBRProgressMonitor monitor) {
+                    try {
+                        if (target.isTerminated() || target.getSession() != session) {
+                            return Status.CANCEL_STATUS;
                         }
-                    },
-                    "Complete debug transaction",
-                    20000
-                );
-                target.terminate();
-            } catch (Exception e) {
-                log.error("Error completing debug transaction", e);
-            }
+                        DBGTransactionCompletion.complete(monitor, session, action, target::terminate);
+                        return Status.OK_STATUS;
+                    } catch (Exception e) {
+                        log.error("Error completing debug transaction", e);
+                        UIUtils.asyncExec(() -> DBWorkbench.getPlatformUI().showError(
+                            DebugUIMessages.DebugTransaction_unconfirmed, DebugUIMessages.DebugTransaction_failure_details, e));
+                        return new Status(IStatus.ERROR, "org.jkiss.dbeaver.debug.ui", "Debug transaction was not confirmed", e);
+                    } finally {
+                        completingTransactions.remove(session);
+                    }
+                }
+            };
+            job.setUser(true);
+            job.schedule();
         });
     }
 
     private void showDebugViews(boolean show) {
-        IWorkbenchWindow window = UIUtils.getActiveWorkbenchWindow();
-        IWorkbenchPage activePage = window.getActivePage();
-
         UIUtils.asyncExec(() -> {
+            IWorkbenchWindow window = UIUtils.getActiveWorkbenchWindow();
+            IWorkbenchPage activePage = window == null ? null : window.getActivePage();
+            if (activePage == null) {
+                return;
+            }
             try {
                 if (show) {
                     activePage.showView(IDebugUIConstants.ID_VARIABLE_VIEW);

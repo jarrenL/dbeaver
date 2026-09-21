@@ -18,6 +18,9 @@
 
     <properties>
         <dbeaver-product>DBeaver</dbeaver-product>
+        <!-- This branch targets the customer's actual 26.1.5 baseline. Do not
+             inherit another product version from a shared build checkout. -->
+        <dbeaver-version>26.1.5</dbeaver-version>
 
         <key.storage.path>/etc/</key.storage.path>
         <tsa/>

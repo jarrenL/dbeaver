@@ -31,7 +31,10 @@ public enum PostgreTypeType implements DBPNamedObject {
     m("Multirange"), // Starting with the 14 PG version
     p("Pseudo-type"),
     n("nested-table-type"), //Kingbase type
-    r("Range");
+    o("Collection"), // GaussDB collection type (PG_TYPE.typtype)
+    r("Range"),
+    s("Set"), // GaussDB anyset
+    u("Undefined"); // GaussDB undefined placeholder
 	
 
     private final String desc;

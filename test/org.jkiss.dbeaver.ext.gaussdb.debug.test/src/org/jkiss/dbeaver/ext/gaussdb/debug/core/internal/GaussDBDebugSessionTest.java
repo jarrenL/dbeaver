@@ -13,17 +13,64 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.jkiss.dbeaver.debug.DBGTransactionAction;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBDebugSessionTest {
+    @Test
+    void expectedAbortDoesNotBecomeTargetFailureDialog() throws Exception {
+        JDBCStatement statement = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.executeQuery("SELECT DBE_PLDEBUGGER.abort()")).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        session.doDetach(monitor);
+        assertEquals(org.eclipse.core.runtime.IStatus.CANCEL,
+            session.handleTargetFailure(new SQLException("receive abort message")).getSeverity());
+    }
+
+    @Test
+    void unexpectedTargetFailureRemainsAnError() {
+        assertEquals(org.eclipse.core.runtime.IStatus.ERROR,
+            session.handleTargetFailure(new SQLException("division by zero", "22012")).getSeverity());
+    }
+
+    @Test
+    void readsAndPreserves64BitBackendProcessId() throws Exception {
+        long pid = 281470169823552L;
+        JDBCExecutionContext context = mock(JDBCExecutionContext.class);
+        JDBCSession jdbc = mock(JDBCSession.class);
+        JDBCStatement statement = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(context.openSession(any(), any(), anyString())).thenReturn(jdbc);
+        when(jdbc.createStatement()).thenReturn(statement);
+        when(statement.executeQuery("SELECT pg_backend_pid()")).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        when(result.getLong(1)).thenReturn(pid);
+        long actual = GaussDBDebugSession.queryLong(context, new VoidProgressMonitor(), "SELECT pg_backend_pid()", "Read target process");
+        assertEquals(pid, actual);
+        verify(result, never()).getInt(1);
+        GaussDBDebugSessionInfo info = new GaussDBDebugSessionInfo(actual, "dn_6001", 3);
+        assertEquals(pid, info.getID());
+        assertEquals(pid, info.toMap().get("pid"));
+        assertTrue(info.getTitle().contains(Long.toString(pid)));
+    }
+
     private final VoidProgressMonitor monitor = new VoidProgressMonitor();
     private JDBCSession connection;
     private GaussDBDebugSession session;
@@ -208,5 +255,277 @@ class GaussDBDebugSessionTest {
         assertThrows(DBGException.class, () -> session.setVariableVal(
             new GaussDBDebugVariable("c", "int4", "7", null, true, 0), "8"));
         verifyNoInteractions(connection);
+    }
+
+    private void field(String name, Object value) throws Exception {
+        var field = GaussDBDebugSession.class.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(session, value);
+    }
+
+    private void completedTarget() throws Exception {
+        field("done", true);
+        field("targetSucceeded", true);
+        field("transactionCompletionPending", true);
+    }
+
+    private static final String DEFAULT_OVERLOAD_QUERY =
+        "SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_proc target " +
+        "ON p.proname=target.proname AND p.pronamespace=target.pronamespace " +
+        "WHERE target.oid=? AND p.oid<>target.oid LIMIT 1";
+
+    @Test
+    void overloadedDefaultTargetIsRejectedBeforeExecutingTheRoutine() throws Exception {
+        query(DEFAULT_OVERLOAD_QUERY, true, true, 0);
+        assertThrows(DBGException.class, () -> session.validateDefaultInvocation(new VoidProgressMonitor()));
+        verify(connection, never()).commit();
+    }
+
+    @Test
+    void unambiguousDefaultTargetPassesCatalogValidation() throws Exception {
+        var statement = query(DEFAULT_OVERLOAD_QUERY, false, false, 0);
+        session.validateDefaultInvocation(new VoidProgressMonitor());
+        verify(statement).setLong(eq(1), anyLong());
+        verify(statement).setQueryTimeout(10);
+        verify(statement).executeQuery();
+    }
+
+    @Test
+    void canceledDefaultValidationDoesNotQuery() {
+        var canceled = mock(DBRProgressMonitor.class);
+        when(canceled.isCanceled()).thenReturn(true);
+        assertThrows(DBGException.class, () -> session.validateDefaultInvocation(canceled));
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void failedCommitIsVisibleAndCannotBeAutomaticallyRetried() throws Exception {
+        completedTarget();
+        doThrow(new SQLException("connection lost", "08006")).when(connection).commit();
+        assertThrows(DBGException.class, () -> session.completeTransaction(monitor, DBGTransactionAction.COMMIT));
+        assertTrue(session.isTransactionCompletionPending());
+        assertThrows(DBGException.class, () -> session.completeTransaction(monitor, DBGTransactionAction.COMMIT));
+        verify(connection, times(1)).commit();
+        session.completeTransaction(monitor, DBGTransactionAction.ROLLBACK);
+        verify(connection).rollback();
+        assertFalse(session.isTransactionCompletionPending());
+    }
+
+    @Test
+    void commitBoundsInfiniteNetworkWaitAndRestoresPreviousTimeout() throws Exception {
+        completedTarget();
+        session.completeTransaction(monitor, DBGTransactionAction.COMMIT);
+        var order = inOrder(connection);
+        order.verify(connection).setNetworkTimeout(any(), eq(10000));
+        order.verify(connection).commit();
+        order.verify(connection).setNetworkTimeout(any(), eq(0));
+    }
+
+    @Test
+    void commitPreservesShorterUserNetworkTimeout() throws Exception {
+        completedTarget(); when(connection.getNetworkTimeout()).thenReturn(1200);
+        session.completeTransaction(monitor, DBGTransactionAction.COMMIT);
+        verify(connection, times(2)).setNetworkTimeout(any(), eq(1200));
+    }
+
+    @Test
+    void cancellationBeforeTransactionDoesNotIssueCommit() throws Exception {
+        completedTarget();
+        var canceled = mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        when(canceled.isCanceled()).thenReturn(true);
+        assertThrows(DBGException.class, () -> session.completeTransaction(canceled, DBGTransactionAction.COMMIT));
+        verify(connection, never()).commit();
+        assertTrue(session.isTransactionCompletionPending());
+    }
+
+    @Test
+    void lateTargetAcknowledgmentPublishesCompletionOnce() throws Exception {
+        field("controlFinished", true);
+        session.publishCompletionIfReady();
+        assertFalse(session.isTransactionCompletionPending());
+        verifyNoInteractions(controller);
+        field("targetSucceeded", true);
+        session.publishCompletionIfReady();
+        session.publishCompletionIfReady();
+        assertTrue(session.isTransactionCompletionPending());
+        verify(controller, times(1)).fireEvent(argThat(event -> event.getKind() == org.jkiss.dbeaver.debug.DBGEvent.SUSPEND));
+    }
+
+    @Test
+    void targetAcknowledgmentBeforeControlCompletionDoesNotPromptEarly() throws Exception {
+        field("targetSucceeded", true);
+        session.publishCompletionIfReady();
+        assertFalse(session.isTransactionCompletionPending());
+        verifyNoInteractions(controller);
+        field("controlFinished", true);
+        session.publishCompletionIfReady();
+        assertTrue(session.isTransactionCompletionPending());
+    }
+
+    @Test
+    void waitsForTargetBeforeCommitting() throws Exception {
+        completedTarget();
+        var finished = new CountDownLatch(1);
+        field("targetFinished", finished);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var commit = executor.submit(() -> { session.completeTransaction(monitor, DBGTransactionAction.COMMIT); return null; });
+            verify(connection, never()).commit();
+            finished.countDown();
+            commit.get(5, TimeUnit.SECONDS);
+            verify(connection).commit();
+        } finally {
+            finished.countDown();
+        }
+    }
+
+    @Test
+    void sessionCloseDoesNotRaceAnInFlightCommit() throws Exception {
+        completedTarget();
+        var context = mock(JDBCExecutionContext.class);
+        when(context.openSession(any(), any(), anyString())).thenReturn(connection);
+        field("targetConnection", context);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.turn_off(?::oid)"))
+            .thenReturn(mock(JDBCPreparedStatement.class));
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var committed = new AtomicBoolean();
+        doAnswer(call -> {
+            started.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            committed.set(true);
+            return null;
+        }).when(connection).commit();
+        doAnswer(call -> { assertTrue(committed.get(), "connection closed during commit"); return null; }).when(context).close();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var commit = executor.submit(() -> { session.completeTransaction(monitor, DBGTransactionAction.COMMIT); return null; });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            var close = executor.submit(() -> { session.closeSession(monitor); return null; });
+            verify(context, never()).close();
+            release.countDown();
+            commit.get(5, TimeUnit.SECONDS);
+            close.get(5, TimeUnit.SECONDS);
+            verify(context).close();
+            verify(connection, never()).rollback();
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void runningCommandRejectsQueriesWithoutTouchingJdbc() throws Exception {
+        field("commandJob", mock(org.eclipse.core.runtime.jobs.Job.class));
+        assertThrows(DBGException.class, () -> session.getStack());
+        assertThrows(DBGException.class, () -> session.getVariables(null));
+        assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(1, 4)));
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void concurrentDuplicateAddsAreSerializedAndKeepOneRegistration() throws Exception {
+        var validate = mock(JDBCPreparedStatement.class);
+        var add = mock(JDBCPreparedStatement.class);
+        var delete = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT canbreak FROM DBE_PLDEBUGGER.info_code(?::oid) WHERE lineno=?")).thenReturn(validate);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.add_breakpoint(?::oid, ?::integer)")).thenReturn(add);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.delete_breakpoint(?)")).thenReturn(delete);
+        when(validate.executeQuery()).thenAnswer(call -> {
+            var row = mock(JDBCResultSet.class);
+            when(row.next()).thenReturn(true);
+            when(row.getBoolean(1)).thenReturn(true);
+            return row;
+        });
+        var firstEntered = new CountDownLatch(1);
+        var secondStarted = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var ids = new AtomicInteger();
+        when(add.executeQuery()).thenAnswer(call -> {
+            int id = ids.getAndIncrement();
+            if (id == 0) {
+                firstEntered.countDown();
+                assertTrue(release.await(5, TimeUnit.SECONDS));
+            }
+            var row = mock(JDBCResultSet.class);
+            when(row.next()).thenReturn(true);
+            when(row.getInt(1)).thenReturn(id);
+            return row;
+        });
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> { session.addBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(1, 4)); return null; });
+            assertTrue(firstEntered.await(5, TimeUnit.SECONDS));
+            var second = executor.submit(() -> {
+                secondStarted.countDown();
+                session.addBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(1, 4)); return null;
+            });
+            assertTrue(secondStarted.await(5, TimeUnit.SECONDS));
+            release.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+            assertEquals(1, session.getBreakpoints().size());
+            assertEquals(1, ((GaussDBDebugBreakpointDescriptor) session.getBreakpoints().getFirst()).getServerId());
+            verify(delete).setInt(1, 0);
+            verify(delete).execute();
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void suspendEventCanReadVariablesAfterTheControlCommandCompletes() throws Exception {
+        field("attached", true);
+        var statement = mock(JDBCStatement.class);
+        when(connection.createStatement()).thenReturn(statement);
+        var step = mock(JDBCResultSet.class);
+        when(step.next()).thenReturn(true);
+        when(step.getString("query")).thenReturn("v := 1;");
+        when(statement.executeQuery("SELECT * FROM DBE_PLDEBUGGER.next()")).thenReturn(step);
+        when(statement.executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)"))
+            .thenReturn(mock(JDBCResultSet.class));
+        var suspended = new CountDownLatch(1);
+        var failure = new AtomicReference<Throwable>();
+        doAnswer(call -> {
+            org.jkiss.dbeaver.debug.DBGEvent event = call.getArgument(0);
+            if (event.getKind() == org.jkiss.dbeaver.debug.DBGEvent.SUSPEND) {
+                try {
+                    assertFalse(session.isWaiting());
+                    assertTrue(session.getVariables(null).isEmpty());
+                } catch (Throwable e) {
+                    failure.set(e);
+                } finally {
+                    suspended.countDown();
+                }
+            }
+            return null;
+        }).when(controller).fireEvent(any());
+        session.execStepOver();
+        assertTrue(suspended.await(5, TimeUnit.SECONDS));
+        assertNull(failure.get());
+        verify(statement).executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)");
+    }
+
+    @Test
+    void closeWhileControlIsRunningDoesNotQueueAbortOnTheBusyConnection() throws Exception {
+        field("attached", true);
+        var statement = mock(JDBCStatement.class);
+        when(connection.createStatement()).thenReturn(statement);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.turn_off(?::oid)"))
+            .thenReturn(mock(JDBCPreparedStatement.class));
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(statement.executeQuery("SELECT * FROM DBE_PLDEBUGGER.continue()")).thenAnswer(call -> {
+            started.countDown();
+            assertTrue(release.await(5, TimeUnit.SECONDS));
+            return mock(JDBCResultSet.class);
+        });
+        session.execContinue();
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        try {
+            assertThrows(DBGException.class, () -> session.getVariables(null));
+            assertThrows(DBGException.class, () -> session.execStepInto());
+            session.closeSession(monitor);
+            verify(statement, never()).execute("SELECT DBE_PLDEBUGGER.abort()");
+            assertFalse(session.canStepInto());
+        } finally {
+            release.countDown();
+        }
     }
 }

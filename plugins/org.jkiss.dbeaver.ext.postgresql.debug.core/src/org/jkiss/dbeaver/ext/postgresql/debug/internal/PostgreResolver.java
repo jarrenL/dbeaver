@@ -20,6 +20,7 @@ package org.jkiss.dbeaver.ext.postgresql.debug.internal;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.debug.DBGResolver;
 import org.jkiss.dbeaver.ext.postgresql.debug.core.PostgreSqlDebugCore;
+import org.jkiss.dbeaver.ext.postgresql.debug.PostgreDebugConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedure;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -39,7 +40,11 @@ public class PostgreResolver implements DBGResolver {
     @Override
     public DBSObject resolveObject(Map<String, Object> context, Object identifier, DBRProgressMonitor monitor)
             throws DBException {
-        return PostgreSqlDebugCore.resolveFunction(monitor, dataSource, context);
+        Map<String, Object> resolved = new HashMap<>(context);
+        if (identifier != null) {
+            resolved.put(PostgreDebugConstants.ATTR_FUNCTION_OID, String.valueOf(identifier));
+        }
+        return PostgreSqlDebugCore.resolveFunction(monitor, dataSource, resolved);
     }
 
     @Override

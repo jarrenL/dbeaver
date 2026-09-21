@@ -199,6 +199,7 @@ public class PostgreServerGaussDBTest {
 
         Assertions.assertEquals("gsql", server.getNativeToolName("psql"));
         Assertions.assertEquals("gs_dump", server.getNativeToolName("pg_dump"));
+        Assertions.assertTrue(server.usesNativePasswordPipe());
         Assertions.assertEquals("gs_restore", server.getNativeToolName("pg_restore"));
         Assertions.assertEquals("gs_dumpall", server.getNativeToolName("pg_dumpall"));
         Assertions.assertEquals("custom_tool", server.getNativeToolName("custom_tool"));

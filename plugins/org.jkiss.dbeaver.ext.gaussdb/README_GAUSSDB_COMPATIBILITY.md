@@ -1,5 +1,12 @@
 # DBeaver GaussDB 适配说明
 
+> 跨 schema 调试及竞态的后续实测、修复和仍未闭环的 PostgreSQL 边界见
+> [GAUSSDB_CROSS_SCHEMA_RACE_ACCEPTANCE_20260909.md](GAUSSDB_CROSS_SCHEMA_RACE_ACCEPTANCE_20260909.md)。
+
+> 2026-09-09 本地补验：包编译取消/断连恢复、原生 PostgreSQL GUI 回归、五模式能力、
+> 权限变更及空白 macOS 工作区默认驱动流程见
+> [GAUSSDB_EXTENDED_ACCEPTANCE_20260909.md](GAUSSDB_EXTENDED_ACCEPTANCE_20260909.md)，包含未覆盖边界。
+
 > 后续功能范围、缺口和验收标准以
 > [GAUSSDB_FEATURE_REQUIREMENTS_ANALYSIS.md](GAUSSDB_FEATURE_REQUIREMENTS_ANALYSIS.md) 为准；
 > 本文记录的是兼容适配过程；调试与 Package 的当前实现/验收状态见需求分析报告，

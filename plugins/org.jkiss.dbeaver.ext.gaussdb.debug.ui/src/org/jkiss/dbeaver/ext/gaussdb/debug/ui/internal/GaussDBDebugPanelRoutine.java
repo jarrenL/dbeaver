@@ -10,6 +10,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
@@ -21,6 +22,8 @@ import org.jkiss.dbeaver.debug.ui.DBGConfigurationPanel;
 import org.jkiss.dbeaver.debug.ui.DBGConfigurationPanelContainer;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugConstants;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugCore;
+import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugArguments;
+import org.jkiss.dbeaver.debug.DBGException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureParameter;
 import org.jkiss.dbeaver.model.DBIcon;
@@ -49,6 +52,12 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
     private Table parametersTable;
     private GaussDBProcedure selectedRoutine;
     private final Map<DBSProcedureParameter, String> parameterValues = new HashMap<>();
+    private final Map<DBSProcedureParameter, String> parameterModes = new HashMap<>();
+
+    private static String[] modeLabels() {
+        return new String[]{GaussDBDebugMessages.parameter_value, GaussDBDebugMessages.parameter_null,
+            GaussDBDebugMessages.parameter_default};
+    }
 
     @Override
     public void createPanel(@NotNull Composite parent, DBGConfigurationPanelContainer container) {
@@ -83,15 +92,24 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         UIUtils.createTableColumn(parametersTable, SWT.LEFT, "Name").setWidth(140);
         UIUtils.createTableColumn(parametersTable, SWT.LEFT, "Value").setWidth(240);
         UIUtils.createTableColumn(parametersTable, SWT.LEFT, "Type").setWidth(140);
+        UIUtils.createTableColumn(parametersTable, SWT.LEFT, GaussDBDebugMessages.parameter_mode).setWidth(140);
+        UIUtils.createControlLabel(parametersGroup, GaussDBDebugMessages.parameter_hint);
         new CustomTableEditor(parametersTable) {
             {
                 firstTraverseIndex = 1;
-                lastTraverseIndex = 1;
+                lastTraverseIndex = 3;
                 editOnEnter = false;
             }
 
             @Override
             protected Control createEditor(Table table, int index, TableItem item) {
+                if (index == 3) {
+                    Combo editor = new Combo(table, SWT.READ_ONLY);
+                    editor.setItems(modeLabels());
+                    editor.select(GaussDBDebugArguments.Mode.valueOf(
+                        parameterModes.getOrDefault((DBSProcedureParameter) item.getData(), "VALUE")).ordinal());
+                    return editor;
+                }
                 if (index != 1) {
                     return null;
                 }
@@ -103,9 +121,23 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
 
             @Override
             protected void saveEditorValue(Control control, int index, TableItem item) {
-                String value = ((Text) control).getText();
-                item.setText(1, value);
-                parameterValues.put((DBSProcedureParameter) item.getData(), value);
+                DBSProcedureParameter parameter = (DBSProcedureParameter) item.getData();
+                if (control instanceof Combo combo) {
+                    int selected = combo.getSelectionIndex();
+                    parameterModes.put(parameter, GaussDBDebugArguments.Mode.values()[selected].name());
+                    item.setText(3, modeLabels()[selected]);
+                } else {
+                    String value = ((Text) control).getText();
+                    // Focus loss and traversal save even an untouched cell. Preserve
+                    // explicit NULL/DEFAULT unless the displayed value actually changed.
+                    if (value.equals(item.getText(1))) {
+                        return;
+                    }
+                    item.setText(1, value);
+                    parameterValues.put(parameter, value);
+                    parameterModes.put(parameter, "VALUE");
+                    item.setText(3, modeLabels()[0]);
+                }
                 container.updateDialogState();
             }
         };
@@ -140,6 +172,8 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
                 return;
             }
             selectedRoutine = routine;
+            parameterValues.clear();
+            parameterModes.clear();
             routineSelector.removeAll();
             routineSelector.addItem(routine);
             routineSelector.select(routine);
@@ -151,6 +185,9 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
 
     @Override
     public void loadConfiguration(DBPDataSourceContainer dataSource, Map<String, Object> configuration) {
+        selectedRoutine = null;
+        parameterValues.clear();
+        parameterModes.clear();
         if (CommonUtils.toLong(configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_OID)) != 0 && dataSource != null) {
             try {
                 container.getRunnableContext().run(true, true, monitor -> {
@@ -176,9 +213,23 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
             return;
         }
         Object rawValues = configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETERS);
+        Object rawModes = configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETER_MODES);
         if (rawValues instanceof List<?> values && values.size() == selectedRoutine.getInputParameters().size()) {
             for (int i = 0; i < values.size(); i++) {
-                parameterValues.put(selectedRoutine.getInputParameters().get(i), CommonUtils.toString(values.get(i)));
+                PostgreProcedureParameter parameter = selectedRoutine.getInputParameters().get(i);
+                parameterValues.put(parameter, values.get(i) == null ? null : String.valueOf(values.get(i)));
+                String mode = values.get(i) == null ? "NULL" : "VALUE";
+                if (rawModes instanceof List<?> modes && modes.size() == values.size()) {
+                    mode = String.valueOf(modes.get(i));
+                }
+                try {
+                    GaussDBDebugArguments.Mode.valueOf(mode);
+                } catch (IllegalArgumentException e) {
+                    container.setWarningMessage("Unknown debug parameter mode: " + mode);
+                    selectedRoutine = null;
+                    return;
+                }
+                parameterModes.put(parameter, mode);
             }
         }
         routineSelector.addItem(selectedRoutine);
@@ -195,6 +246,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
             item.setText(0, parameter.getName());
             item.setText(1, CommonUtils.toString(parameterValues.get(parameter)));
             item.setText(2, parameter.getFullTypeName());
+            item.setText(3, modeLabels()[GaussDBDebugArguments.Mode.valueOf(parameterModes.getOrDefault(parameter, "VALUE")).ordinal()]);
         }
     }
 
@@ -206,15 +258,30 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         }
         GaussDBDebugCore.saveRoutine(selectedRoutine, configuration);
         List<String> values = new ArrayList<>();
+        List<String> modes = new ArrayList<>();
         for (PostgreProcedureParameter parameter : selectedRoutine.getInputParameters()) {
-            values.add(parameterValues.get(parameter));
+            // Eclipse launch attributes support lists of strings, not null elements.
+            values.add(CommonUtils.toString(parameterValues.get(parameter)));
+            modes.add(parameterModes.getOrDefault(parameter, "VALUE"));
         }
         configuration.put(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETERS, values);
+        configuration.put(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETER_MODES, modes);
     }
 
     @Override
     public boolean isValid() {
-        return selectedRoutine != null && selectedRoutine.getInputParameters().stream()
-            .allMatch(parameterValues::containsKey);
+        if (selectedRoutine == null) {
+            return false;
+        }
+        List<PostgreProcedureParameter> parameters = selectedRoutine.getInputParameters();
+        try {
+            GaussDBDebugArguments.build(parameters, parameters.stream().map(parameterValues::get).toList(),
+                parameters.stream().map(p -> parameterModes.getOrDefault(p, "VALUE")).toList());
+            container.setWarningMessage(null);
+            return true;
+        } catch (DBGException e) {
+            container.setWarningMessage(e.getMessage());
+            return false;
+        }
     }
 }

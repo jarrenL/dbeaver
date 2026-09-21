@@ -141,10 +141,16 @@ public class DatabaseStackFrame extends DatabaseDebugElement implements IStackFr
         /*if (refreshVariables)*/ {
             try {
                 IDatabaseDebugTarget debugTarget = getDatabaseDebugTarget();
-                List<? extends DBGVariable<?>> variables = debugTarget.getSession().getVariables(dbgStackFrame);
+                // Watch/view refreshes can arrive after a termination event has
+                // already released the session. Never dereference a second lookup.
+                var session = debugTarget.getSession();
+                if (session == null || debugTarget.isTerminated()) {
+                    return NO_VARIABLES;
+                }
+                List<? extends DBGVariable<?>> variables = session.getVariables(dbgStackFrame);
                 rebuildVariables(variables);
             } catch (DBGException e) {
-                log.debug("Error getting variables", e);
+                throw new DebugException(DebugUtils.newErrorStatus("Unable to refresh debug variables", e));
             }
         }
         if (variables.isEmpty()) {

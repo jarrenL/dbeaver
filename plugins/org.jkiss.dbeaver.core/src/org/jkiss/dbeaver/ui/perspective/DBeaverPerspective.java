@@ -20,7 +20,9 @@ import org.eclipse.ui.IFolderLayout;
 import org.eclipse.ui.IPageLayout;
 import org.eclipse.ui.IPerspectiveFactory;
 import org.eclipse.ui.IPlaceholderFolderLayout;
+import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.texteditor.templates.TemplatesView;
+import org.jkiss.dbeaver.model.config.ProductConfigRegistry;
 import org.jkiss.dbeaver.ui.IActionConstants;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseBrowserView;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorView;
@@ -101,7 +103,17 @@ public class DBeaverPerspective implements IPerspectiveFactory
             IPageLayout.TOP,
             0.5f,
             FOLDER_RIGHT);
-        rightTop.addView(IActionConstants.CHAT_VIEW_ID);
+        // The first-run wizard can disable AI before the registry is filtered on restart.
+        // Do not create a view that will become an unavailable restored part next time.
+        var productConfig = ProductConfigRegistry.getInstance();
+        boolean aiEnabled = productConfig.getFeatures().stream()
+            .filter(feature -> "ai".equals(feature.getId()))
+            .allMatch(productConfig::isFeatureEnabled);
+        if (aiEnabled && PlatformUI.getWorkbench().getViewRegistry().find(IActionConstants.CHAT_VIEW_ID) != null) {
+            rightTop.addView(IActionConstants.CHAT_VIEW_ID);
+        } else {
+            rightTop.addPlaceholder(IActionConstants.CHAT_VIEW_ID);
+        }
         rightTop.addPlaceholder(IPageLayout.ID_PROP_SHEET);
         rightTop.addPlaceholder(IActionConstants.HELP_VIEW_ID);
 

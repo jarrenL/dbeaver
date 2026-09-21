@@ -65,6 +65,11 @@ public class PostgreSqlDebugCore {
                 if (function != null) {
                     return function;
                 }
+                // A suspended frame can belong to a function in another schema.
+                function = database.getProcedure(monitor, functionId);
+                if (function != null) {
+                    return function;
+                }
                 throw new DBException("Function " + functionId + " not found in schema " + schemaName);
             } else {
                 throw new DBException("Schema '" + schemaName + "' not found in database " + databaseName);
@@ -72,5 +77,11 @@ public class PostgreSqlDebugCore {
         } else {
             throw new DBException("Database '" + databaseName + "' not found");
         }
+    }
+
+    public static boolean isCompletionDiagnostic(java.sql.SQLException error) {
+        return "08006".equals(error.getSQLState()) && error.getMessage() != null
+            && (error.getMessage().contains("select() failed waiting for target")
+                || error.getMessage().contains("debugger connection terminated"));
     }
 }

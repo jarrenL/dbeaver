@@ -1,0 +1,11 @@
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-21-jdk xvfb xauth dbus-x11 libgtk-3-0 libwebkit2gtk-4.1-0 \
+    libasound2t64 libxtst6 fonts-dejavu-core fonts-noto-cjk ca-certificates unzip \
+    && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 1000 tester && mkdir /work && chown tester /work
+USER tester
+ENV DISPLAY=:99
+WORKDIR /work
+CMD ["sleep", "infinity"]

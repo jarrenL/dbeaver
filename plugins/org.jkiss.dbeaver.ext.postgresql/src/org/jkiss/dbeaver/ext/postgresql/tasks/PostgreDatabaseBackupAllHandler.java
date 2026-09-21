@@ -136,13 +136,7 @@ public class PostgreDatabaseBackupAllHandler
         }
 
         cmd.add("--file");
-        if (requiresLocalTransferFile(settings, settings.getOutputFile(arg))) {
-            Path localFile = Files.createTempFile("dbeaver-gaussdb-backup-all-", ".sql");
-            localTransferFiles.put(arg, localFile);
-            cmd.add(localFile.toString());
-        } else {
-            cmd.add(settings.getOutputFile(arg));
-        }
+        cmd.add(prepareOutputFile(settings, arg));
 
         // Databases
         if (settings.getExportObjects().isEmpty()) {
@@ -171,6 +165,22 @@ public class PostgreDatabaseBackupAllHandler
         }
     }
 
+    protected String prepareOutputFile(PostgreBackupAllSettings settings, PostgreDatabaseBackupAllInfo arg) throws IOException {
+        if (requiresLocalTransferFile(settings, settings.getOutputFile(arg))
+            || (!settings.isAddRolesPasswords() && !arg.getDataSource().getServerType().supportsNativeBackupAllPasswordSuppression())) {
+            // Keep unredacted output private until the complete dump has been sanitized.
+            Path localFile = Files.createTempFile("dbeaver-gaussdb-backup-all-", ".sql");
+            localTransferFiles.put(arg, localFile);
+            return localFile.toString();
+        }
+        return settings.getOutputFile(arg);
+    }
+
+    protected boolean runNativeProcess(DBRProgressMonitor monitor, DBTTask task, PostgreBackupAllSettings settings,
+                                       PostgreDatabaseBackupAllInfo arg, Log taskLog) throws IOException, InterruptedException {
+        return super.executeProcess(monitor, task, settings, arg, taskLog);
+    }
+
     @Override
     public boolean executeProcess(
         DBRProgressMonitor monitor,
@@ -180,7 +190,10 @@ public class PostgreDatabaseBackupAllHandler
         Log taskLog
     ) throws IOException, InterruptedException {
         try {
-            boolean result = super.executeProcess(monitor, task, settings, arg, taskLog);
+            boolean result = runNativeProcess(monitor, task, settings, arg, taskLog);
+            if (!result || monitor.isCanceled()) {
+                return false;
+            }
             PostgreServerExtension serverType = arg.getDataSource().getServerType();
             Path localFile = localTransferFiles.get(arg);
             Path output = localFile == null
@@ -195,12 +208,19 @@ public class PostgreDatabaseBackupAllHandler
             }
             return result;
         } finally {
-            deleteLocalTransferPath(localTransferFiles.remove(arg));
+            Path temporary = localTransferFiles.remove(arg);
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException cleanupError) {
+                    taskLog.error("Cannot delete temporary cluster backup " + temporary, cleanupError);
+                }
+            }
         }
     }
 
     @NotNull
-    private static Path resolveOutputPath(
+    protected Path resolveOutputPath(
         @NotNull DBRProgressMonitor monitor,
         @NotNull DBTTask task,
         @NotNull PostgreBackupAllSettings settings,

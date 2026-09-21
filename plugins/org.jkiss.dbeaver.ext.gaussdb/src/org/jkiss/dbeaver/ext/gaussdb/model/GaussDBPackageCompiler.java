@@ -53,25 +53,65 @@ public final class GaussDBPackageCompiler {
         @NotNull GaussDBPackage object,
         @NotNull GaussDBPackageCompileTarget target
     ) throws DBException {
+        if (monitor.isCanceled()) {
+            return false;
+        }
         String sql = getCompileSQL(object, target);
         compileLog.trace(sql);
         try (JDBCSession session = DBUtils.openUtilSession(monitor, object, "Compile GaussDB package");
              JDBCPreparedStatement statement = session.prepareStatement(sql)) {
-            statement.executeStatement();
-            boolean success = logErrors(session, compileLog, object, target);
+            // Keep the JDBC SQLException (executeStatement wraps it in DBCException).
+            statement.execute();
+            if (monitor.isCanceled()) {
+                return false;
+            }
+            boolean success = readCompilationDiagnostics(session, compileLog, object, target);
             object.refreshObjectState(monitor);
             object.getDataSource().getContainer().fireEvent(new DBPEvent(DBPEvent.Action.OBJECT_UPDATE, object));
             return success;
         } catch (SQLException e) {
+            // Do not issue metadata SQL on a canceled/aborted connection.
+            if (monitor.isCanceled()) {
+                return false;
+            }
             String sqlState = e.getSQLState();
-            if (sqlState != null && (sqlState.startsWith("08") || sqlState.startsWith("28"))) {
+            if (isInfrastructureError(sqlState)) {
                 throw new DBException("Error compiling GaussDB package " + object.getName(), e);
             }
-            compileLog.error(toCompileError(e, target));
+            boolean errorsFound = false;
+            try (JDBCSession errorsSession = DBUtils.openMetaSession(monitor, object, "Read package compilation errors")) {
+                errorsFound = !logErrors(errorsSession, compileLog, object, target);
+            } catch (SQLException metadataError) {
+                if (!GaussDBMetadataErrorHandler.isOptionalMetadataError(metadataError)) {
+                    throw new DBException("Error reading package compilation errors", metadataError);
+                }
+            }
+            if (!errorsFound) {
+                compileLog.error(toCompileError(e, target));
+            }
             object.refreshObjectState(monitor);
             object.getDataSource().getContainer().fireEvent(new DBPEvent(DBPEvent.Action.OBJECT_UPDATE, object));
             return false;
         }
+    }
+
+    static boolean readCompilationDiagnostics(
+        @NotNull JDBCSession session, @NotNull DBCCompileLog compileLog,
+        @NotNull GaussDBPackage object, @NotNull GaussDBPackageCompileTarget target
+    ) throws DBException {
+        try {
+            return logErrors(session, compileLog, object, target);
+        } catch (SQLException diagnosticsError) {
+            // ALTER completed, but its validation result is unknown. Do not turn
+            // an unavailable diagnostics catalog into a source line error.
+            throw new DBException("Package compilation executed, but compilation diagnostics could not be read", diagnosticsError);
+        }
+    }
+
+    static boolean isInfrastructureError(String sqlState) {
+        return sqlState != null && (sqlState.startsWith("08") || sqlState.startsWith("28")
+            || "42501".equals(sqlState) || "57P01".equals(sqlState)
+            || "57P02".equals(sqlState) || "57P03".equals(sqlState));
     }
 
     @NotNull
@@ -83,11 +123,8 @@ public final class GaussDBPackageCompiler {
         Matcher matcher = ERROR_LINE_PATTERN.matcher(message);
         int line = matcher.find() ? Integer.parseInt(matcher.group(1)) : 1;
         GaussDBPackageCompileTarget sourcePart = target;
-        if (sourcePart == GaussDBPackageCompileTarget.ALL) {
-            sourcePart = message.toLowerCase().contains("package body")
-                ? GaussDBPackageCompileTarget.BODY
-                : GaussDBPackageCompileTarget.SPECIFICATION;
-        }
+        // Only GS_ERRORS.type reliably identifies the failed source part for ALL.
+        // Error text may mention another package body; do not guess a source tab.
         return new GaussDBPackageCompileError(sourcePart, message, line);
     }
 
@@ -97,9 +134,10 @@ public final class GaussDBPackageCompiler {
         @NotNull GaussDBPackage object,
         @NotNull GaussDBPackageCompileTarget target
     ) throws SQLException {
-        String sql = "SELECT type,line,src FROM DBE_PLDEVELOPER.GS_ERRORS " +
-            "WHERE id=? AND nspid=? AND lower(type) IN ('package','package body') " +
-            "ORDER BY CASE lower(type) WHEN 'package' THEN 0 ELSE 1 END,line";
+        String sql = "SELECT e.type,e.line,e.src,s.src AS definition FROM DBE_PLDEVELOPER.GS_ERRORS e " +
+            "LEFT JOIN DBE_PLDEVELOPER.GS_SOURCE s ON s.id=e.id AND lower(s.type)=lower(e.type) " +
+            "WHERE e.id=? AND e.nspid=? AND lower(e.type) IN ('package','package body') " +
+            "ORDER BY CASE lower(e.type) WHEN 'package' THEN 0 ELSE 1 END,e.line";
         boolean success = true;
         try (JDBCPreparedStatement statement = session.prepareStatement(sql)) {
             statement.setLong(1, object.getObjectId());
@@ -116,7 +154,8 @@ public final class GaussDBPackageCompiler {
                     compileLog.error(new GaussDBPackageCompileError(
                         sourcePart,
                         JDBCUtils.safeGetString(resultSet, "src"),
-                        JDBCUtils.safeGetInt(resultSet, "line")
+                        GaussDBPackageSourceLines.toEditorLine(
+                            JDBCUtils.safeGetString(resultSet, "definition"), JDBCUtils.safeGetInt(resultSet, "line"))
                     ));
                     success = false;
                 }

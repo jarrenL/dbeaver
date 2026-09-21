@@ -72,6 +72,11 @@ public abstract class DBGJDBCSession implements DBGSession {
 
     public abstract boolean isDone();
 
+    /** Provider-specific completion diagnostics must also confirm successful target execution. */
+    public boolean isSuccessfulCompletion(SQLException error) {
+        return false;
+    }
+
     /**
      * Start thread for SQL command
      */

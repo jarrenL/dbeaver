@@ -44,7 +44,7 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
 
     private String name = DebugCoreMessages.DatabaseThread_name;
 
-    private List<DatabaseStackFrame> frames = new ArrayList<>(1);
+    private final List<DatabaseStackFrame> frames = new ArrayList<>(1);
 
     public DatabaseThread(IDatabaseDebugTarget target) {
         super(target);
@@ -123,7 +123,7 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
         getDatabaseDebugTarget().stepReturn();
     }
 
-    private void aboutToResume(int detail, boolean stepping) {
+    private synchronized void aboutToResume(int detail, boolean stepping) {
         frames.clear();
         setStepping(stepping);
         // setBreakpoints(null);
@@ -142,12 +142,14 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
 
     @Override
     public void terminate() throws DebugException {
-        frames.clear();
+        synchronized (this) {
+            frames.clear();
+        }
         getDebugTarget().terminate();
     }
 
     @Override
-    public IStackFrame[] getStackFrames() throws DebugException {
+    public synchronized IStackFrame[] getStackFrames() throws DebugException {
         if (isSuspended()) {
             if (frames.size() == 0) {
                 extractStackFrames();
@@ -156,7 +158,7 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
         return frames.toArray(new IStackFrame[frames.size()]);
     }
 
-    protected void extractStackFrames() throws DebugException {
+    protected synchronized void extractStackFrames() throws DebugException {
         try {
             IDatabaseDebugTarget debugTarget = getDatabaseDebugTarget();
             DBGSession session = debugTarget.getSession();
@@ -176,7 +178,10 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
         return true;
     }
 
-    public void rebuildStack(List<? extends DBGStackFrame> stackFrames) {
+    public synchronized void rebuildStack(List<? extends DBGStackFrame> stackFrames) {
+        // A refresh replaces the snapshot. The stack and watch views can request
+        // frames concurrently when a session first suspends.
+        frames.clear();
         for (DBGStackFrame dbgStackFrame : stackFrames) {
             addFrame(dbgStackFrame);
         }
@@ -194,7 +199,7 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
     }
 
     @Override
-    public IStackFrame getTopStackFrame() throws DebugException {
+    public synchronized IStackFrame getTopStackFrame() throws DebugException {
         if (isSuspended()) {
             if (frames.size() == 0) {
                 extractStackFrames();

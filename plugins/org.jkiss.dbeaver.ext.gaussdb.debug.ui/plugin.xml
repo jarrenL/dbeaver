@@ -11,6 +11,14 @@
     </extension>
 
     <extension point="org.eclipse.core.runtime.adapters">
+        <factory adaptableType="org.jkiss.dbeaver.model.navigator.DBNDatabaseNode"
+                 class="org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal.GaussDBDebugObjectAdapterFactory">
+            <adapter type="org.jkiss.dbeaver.debug.DBGDebugObject"/>
+        </factory>
+        <factory adaptableType="org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure"
+                 class="org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal.GaussDBDebugObjectAdapterFactory">
+            <adapter type="org.jkiss.dbeaver.debug.DBGDebugObject"/>
+        </factory>
         <factory adaptableType="org.jkiss.dbeaver.ext.postgresql.ui.editors.PostgreSourceViewEditor"
                  class="org.jkiss.dbeaver.debug.ui.actions.DebugActionAdapterFactory">
             <adapter type="org.eclipse.debug.ui.actions.IToggleBreakpointsTarget"/>

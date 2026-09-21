@@ -38,6 +38,17 @@ public class GaussDBMessages extends NLS {
 
     public static String tree_procedures_node_name;
     public static String tree_functions_node_name;
+    public static String package_compile_results;
+    public static String package_compile_object;
+    public static String package_compile_part;
+    public static String package_compile_line;
+    public static String package_compile_message;
+    public static String package_compile_open_source;
+    public static String package_compile_load_failed;
+    public static String package_compile_interrupted;
+    public static String package_compile_partial_summary;
+    public static String package_compile_canceled;
+    public static String package_compile_failed;
 
     static {
         // initialize resource bundle

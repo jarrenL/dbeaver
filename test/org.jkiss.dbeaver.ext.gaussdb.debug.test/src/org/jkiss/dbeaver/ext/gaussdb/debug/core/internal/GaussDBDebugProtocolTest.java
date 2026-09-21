@@ -18,6 +18,44 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GaussDBDebugProtocolTest {
     @Test
+    void markerAdapterChecksActualLanguageIncludingMMode() throws Exception {
+        var routine = org.mockito.Mockito.mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure.class,
+            org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        org.mockito.Mockito.when(routine.getDataSource().getContainer().getDriver().getProviderId()).thenReturn("gaussdb");
+        org.mockito.Mockito.when(routine.isPersisted()).thenReturn(true);
+        org.mockito.Mockito.when(routine.getObjectId()).thenReturn(42L);
+        org.mockito.Mockito.when(routine.getDatabase().getName()).thenReturn("db");
+        var adapter = new GaussDBBreakpointAdapterFactory();
+        assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(routine.getDatabase().getCompatibility())
+            .thenReturn(org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum.M);
+        assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        var language = org.mockito.Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreLanguage.class);
+        org.mockito.Mockito.when(routine.getLanguage(org.mockito.ArgumentMatchers.any())).thenReturn(language);
+        org.mockito.Mockito.when(language.getName()).thenReturn("sql");
+        assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(language.getName()).thenReturn("plpgsql");
+        assertNotNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(routine.getDatabase().getCompatibility())
+            .thenReturn(org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum.POSTGRES);
+        assertNotNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+        org.mockito.Mockito.when(routine.isPersisted()).thenReturn(false);
+        assertNull(adapter.getAdapter(routine, org.jkiss.dbeaver.debug.DBGBreakpointDescriptor.class));
+    }
+
+    @Test
+    void breakpointRoutingRequiresExactDatabaseIdentity() {
+        var controller = new GaussDBDebugController(null, Map.of(GaussDBDebugConstants.ATTR_DATABASE_NAME, "MixedDb"));
+        var matching = new GaussDBDebugBreakpointDescriptor(42, 4, "MixedDb").toMap();
+        assertNotNull(controller.describeBreakpoint(matching));
+        assertEquals("MixedDb", GaussDBDebugBreakpointDescriptor.fromMap(matching).toMap()
+            .get(GaussDBDebugConstants.ATTR_DATABASE_NAME));
+        assertNull(controller.describeBreakpoint(new GaussDBDebugBreakpointDescriptor(42, 4, "other").toMap()));
+        assertNull(controller.describeBreakpoint(new GaussDBDebugBreakpointDescriptor(42, 4, "mixeddb").toMap()));
+        assertNull(controller.describeBreakpoint(new GaussDBDebugBreakpointDescriptor(42, 4).toMap()));
+    }
+
+    @Test
     void matchesOnlyTheExactDebuggerSignaturesUsedByTheClient() {
         assertTrue(GaussDBDebugCapabilityDetector.hasRequiredSignature("turn_on", "26"));
         assertTrue(GaussDBDebugCapabilityDetector.hasRequiredSignature("attach", " 25   23 "));

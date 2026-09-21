@@ -90,6 +90,11 @@ public class PostgreServerGaussDB extends PostgreServerExtensionBase {
     }
 
     @Override
+    public boolean usesNativePasswordPipe() {
+        return true;
+    }
+
+    @Override
     public void configureNativeToolEnvironment(
         @NotNull DBPNativeClientLocation clientHome,
         @NotNull Map<String, String> environment

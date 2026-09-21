@@ -26,6 +26,78 @@ import java.sql.SQLException;
 public class GaussDBPackageCompilerTest {
 
     @Test
+    public void connectionTerminationAndPermissionErrorsAreNotSourceDiagnostics() {
+        for (String state : java.util.List.of("08006", "28P01", "42501", "57P01", "57P02", "57P03")) {
+            Assertions.assertTrue(GaussDBPackageCompiler.isInfrastructureError(state), state);
+        }
+        Assertions.assertFalse(GaussDBPackageCompiler.isInfrastructureError("42601"));
+        Assertions.assertFalse(GaussDBPackageCompiler.isInfrastructureError(null));
+    }
+
+    @Test
+    public void canceledCompilationDoesNotAccessDatabaseOrProduceErrors() throws Exception {
+        var monitor = Mockito.mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        var log = Mockito.mock(org.jkiss.dbeaver.model.exec.compile.DBCCompileLog.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        Mockito.when(monitor.isCanceled()).thenReturn(true);
+        Assertions.assertFalse(GaussDBPackageCompiler.compile(monitor, log, object, GaussDBPackageCompileTarget.ALL));
+        Mockito.verifyNoInteractions(log, object);
+    }
+
+    @Test
+    public void catalogErrorsPreserveBodyLineAndFilterSpecification() throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(object.getObjectId()).thenReturn(42L);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(schema.getObjectId()).thenReturn(99L);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(result);
+        Mockito.when(result.next()).thenReturn(true, false);
+        Mockito.when(result.getString("type")).thenReturn("package body");
+        Mockito.when(result.getString("src")).thenReturn("invalid type name");
+        Mockito.when(result.getInt("line")).thenReturn(3);
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        Assertions.assertFalse(GaussDBPackageCompiler.logErrors(session, log, object, GaussDBPackageCompileTarget.BODY));
+        Assertions.assertEquals(3, log.getErrorStack().iterator().next().getLine());
+        Mockito.verify(statement).setLong(1, 42L);
+        Mockito.verify(statement).setLong(2, 99L);
+        Mockito.when(result.next()).thenReturn(true, false);
+        log.clearLog();
+        Assertions.assertTrue(GaussDBPackageCompiler.logErrors(session, log, object, GaussDBPackageCompileTarget.SPECIFICATION));
+        Assertions.assertTrue(log.getErrorStack().isEmpty());
+    }
+
+    @Test
+    public void allCompilationPreservesMixedSourcePartsAndLineNumbers() throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(result);
+        Mockito.when(result.next()).thenReturn(true, true, false);
+        Mockito.when(result.getString("type")).thenReturn("package", "package body");
+        Mockito.when(result.getString("src")).thenReturn("spec error", "body error");
+        Mockito.when(result.getInt("line")).thenReturn(2, 3);
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        Assertions.assertFalse(GaussDBPackageCompiler.logErrors(session, log, object, GaussDBPackageCompileTarget.ALL));
+        var errors = log.getErrorStack().iterator();
+        var spec = (GaussDBPackageCompileError) errors.next();
+        var body = (GaussDBPackageCompileError) errors.next();
+        Assertions.assertEquals(GaussDBPackageCompileTarget.SPECIFICATION, spec.getSourcePart());
+        Assertions.assertEquals(2, spec.getLine());
+        Assertions.assertEquals(GaussDBPackageCompileTarget.BODY, body.getSourcePart());
+        Assertions.assertEquals(3, body.getLine());
+        Assertions.assertFalse(errors.hasNext());
+    }
+
+    @Test
     public void generatesAllCompileVariantsWithQualifiedName() {
         GaussDBPackage object = Mockito.mock(GaussDBPackage.class);
         Mockito.when(object.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("\"Mixed Schema\".\"Test Package\"");
@@ -66,6 +138,31 @@ public class GaussDBPackageCompilerTest {
         );
 
         Assertions.assertEquals(23, error.getLine());
-        Assertions.assertSame(GaussDBPackageCompileTarget.BODY, error.getSourcePart());
+        Assertions.assertSame(GaussDBPackageCompileTarget.ALL, error.getSourcePart());
+    }
+
+    @Test
+    public void missingOrDeniedDiagnosticsAreNotSourceErrors() throws Exception {
+        for (String state : java.util.List.of("42P01", "42501", "08006")) {
+            var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+            var failure = new SQLException("diagnostics unavailable", state);
+            Mockito.when(session.prepareStatement(Mockito.anyString())).thenThrow(failure);
+            var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+            var error = Assertions.assertThrows(org.jkiss.dbeaver.DBException.class,
+                () -> GaussDBPackageCompiler.readCompilationDiagnostics(session, log,
+                    Mockito.mock(GaussDBPackage.class), GaussDBPackageCompileTarget.ALL));
+            Assertions.assertSame(failure, error.getCause());
+            Assertions.assertTrue(error.getMessage().contains("diagnostics"));
+            Assertions.assertTrue(log.getErrorStack().isEmpty());
+        }
+    }
+
+    @Test
+    public void explicitTargetIsPreservedButAllNeverGuessesFromErrorText() {
+        var failure = new SQLException("referenced package body failed near line 7", "42601");
+        Assertions.assertEquals(GaussDBPackageCompileTarget.SPECIFICATION,
+            GaussDBPackageCompiler.toCompileError(failure, GaussDBPackageCompileTarget.SPECIFICATION).getSourcePart());
+        Assertions.assertEquals(GaussDBPackageCompileTarget.ALL,
+            GaussDBPackageCompiler.toCompileError(failure, GaussDBPackageCompileTarget.ALL).getSourcePart());
     }
 }

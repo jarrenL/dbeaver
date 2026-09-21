@@ -56,6 +56,7 @@ import org.jkiss.dbeaver.model.runtime.features.DBRFeatureRegistry;
 import org.jkiss.dbeaver.registry.DataSourceProviderRegistry;
 import org.jkiss.dbeaver.registry.WorkbenchHandlerRegistry;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
+import org.jkiss.dbeaver.ui.IActionConstants;
 import org.jkiss.dbeaver.ui.UIExecutionQueue;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.actions.datasource.DataSourceHandler;
@@ -329,6 +330,16 @@ public class ApplicationWorkbenchWindowAdvisor extends IDEWorkbenchWindowAdvisor
     public void postWindowCreate() {
         log.debug("Initialize workbench window");
         super.postWindowCreate();
+        // Older workspaces may retain Chat after Product Configuration disables AI.
+        // Close the unavailable reference without instantiating the optional view.
+        if (PlatformUI.getWorkbench().getViewRegistry().find(IActionConstants.CHAT_VIEW_ID) == null) {
+            for (IWorkbenchPage page : getWindowConfigurer().getWindow().getPages()) {
+                IViewReference chat = page.findViewReference(IActionConstants.CHAT_VIEW_ID);
+                if (chat != null) {
+                    page.hideView(chat);
+                }
+            }
+        }
         recomputeTitle();
 
 
@@ -582,4 +593,3 @@ public class ApplicationWorkbenchWindowAdvisor extends IDEWorkbenchWindowAdvisor
     }
 
 }
-

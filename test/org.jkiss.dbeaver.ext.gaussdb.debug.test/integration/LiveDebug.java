@@ -18,7 +18,10 @@ public class LiveDebug {
         System.out.println("PASS " + prefix + " " + message);
     }
     static Connection open(String db, boolean nativeDriver) throws Exception {
-        return DriverManager.getConnection((nativeDriver ? "jdbc:gaussdb:" : "jdbc:postgresql:") + "//127.0.0.1:5432/" + db, props);
+        String actualDb = db.replace("dbeaver_fix_0905_", props.getProperty("review.databasePrefix", "dbeaver_fix_0905_"));
+        boolean compatible = "org.postgresql.Driver".equals(props.getProperty("review.driverClass"));
+        return DriverManager.getConnection((nativeDriver && !compatible ? "jdbc:gaussdb:" : "jdbc:postgresql:")
+            + "//" + props.getProperty("review.endpoint", "127.0.0.1:5432") + "/" + actualDb, props);
     }
     static void exec(Connection c, String sql) throws Exception {
         try (Statement s=c.createStatement()) {s.setQueryTimeout(15);s.execute(sql);}
@@ -129,7 +132,7 @@ public class LiveDebug {
         try(var r=Files.newBufferedReader(Path.of(args[0]))){props.load(r);}
         props.setProperty("socketTimeout","20");props.setProperty("connectTimeout","10");
         boolean nativeDriver = args.length < 2 || !"--postgresql".equals(args[1]);
-        Class.forName(nativeDriver ? "com.huawei.gaussdb.jdbc.Driver" : "org.postgresql.Driver");
+        Class.forName(props.getProperty("review.driverClass", nativeDriver ? "com.huawei.gaussdb.jdbc.Driver" : "org.postgresql.Driver"));
         for(String mode:List.of("ora","mysql","pg")) {
             run(mode,nativeDriver,false,false);
             run(mode,nativeDriver,true,false);

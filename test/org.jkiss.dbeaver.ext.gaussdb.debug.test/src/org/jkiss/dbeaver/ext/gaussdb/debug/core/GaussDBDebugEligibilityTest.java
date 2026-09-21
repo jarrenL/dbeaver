@@ -12,9 +12,17 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GaussDBDebugEligibilityTest {
     @Test
-    void rejectsMCompatibilityBeforeStartingSession() {
-        assertTrue(GaussDBDebugCore.getRoutineEligibilityError(
-            DBCompatibilityEnum.M, true, 16389, "plpgsql").contains("M compatibility"));
+    void mCompatibilityUsesActualRoutineLanguageInsteadOfBlanketRejection() {
+        assertNull(GaussDBDebugCore.getRoutineEligibilityError(
+            DBCompatibilityEnum.M, true, 16389, "plpgsql"));
+        assertNull(GaussDBDebugCore.getRoutineEligibilityError(
+            DBCompatibilityEnum.M, true, 16389, "PLSQL"));
+        assertNotNull(GaussDBDebugCore.getRoutineEligibilityError(
+            DBCompatibilityEnum.M, true, 16389, "sql"));
+        assertNotNull(GaussDBDebugCore.getRoutineEligibilityError(
+            DBCompatibilityEnum.M, true, 16389, null));
+        assertNotNull(GaussDBDebugCore.getRoutineEligibilityError(
+            DBCompatibilityEnum.M, false, 0, "plpgsql"));
     }
 
     @Test

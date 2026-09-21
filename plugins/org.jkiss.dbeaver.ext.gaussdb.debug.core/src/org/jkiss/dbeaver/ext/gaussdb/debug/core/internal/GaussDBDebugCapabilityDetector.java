@@ -92,19 +92,32 @@ final class GaussDBDebugCapabilityDetector {
         throw new DBGException("No executable add_breakpoint overload");
     }
 
-    private static void checkDebuggerRole(JDBCSession session) throws SQLException, DBGException {
-        String sql = "SELECT (r.rolsuper OR r.rolsystemadmin OR EXISTS (" +
-            "SELECT 1 FROM pg_catalog.pg_roles d WHERE d.rolname='gs_role_pldebugger' " +
-            "AND pg_catalog.pg_has_role(current_user,d.rolname,'member'))) " +
+    static void checkDebuggerRole(JDBCSession session) throws SQLException, DBGException {
+        String sql = "SELECT (r.rolsuper OR r.rolsystemadmin) " +
             "FROM pg_catalog.pg_roles r WHERE r.rolname=current_user";
         try (PreparedStatement statement = session.prepareStatement(sql);
              ResultSet result = statement.executeQuery()) {
-            if (!result.next() || !result.getBoolean(1)) {
-                throw new DBGException(
-                    "The current user must be a GaussDB system administrator or a member of gs_role_pldebugger"
-                );
+            if (result.next() && result.getBoolean(1)) {
+                return;
             }
         }
+        // GaussDB filters pg_roles for ordinary users: membership may be granted
+        // even though the built-in role itself is absent from their catalog view.
+        try (PreparedStatement statement = session.prepareStatement(
+            "SELECT pg_catalog.pg_has_role(current_user,'gs_role_pldebugger','member')");
+             ResultSet result = statement.executeQuery()) {
+            if (result.next() && result.getBoolean(1)) {
+                return;
+            }
+        } catch (SQLException e) {
+            if (!"42704".equals(e.getSQLState())) {
+                throw e;
+            }
+            // Older servers without the built-in role require administrator access.
+        }
+        throw new DBGException(
+            "The current user must be a GaussDB system administrator or a member of gs_role_pldebugger"
+        );
     }
 
     private static void checkRoutineExecutePrivilege(JDBCSession session, long routineOid)

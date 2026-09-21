@@ -30,9 +30,13 @@ public enum PostgreTypeCategory implements DBPNamedObject {
     C("Composite"),
     D("Date/time"),
     E("Enum"),
+    F("Collection"), // GaussDB PL/SQL table/collection types
     G("Geometric"),
+    H("Set"), // GaussDB anyset
     I("Network address"),
     J("JSON"),
+    L("Row identifier"), // GaussDB rowid
+    M("Unsigned integer"), // GaussDB uint1/uint2/uint4/uint8
     N("Numeric"),
     P("Pseudo"),
     R("Range"), //$NON-NLS-1$
@@ -40,6 +44,7 @@ public enum PostgreTypeCategory implements DBPNamedObject {
     T("Timespan"),
     U("User-defined"),
     V("Bit-string"),
+    W("Undefined"), // GaussDB undefined placeholder
     X("Unknown"),
     Y("Y"), //Kingbase Type
     Z("Internal-use types"); //$NON-NLS-1$
