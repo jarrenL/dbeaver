@@ -47,14 +47,15 @@ public class ProductConfigWelcomePage extends ProductConfigWizardPage {
                 seenLanguageChangeWarning = true;
                 UIUtils.showMessageBox(
                     getShell(),
-                    "Language change",
-                    "Language change will be applied after restart.",
+                    ProductConfigMessages.language_change_title,
+                    ProductConfigMessages.language_change_message,
                     SWT.ICON_INFORMATION
                 );
             }
 
             if (DBWorkbench.getPlatform() instanceof DBPPlatformLanguageManager manager) {
                 manager.setPlatformLanguage(language.get());
+                getWizard().markForRestart();
             }
         });
     }
@@ -99,7 +100,7 @@ public class ProductConfigWelcomePage extends ProductConfigWizardPage {
             return UIRowBuilder.identityConsumer();
         }
         return pb -> pb.row(rb -> rb
-            .label("Language:")
+            .label(ProductConfigMessages.language_label)
             .comboBox(
                 PlatformLanguageRegistry.getInstance().getLanguages(),
                 language,

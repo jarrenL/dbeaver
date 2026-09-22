@@ -2,7 +2,7 @@
 
 > 最新26.1.5麒麟x86_64实测见 [GUI验收报告](ICBC_2615_LINUX_GUI_ACCEPTANCE_20260921.md)：核心流程已跑通，但有未修复问题，不是客户桌面云验收全绿或新发布版本。
 
-> 当前版本（2026-09-22）：DBeaver 26.1.5 GaussDB 适配版。O（Oracle，服务端可能返回 O/A/ORA）模式用于 PL/SQL 调试与 Package；M 用于基础连接、元数据、SQL 和数据维护。Linux 与 Windows x86_64 均已发布 26.1.5 r2 包，旧 Windows 26.2.0 下载已移除。请从 [当前发布页](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-preview-20260921-r2) 获取软件，操作入口以 [在线使用说明书](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md) 为准。本文后续历史构建命令用于技术参考，不作为当前下载入口。
+> 当前版本（2026-09-22）：DBeaver 26.1.5 GaussDB 适配版中文界面更新。O（Oracle，服务端可能返回 O/A/ORA）模式用于 PL/SQL 调试与 Package；M 用于基础连接、元数据、SQL 和数据维护。请从 [当前发布页](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20260922) 获取 Linux / Windows x86_64 软件，操作入口及中文设置以 [在线使用说明书](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md) 为准。本文后续历史构建命令用于技术参考，不作为当前下载入口。
 
 适用对象：使用 macOS、Windows、Linux（重点为银河麒麟 V10 服务器版）连接 GaussDB 的开发、测试和运维人员。整理日期：2026-09-18。
 
@@ -492,7 +492,7 @@ SPEC 修改可能影响 BODY/其他依赖；编译操作也需要权限和适当
 
 ## 13. 源码构建与参考资料
 
-用户可直接使用完整产品，不要求自行编译。需要复现软件构建时，使用 [26.1.5 r2 对应源码](https://github.com/jarrenL/dbeaver/tree/gaussdb-2615-preview-20260921-r2)，核对提交 6e10696f3aa10acbef7b3cf7700f153dda5c908e 和发布清单中的依赖版本，不使用旧开发基线代替。
+用户可直接使用完整产品，不要求自行编译。需要复现软件构建时，使用 [2026-09-22 对应源码](https://github.com/jarrenL/dbeaver/tree/gaussdb-2615-20260922)，核对发布清单中的源码提交和依赖版本，不使用旧开发基线代替。产品构建后须执行对应平台组装脚本，它会配置支持界面语言设置的启动器并安装中文资源；不要将未经组装的构建目录当成最终交付包。
 
 将 dbeaver 和 dbeaver-common 并列放置，按产品构建记录固定依赖提交、JDK 和 Maven/P2 源，再从 dbeaver 根目录运行：
 

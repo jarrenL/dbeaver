@@ -21,7 +21,9 @@ import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.eclipse.ui.internal.Workbench;
+import org.eclipse.ui.IWorkbenchWindow;
+import org.eclipse.osgi.util.NLS;
+import org.jkiss.dbeaver.ui.app.config.nls.ProductConfigMessages;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ui.UIUtils;
@@ -39,14 +41,16 @@ public final class ProductConfigWizardHandler extends AbstractHandler {
             return null;
         }
         if (dialog.isRestartRequired()) {
-            if (UIUtils.confirmAction(
-                HandlerUtil.getActiveShell(event),
-                "Restart " + GeneralUtils.getProductName(),
-                "You need to restart " + GeneralUtils.getProductName() + " to apply some of the changes.\nDo you want to restart now?"
-            )) {
-                UIUtils.asyncExec(() -> Workbench.getInstance().restart());
-            }
+            confirmRestart(HandlerUtil.getActiveWorkbenchWindow(event));
         }
         return null;
+    }
+
+    public static void confirmRestart(@NotNull IWorkbenchWindow window) {
+        if (UIUtils.confirmAction(window.getShell(),
+            NLS.bind(ProductConfigMessages.restart_title, GeneralUtils.getProductName()),
+            NLS.bind(ProductConfigMessages.restart_message, GeneralUtils.getProductName()))) {
+            UIUtils.asyncExec(() -> window.getWorkbench().restart());
+        }
     }
 }

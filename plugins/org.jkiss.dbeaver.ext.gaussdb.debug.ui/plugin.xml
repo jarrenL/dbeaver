@@ -3,8 +3,8 @@
 <plugin>
     <extension point="org.jkiss.dbeaver.debug.ui.configurationPanels">
         <panel id="org.jkiss.dbeaver.ext.gaussdb.debug.routine"
-               name="GaussDB routine"
-               description="GaussDB PL/SQL function or procedure"
+               name="%debug.routine.name"
+               description="%debug.routine.description"
                class="org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal.GaussDBDebugPanelRoutine">
             <datasource id="gaussdb"/>
         </panel>
@@ -39,7 +39,7 @@
                     class="org.eclipse.debug.ui.actions.RulerToggleBreakpointActionDelegate"
                     icon="platform:/plugin/org.eclipse.debug.ui/$nl$/icons/full/obj16/brkp_obj.png"
                     id="org.jkiss.dbeaver.ext.gaussdb.debug.actions.ManageBreakpointRulerAction"
-                    label="Toggle GaussDB breakpoint" style="push"/>
+                    label="%debug.breakpoint.toggle" style="push"/>
         </editorContribution>
     </extension>
 
@@ -58,8 +58,8 @@
 
     <extension point="org.eclipse.ui.contexts">
         <context id="org.jkiss.dbeaver.ext.gaussdb.debug.context"
-                 name="GaussDB debugging"
-                 description="Active while a GaussDB routine is being debugged"
+                 name="%debug.context.name"
+                 description="%debug.context.description"
                  parentId="org.eclipse.debug.ui.debugging"/>
     </extension>
 

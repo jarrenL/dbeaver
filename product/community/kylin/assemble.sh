@@ -26,6 +26,8 @@ fi
 mkdir -p "$delivery_output"
 cp -a "$product_source" "$delivery_output/dbeaver"
 delivery_app="$delivery_output/dbeaver"
+node "$(dirname "$0")/../configure-launcher.mjs" "$delivery_app"
+node "$(dirname "$0")/../install-zh-resources.mjs" "$delivery_app"
 test ! -e "$delivery_app/jre"
 mkdir "$delivery_app/jre"
 tar -xzf "$jre_archive" --strip-components=1 -C "$delivery_app/jre"

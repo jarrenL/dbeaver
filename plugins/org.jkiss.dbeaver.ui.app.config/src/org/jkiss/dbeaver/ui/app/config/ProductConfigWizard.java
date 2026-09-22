@@ -42,7 +42,7 @@ public final class ProductConfigWizard extends Wizard {
 
     public ProductConfigWizard(@NotNull Origin origin) {
         this.origin = origin;
-        setWindowTitle("Product Configuration");
+        setWindowTitle(ProductConfigMessages.configuration_title);
     }
 
     @Override

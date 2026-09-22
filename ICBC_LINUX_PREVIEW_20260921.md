@@ -1,6 +1,6 @@
 # 麒麟 Linux x86_64 安装与使用说明（26.1.5）
 
-本说明适用于 DBeaver 26.1.5 GaussDB 适配版。发布标记：gaussdb-2615-preview-20260921-r2，同时提供 Linux 与 Windows x86_64 包。平台验证范围见下文；发布标记是固定下载标识。逐步操作见 [图形界面使用说明书](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)。
+本说明适用于 DBeaver 26.1.5 GaussDB 适配版。当前发布标记：gaussdb-2615-20260922，同时提供 Linux 与 Windows x86_64 包，已纳入中文设置修复。平台验证范围见下文；发布标记是固定下载标识。逐步操作见 [图形界面使用说明书](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)。
 
 ## 安装
 

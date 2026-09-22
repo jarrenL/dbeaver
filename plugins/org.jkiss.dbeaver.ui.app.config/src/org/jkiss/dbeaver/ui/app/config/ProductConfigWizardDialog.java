@@ -44,7 +44,7 @@ public final class ProductConfigWizardDialog extends ActiveWizardDialog {
             null,
             origin == ProductConfigWizard.Origin.AUTOMATIC ? null : window.getShell()
         );
-        setFinishButtonLabel("Apply");
+        setFinishButtonLabel(org.jkiss.dbeaver.ui.app.config.nls.ProductConfigMessages.apply_button);
         setMinimumPageSize(0, 0);
     }
 

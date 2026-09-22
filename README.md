@@ -12,7 +12,7 @@
 
 - **[图形界面使用说明书（在线阅读，含截图）](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)**：安装、连接、调试入口、断点、变量、调用栈、事务及包编译的逐步操作。
 - [客户文档导航](docs/gaussdb/README.md)：平台安装、功能范围、使用步骤与验证记录。
-- [软件下载及版本附件](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-preview-20260921-r2)。
+- [软件下载及版本附件](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20260922)。
 
 PL/SQL 调试与 Package 用于 O/Oracle 模式；M 模式用于基础数据库操作。各平台的已验证范围和部署前提见客户文档，不以构建成功代替现场验收。以下为上游 DBeaver 项目介绍。
 

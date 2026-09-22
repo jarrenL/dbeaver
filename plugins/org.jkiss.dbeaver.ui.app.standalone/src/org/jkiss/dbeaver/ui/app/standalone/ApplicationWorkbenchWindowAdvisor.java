@@ -197,6 +197,9 @@ public class ApplicationWorkbenchWindowAdvisor extends IDEWorkbenchWindowAdvisor
                 DBRFeatureRegistry.getInstance().endTracking();
                 System.exit(0);
             }
+            if (dialog.isRestartRequired()) {
+                org.jkiss.dbeaver.ui.app.config.ProductConfigWizardHandler.confirmRestart(getWindowConfigurer().getWindow());
+            }
         });
     }
 

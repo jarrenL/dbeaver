@@ -57,8 +57,8 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
         if (activePart instanceof ISaveablePart saveablePart && saveablePart.isDirty()) {
             UIUtils.showMessageBox(
                 HandlerUtil.getActiveShell(event),
-                "Save package",
-                "Save the package source before compiling it.",
+                GaussDBMessages.package_save_title,
+                GaussDBMessages.package_save_message,
                 SWT.ICON_WARNING
             );
             return null;
@@ -77,18 +77,18 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
             if (editor != null && editor.isDirty()
                 && editor.getEditorInput() instanceof IDatabaseEditorInput input
                 && packages.contains(input.getDatabaseObject())) {
-                UIUtils.showMessageBox(HandlerUtil.getActiveShell(event), "Save package",
-                    "Save the package source before compiling it.", SWT.ICON_WARNING);
+                UIUtils.showMessageBox(HandlerUtil.getActiveShell(event), GaussDBMessages.package_save_title,
+                    GaussDBMessages.package_save_message, SWT.ICON_WARNING);
                 return null;
             }
         }
 
         // The generic progress service only sets a canceled flag during JDBC IO.
         // AbstractJob additionally cancels the monitor's active JDBC blocking object.
-        AbstractJob job = new AbstractJob("Compile GaussDB package") {
+        AbstractJob job = new AbstractJob(GaussDBMessages.package_compile_title) {
             @Override
             protected IStatus run(DBRProgressMonitor monitor) {
-                monitor.beginTask("Compile GaussDB package", packages.size());
+                monitor.beginTask(GaussDBMessages.package_compile_title, packages.size());
                 try {
                     GaussDBPackageCompileBatch.Result batch = GaussDBPackageCompileBatch.compile(monitor, packages, target);
                     if (batch.canceled() && batch.failure() != null) {
@@ -149,13 +149,13 @@ public class GaussDBPackageCompileHandler extends AbstractHandler {
             new GaussDBPackageCompileResultsDialog(window.getShell(), results).open();
         } else if (completed) {
             String message = packages.size() == 1
-                ? packages.get(0).getName() + " compiled successfully"
-                : packages.size() + " packages compiled successfully";
+                ? NLS.bind(GaussDBMessages.package_compile_success, packages.get(0).getName())
+                : NLS.bind(GaussDBMessages.package_compile_success_many, packages.size());
             if (sourceHost != null) {
                 sourceHost.getCompileLog().clearLog();
                 sourceHost.setCompileInfo(message, false);
             }
-            UIUtils.showMessageBox(window.getShell(), "Compile package", message, SWT.ICON_INFORMATION);
+            UIUtils.showMessageBox(window.getShell(), GaussDBMessages.package_compile_title, message, SWT.ICON_INFORMATION);
         }
     }
 

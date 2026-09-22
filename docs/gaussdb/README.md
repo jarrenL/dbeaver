@@ -1,6 +1,6 @@
 # GaussDB 客户文档
 
-适用软件：DBeaver 26.1.5 GaussDB 适配版（2026-09-21 r2）。
+适用软件：DBeaver 26.1.5 GaussDB 适配版（2026-09-22 中文界面更新）。
 
 ## 使用与部署
 
@@ -9,7 +9,7 @@
 - [麒麟 Linux 安装说明](../../ICBC_LINUX_PREVIEW_20260921.md)。
 - [Windows 功能检查指南](../../GAUSSDB_WINDOWS_TEST_GUIDE.md)。
 - [需求及适用范围](../../ICBC_REQUIREMENTS_SCOPE_20260921.md)。
-- [软件包下载](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-preview-20260921-r2)。发布标记和文件名属于固定下载标识，不应改写后使用。
+- [软件包下载](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20260922)。发布标记和文件名属于固定下载标识，不应改写后使用。
 
 ## 版本与验证范围
 
@@ -19,6 +19,7 @@ Linux x86_64 已有麒麟 V10 用户空间与 GaussDB 507 的专项界面验证�
 
 ## 质量与验证记录
 
+- [中文设置修复与验证](../../GAUSSDB_LANGUAGE_VALIDATION_20260922.md)。
 - [断点、源码导航及脚本执行修复记录](../../ICBC_LINUX_FIX_PROGRESS_20260921.md)。
 - [复杂包语法验证](../../ICBC_COMPLEX_SYNTAX_ACCEPTANCE_20260921.md)。
 - [26.1.5 与 GaussDB 507 验证记录](../../ICBC_2615_507_VALIDATION_20260921.md)。

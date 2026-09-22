@@ -3,6 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {configureLauncher} from '../configure-launcher.mjs';
+import {installChineseResources} from '../install-zh-resources.mjs';
 const [product, jre, output, revision] = process.argv.slice(2);
 assert(product && jre && output && /^[0-9a-f]{40}$/.test(revision ?? ''), 'Expected product, JRE, new output and full source SHA');
 assert(!fs.existsSync(output), 'Output must not already exist');
@@ -25,6 +27,8 @@ assert(!bundles.some(name => /swtbot|gaussdb.acceptance|\.test_/.test(name)), 'T
 const payload = path.join(output, 'dbeaver');
 fs.mkdirSync(output, {recursive: true});
 fs.cpSync(product, payload, {recursive: true});
+configureLauncher(payload);
+installChineseResources(payload);
 fs.cpSync(jre, path.join(payload, 'jre'), {recursive: true});
 const iniFile = path.join(payload, 'dbeaver.ini');
 let ini = fs.readFileSync(iniFile, 'utf8');

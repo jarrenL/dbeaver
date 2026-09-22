@@ -47,6 +47,6 @@ mvn -o -fae verify -f product/aggregate/pom.xml \
 
 ## 4. 交付边界
 
-当前交付基线为 DBeaver 26.1.5，Linux 与 Windows x86_64 包及源码版本见 [发布页](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-preview-20260921-r2)。本文记录的范围修正已纳入该版本；早期验证统计保留其原有执行日期和环境限制。
+当前交付基线为 DBeaver 26.1.5，Linux 与 Windows x86_64 包及源码版本见 [发布页](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20260922)。本文记录的范围修正已纳入该版本；早期验证统计保留其原有执行日期和环境限制。
 
 仍需目标环境验证：两个金融版、26.1.5 客户麒麟 GUI 全流程、M 基础功能完整冒烟、O 模式包内例程/包级变量的客户典型场景，以及 ALL 部署组合。不能据本轮范围澄清宣称这些全部完成。

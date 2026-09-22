@@ -20,6 +20,13 @@ import org.eclipse.osgi.util.NLS;
 
 public final class ProductConfigMessages extends NLS {
     public static String welcome_title;
+    public static String language_label;
+    public static String language_change_title;
+    public static String language_change_message;
+    public static String restart_title;
+    public static String restart_message;
+    public static String apply_button;
+    public static String configuration_title;
     public static String welcome_description;
     public static String welcome_body_text;
     public static String welcome_body_hint;

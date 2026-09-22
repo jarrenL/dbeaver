@@ -49,6 +49,11 @@ public class GaussDBMessages extends NLS {
     public static String package_compile_partial_summary;
     public static String package_compile_canceled;
     public static String package_compile_failed;
+    public static String package_save_title;
+    public static String package_save_message;
+    public static String package_compile_title;
+    public static String package_compile_success;
+    public static String package_compile_success_many;
 
     static {
         // initialize resource bundle

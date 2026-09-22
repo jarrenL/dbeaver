@@ -6,6 +6,7 @@
 package org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal;
 
 import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
@@ -62,8 +63,8 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
     @Override
     public void createPanel(@NotNull Composite parent, DBGConfigurationPanelContainer container) {
         this.container = container;
-        Composite routineGroup = UIUtils.createTitledComposite(parent, "GaussDB routine", 2, GridData.FILL_HORIZONTAL);
-        UIUtils.createControlLabel(routineGroup, "Routine");
+        Composite routineGroup = UIUtils.createTitledComposite(parent, GaussDBDebugMessages.routine_group, 2, GridData.FILL_HORIZONTAL);
+        UIUtils.createControlLabel(routineGroup, GaussDBDebugMessages.routine_label);
         routineSelector = new CSmartSelector<>(routineGroup, SWT.BORDER | SWT.DROP_DOWN | SWT.READ_ONLY, new LabelProvider() {
             @Override
             public Image getImage(Object element) {
@@ -84,14 +85,14 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         };
         routineSelector.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
 
-        Composite parametersGroup = UIUtils.createTitledComposite(parent, "Input parameters", 1, GridData.FILL_BOTH);
+        Composite parametersGroup = UIUtils.createTitledComposite(parent, GaussDBDebugMessages.input_parameters, 1, GridData.FILL_BOTH);
         parametersTable = new Table(parametersGroup, SWT.SINGLE | SWT.FULL_SELECTION | SWT.BORDER | SWT.V_SCROLL);
         parametersTable.setLayoutData(new GridData(GridData.FILL_BOTH));
         parametersTable.setHeaderVisible(true);
         parametersTable.setLinesVisible(true);
-        UIUtils.createTableColumn(parametersTable, SWT.LEFT, "Name").setWidth(140);
-        UIUtils.createTableColumn(parametersTable, SWT.LEFT, "Value").setWidth(240);
-        UIUtils.createTableColumn(parametersTable, SWT.LEFT, "Type").setWidth(140);
+        UIUtils.createTableColumn(parametersTable, SWT.LEFT, GaussDBDebugMessages.parameter_name).setWidth(140);
+        UIUtils.createTableColumn(parametersTable, SWT.LEFT, GaussDBDebugMessages.parameter_value_column).setWidth(240);
+        UIUtils.createTableColumn(parametersTable, SWT.LEFT, GaussDBDebugMessages.parameter_type).setWidth(140);
         UIUtils.createTableColumn(parametersTable, SWT.LEFT, GaussDBDebugMessages.parameter_mode).setWidth(140);
         UIUtils.createControlLabel(parametersGroup, GaussDBDebugMessages.parameter_hint);
         new CustomTableEditor(parametersTable) {
@@ -150,7 +151,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
             return;
         }
         DBNNode selectedNode = DBWorkbench.getPlatformUI().selectObject(
-            shell, "Select GaussDB routine to debug", dataSourceNode,
+            shell, GaussDBDebugMessages.routine_select, dataSourceNode,
             selectedRoutine == null ? null : navigator.getNodeByObject(selectedRoutine),
             new Class[]{DBSInstance.class, DBSObjectContainer.class, GaussDBProcedure.class},
             new Class[]{GaussDBProcedure.class}, null);
@@ -225,7 +226,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
                 try {
                     GaussDBDebugArguments.Mode.valueOf(mode);
                 } catch (IllegalArgumentException e) {
-                    container.setWarningMessage("Unknown debug parameter mode: " + mode);
+                    container.setWarningMessage(NLS.bind(GaussDBDebugMessages.parameter_unknown_mode, mode));
                     selectedRoutine = null;
                     return;
                 }
