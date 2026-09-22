@@ -1,6 +1,6 @@
-# Windows x86_64 preview packaging
+# Windows x86_64 安装与打包说明
 
-This is an unsigned project preview, not an official DBeaver upstream release or a Windows-certified build. Windows installation, launch, uninstall and database GUI tests have NOT been executed on a Windows machine. macOS-hosted Java regression and archive inspection do not replace those tests.
+本包为 GaussDB 适配版，未签名，不代表 DBeaver 上游官方发行或 Windows 认证。Windows 安装、启动、卸载及数据库图形界面仍需在目标 Windows 环境验证；跨平台构建和归档检查不能替代这些验证。
 
 ## 用户安装
 

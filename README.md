@@ -6,6 +6,16 @@
 
 # DBeaver
 
+## GaussDB 客户文档
+
+本仓库提供基于 DBeaver 26.1.5 的 GaussDB 适配实现与交付文档。
+
+- **[图形界面使用说明书（在线阅读，含截图）](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)**：安装、连接、调试入口、断点、变量、调用栈、事务及包编译的逐步操作。
+- [客户文档导航](docs/gaussdb/README.md)：平台安装、功能范围、使用步骤与验证记录。
+- [软件下载及版本附件](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-preview-20260921-r2)。
+
+PL/SQL 调试与 Package 用于 O/Oracle 模式；M 模式用于基础数据库操作。各平台的已验证范围和部署前提见客户文档，不以构建成功代替现场验收。以下为上游 DBeaver 项目介绍。
+
 Free multi-platform database tool for developers, SQL programmers, database administrators and analysts.  
 
 * Has a lot of <a href="https://github.com/dbeaver/dbeaver/wiki">features</a> including schema editor, SQL editor, data editor, AI integration, ER diagrams, data export/import/migration, SQL execution plans, database administration tools, database dashboards, Spatial data viewer, proxy and SSH tunnelling, custom database drivers editor, etc.
@@ -91,4 +101,3 @@ Our other open-source products:
 
 - <a href="https://github.com/dbeaver/cloudbeaver">CloudBeaver</a> - web-based database management tool built on the DBeaver platform.<br/>Runs as server (docker) and provides rich web interface (SPA).  
 - <a href="https://github.com/dbeaver/dbvr">dbvr</a> - CLI database management tool. Useful in CI/CD pipelines and all sort of automations. 
-

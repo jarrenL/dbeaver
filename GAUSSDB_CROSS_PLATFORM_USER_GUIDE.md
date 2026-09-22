@@ -2,7 +2,7 @@
 
 > 最新26.1.5麒麟x86_64实测见 [GUI验收报告](ICBC_2615_LINUX_GUI_ACCEPTANCE_20260921.md)：核心流程已跑通，但有未修复问题，不是客户桌面云验收全绿或新发布版本。
 
-> 工行范围澄清（2026-09-21）：当前开发基线为真正的 26.1.5。O（Oracle，服务端可能返回 O/A/ORA）模式验收 PL/SQL 调试与 Package；M 仅要求基础连接、元数据、SQL 和数据维护，不提供 PL/SQL 调试/包编译入口。详见 [范围核对报告](ICBC_REQUIREMENTS_SCOPE_20260921.md) 和 [迁移与验证报告](ICBC_2615_507_VALIDATION_20260921.md)。下文保留 09-18 平台操作及历史发布信息；旧 Windows 26.2.0 发布包未被替换。
+> 当前版本（2026-09-22）：DBeaver 26.1.5 GaussDB 适配版。O（Oracle，服务端可能返回 O/A/ORA）模式用于 PL/SQL 调试与 Package；M 用于基础连接、元数据、SQL 和数据维护。Linux 与 Windows x86_64 均已发布 26.1.5 r2 包，旧 Windows 26.2.0 下载已移除。请从 [当前发布页](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-preview-20260921-r2) 获取软件，操作入口以 [在线使用说明书](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md) 为准。本文后续历史构建命令用于技术参考，不作为当前下载入口。
 
 适用对象：使用 macOS、Windows、Linux（重点为银河麒麟 V10 服务器版）连接 GaussDB 的开发、测试和运维人员。整理日期：2026-09-18。
 
@@ -38,17 +38,17 @@ DBeaver 安装在操作者的电脑或有桌面的 Linux 服务器上，通过 J
 
 ### 1.2 先确认拿到的是哪个版本
 
-目前存在两个不同层次，不能混用结论：
+当前软件与历史验证记录应区分：
 
 | 内容 | 状态与适用范围 |
 |---|---|
 | 2026-09-09 麒麟双架构归档 | 已有历史交付文件及证据；源码基线 26688a344254a29677edfd06076345c0fc6d71fe |
-| 2026-09-18 当前工作区 | HEAD 为 99e620c16dd8403f4730d6242abcab7d22f524f5，另含尚未提交的 09-17/18 修复；本轮回归 654 通过、4 跳过、0 失败 |
-| 包含上述最新修复的跨平台安装包 | 本轮尚未重新打包、推送或做安装验收；不能认为旧包或远端 clone 自动含有这些修复 |
+| 当前软件源码 | 26.1.5，提交 6e10696f3aa10acbef7b3cf7700f153dda5c908e；后续文档提交不改变安装包代码 |
+| 当前软件包 | 2026-09-21 r2：Linux x86_64、Windows x86_64；附清单和校验值，平台验证边界分别记录 |
 
-最新三项修复是：普通账号原生工具管道认证、COMMIT 回执丢失时有界退出、真实 marker 删除后的服务端断点清理。下文描述这些行为时，前提都是“安装包确实包含该修复”。
+当前版本包括此前认证、事务收尾、断点隔离修复，以及断点重复启停、首次跨 schema 源码导航和复杂包脚本解析修复，具体证据见客户文档导航。
 
-交付方应同时提供：准确文件名、SHA-256、源码提交及补丁状态、内置 JRE 说明、支持的 OS/CPU、驱动获取方式、许可证与对应源码材料。**不要将 SWTBot 测试副本、candidate 临时目录或保存密码的测试 workspace 发给客户。**
+交付材料包括准确文件名、SHA-256、源码提交、内置 JRE 说明、支持的 OS/CPU、驱动获取方式、许可证与对应源码。请勿将含自动化测试插件或保存密码的工作区作为软件包分发。
 
 ### 1.3 平台选择与已有证据
 
@@ -88,7 +88,7 @@ DBeaver 安装在操作者的电脑或有桌面的 Linux 服务器上，通过 J
 - **工作区 workspace**：连接配置、编辑器状态、日志；需可写，不与其他实例共用。
 - **驱动/备份目录**：客户提供的 JDBC 和导出文件；按企业要求限制权限。
 
-workspace 可能含敏感配置。不要上传到 Git、公共网盘或发给同事当“安装包”。密码是否能迁移取决于安全存储，不承诺拷贝工作区后密码可直接复用。
+workspace 可能含敏感配置。不要上传到 Git、公共网盘或作为“安装包”分发。密码是否能迁移取决于安全存储，不承诺拷贝工作区后密码可直接复用。
 
 ## 3. macOS 安装与启动
 
@@ -207,12 +207,7 @@ DBeaver 是图形客户端。服务器版 Linux 只有 SSH 命令行时，有三
 
 ### 5.3 麒麟专用包与运行依赖
 
-历史交付文件名：
-
-- `dbeaver-gaussdb-26.2.0-kylin-v10-aarch64.tar.gz`
-- `dbeaver-gaussdb-26.2.0-kylin-v10-x86_64.tar.gz`
-
-这些名称对应 09-09 归档，不代表包含 09-18 修复。最新包应由交付方重新构建并给出新的清单。
+当前文件名：`dbeaver-gaussdb-26.1.5-kylin-v10-x86_64-preview.tar.gz`。仅适用于 x86_64；ARM64 客户端需要独立匹配的软件包，不能使用此包。文件名保留发布标识，请按原名下载和校验。
 
 麒麟实测用户空间为 glibc 2.28、GTK 3.24.21。普通 Linux 产品曾因启动器/SWT 要求更高 glibc 无法启动，所以专用包重建了匹配的原生库。**不要将其他系统的 glibc 拷贝覆盖麒麟系统库。**
 
@@ -230,11 +225,11 @@ Ubuntu 等发行版的包名、WebKit ABI 与软件源不同，不能直接照�
 
 ```sh
 sha256sum -c SHA256SUMS
-mkdir -p "$HOME/apps/gaussdb-client-20260909" "$HOME/DBeaver-GaussDB/workspace"
-tar -xzf dbeaver-gaussdb-26.2.0-kylin-v10-aarch64.tar.gz -C "$HOME/apps/gaussdb-client-20260909"
+mkdir -p "$HOME/apps/gaussdb-client-2615-r2" "$HOME/DBeaver-GaussDB/workspace"
+tar -xzf dbeaver-gaussdb-26.1.5-kylin-v10-x86_64-preview.tar.gz -C "$HOME/apps/gaussdb-client-2615-r2"
 ```
 
-上例仅用于 ARM64 历史包；x86_64 替换文件名，最新交付替换版本目录。确认解压后的实际结构，在图形终端进入含 `dbeaver` 可执行文件的目录：
+上例适用于当前 x86_64 包。进入解压目录下的 `dbeaver` 文件夹，在图形终端启动：
 
 ```sh
 ./dbeaver -data "$HOME/DBeaver-GaussDB/workspace"
@@ -291,7 +286,7 @@ SELECT datname, datcompatibility FROM pg_database WHERE datname = current_databa
 
 ### 6.4 远程服务器与 Docker 地址
 
-- 同事从另一台电脑访问数据库：填写服务器可达地址及实际开放端口，不填 127.0.0.1。
+- 从另一台电脑访问数据库：填写服务器可达地址及实际开放端口，不填 127.0.0.1。
 - 数据库跑在服务器 Docker 中：填写宿主机地址和映射出的端口，不依赖容器临时 IP。
 - `host.docker.internal` 是特定 Docker 环境的辅助名称，不是客户数据库的统一地址。
 - 客户端 SSH 隧道转发时，按 DBeaver 隧道页面实际配置处理地址；不要同时手工转发又无意启用第二层隧道。
@@ -497,7 +492,7 @@ SPEC 修改可能影响 BODY/其他依赖；编译操作也需要权限和适当
 
 ## 13. 源码构建与参考资料
 
-普通客户优先使用可追溯的完整产品，不要求自行编译。开发人员需要构建时，仓库为 [jarrenL/dbeaver](https://github.com/jarrenL/dbeaver/tree/feature/gaussdb-compatibility)，分支 feature/gaussdb-compatibility。远端是否包含本地最新补丁须先核实。
+用户可直接使用完整产品，不要求自行编译。需要复现软件构建时，使用 [26.1.5 r2 对应源码](https://github.com/jarrenL/dbeaver/tree/gaussdb-2615-preview-20260921-r2)，核对提交 6e10696f3aa10acbef7b3cf7700f153dda5c908e 和发布清单中的依赖版本，不使用旧开发基线代替。
 
 将 dbeaver 和 dbeaver-common 并列放置，按产品构建记录固定依赖提交、JDK 和 Maven/P2 源，再从 dbeaver 根目录运行：
 

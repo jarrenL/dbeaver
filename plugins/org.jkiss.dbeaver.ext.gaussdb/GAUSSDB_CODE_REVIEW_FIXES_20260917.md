@@ -1,12 +1,12 @@
-# Hermes 历史审查：采纳、修复与验证
+# 代码审查记录：采纳、修复与验证
 
 日期：2026-09-17。修改基线：`99e620c16dd8403f4730d6242abcab7d22f524f5`，分支 `feature/gaussdb-compatibility`。
 
 后续已按用户要求执行真库验证，并额外修正包源码行偏移。详见 [真实数据库验证报告](GAUSSDB_LIVE_REVIEW_VALIDATION_20260917.md)。下文 640 项及“未连库”为首次静态修复轮的历史记录，不是后续真库轮的最终状态。
 
-Hermes 完成 001–009 共九轮只读审查。用户要求转入修复后，已暂停 `hermes-gaussdb` 自动化并中止正在运行的 010 轮；第十轮无完整报告，不计完成。没有返回配额耗尽错误，也没有更换模型或充值。
+本记录汇总编号 001–009 的九轮静态审查结论；没有完整报告的轮次不计入统计。
 
-静态审查报告不是验收报告。下面区分代码证据、已执行测试、仍缺证据；没有把 Hermes 的每项判断直接视为事实。
+静态审查报告不是验收报告。以下区分代码证据、已执行测试和仍需验证的事项；审查意见经过代码复核后采纳。
 
 ## 1. 本轮修改
 
@@ -32,7 +32,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home \
 mvn -o verify -f product/aggregate/pom.xml \
   -pl "$(paste -sd, tools/gaussdb-review-reactor.txt)" \
   -Dskip-checkstyle=true -Dspotless.check.skip=true \
-  -l /tmp/gaussdb-hermes-fixes-20260917-tests-final.log
+  -l /tmp/gaussdb-code-review-tests.log
 ```
 
 最终执行于 18:07:35 完成，`BUILD SUCCESS`，71 模块全部成功：
@@ -73,4 +73,4 @@ mvn -o verify -f product/aggregate/pom.xml \
 
 本轮没有连接数据库、改部署、运行客户 Windows/麒麟机器或重打 Linux 客户包。单元测试与合成进程结果不替代服务端真实行为、SWT 操作、集中式包编译和最终产品验收。
 
-改动保留在工作区，尚未 commit/push。请勿把旧产品或远端旧分支当作包含本轮修复。Hermes 原始报告和运行记录位于本机 `/tmp/gaussdb-hermes-review-20260917.5sZbYh/`，本文件保存采纳结论，避免把临时原始报告当长期交付依赖。
+本文保留当轮修复及验证结论。后续软件版本、发布清单和使用入口见 [客户文档导航](../../docs/gaussdb/README.md)，不要求用户访问维护环境的临时报告目录。上述日志输出位置为复现命令的示例路径。

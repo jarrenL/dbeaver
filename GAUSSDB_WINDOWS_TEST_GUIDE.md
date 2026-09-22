@@ -2,9 +2,9 @@
 
 日常安装和跨平台使用步骤请先阅读 [macOS / Windows / Linux 使用指南](GAUSSDB_CROSS_PLATFORM_USER_GUIDE.md)；本文侧重 Windows 验收测试。
 
-日期：2026-09-17。目标代码：`jarrenL/dbeaver` 的 `feature/gaussdb-compatibility` 分支。
+更新日期：2026-09-22。适用软件：DBeaver 26.1.5 GaussDB 适配版（2026-09-21 r2），代码仓库 `jarrenL/dbeaver`。
 
-09-17 审查修复尚未提交/推送时，远端 clone 不包含这些改动。验收必须记录实际源码提交及工作区状态，并确认产品由对应源码重新构建，不能直接沿用旧候选包。
+安装包可从当前发布页直接获取，无需自行编译；逐步点击说明见 [图形界面使用说明书](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)。验收记录软件版本及校验值。以下源码构建章节供需要复现构建的技术人员使用。
 
 ## 1. 测试范围和状态
 
@@ -28,7 +28,7 @@
 在独立工作目录执行，不覆盖已有仓库：
 
 ```powershell
-git clone --branch feature/gaussdb-compatibility https://github.com/jarrenL/dbeaver.git
+git clone --branch gaussdb-2615-preview-20260921-r2 https://github.com/jarrenL/dbeaver.git
 git clone https://github.com/dbeaver/dbeaver-common.git
 git -C dbeaver-common checkout 2df03e58480c6325732f476e8355e375cec5405e
 git -C dbeaver rev-parse HEAD

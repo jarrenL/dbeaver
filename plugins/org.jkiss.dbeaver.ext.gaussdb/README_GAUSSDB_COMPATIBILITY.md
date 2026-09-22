@@ -1,5 +1,7 @@
 # DBeaver GaussDB 适配说明
 
+用户操作请从 [图形界面使用说明书（含截图）](../../GAUSSDB_GUI_OPERATION_MANUAL_20260922.md) 开始；平台安装、功能范围和验证记录见 [客户文档导航](../../docs/gaussdb/README.md)。本文后续内容保留适配历史和技术依据，不替代当前版本操作指南。
+
 > 2026-09-21 工行需求澄清：O（Oracle）模式承载 PL/SQL 调试及 Package，M 模式只要求基础功能。当前 26.1.5 分支范围以 [范围核对报告](../../ICBC_REQUIREMENTS_SCOPE_20260921.md) 为准；下文保留历史适配记录。
 
 > 跨 schema 调试及竞态的后续实测、修复和仍未闭环的 PostgreSQL 边界见

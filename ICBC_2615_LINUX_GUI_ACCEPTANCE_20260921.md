@@ -4,7 +4,7 @@
 
 ## 环境与方法
 
-- 分支 codex/icbc-gaussdb-26.1.5，包含本轮 O/M 范围澄清的未提交工作区修改，不是旧 26.2.0 发布包。
+- 验证基线为 26.1.5，包含当轮 O/M 范围修正；本报告保留修复前的实际现象，后续处理见 [修复记录](ICBC_LINUX_FIX_PROGRESS_20260921.md)。
 - 重新构建完整产品，208 模块 BUILD SUCCESS（39.759 秒）；窗口实际显示 DBeaver 26.1.5。
 - 麒麟 V10 (Lance) 用户空间，x86_64 JRE 21、GTK/SWT、Xvfb + Metacity，普通 tester 用户。宿主 ARM Mac，x86_64 仿真；不是客户原生 x86 桌面云或完整麒麟内核认证。
 - 用既有麒麟 JNI/启动器构建产物组装本次新产品；产品要求的 SWT/launcher 版本与组装脚本一致。测试副本加入由当前源码编译的 SWTBot；另保留不含测试插件的 clean 副本。
