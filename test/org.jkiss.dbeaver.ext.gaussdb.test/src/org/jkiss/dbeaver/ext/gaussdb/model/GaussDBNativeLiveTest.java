@@ -57,19 +57,32 @@ class GaussDBNativeLiveTest {
     @Test
     void actualDumpAndLargeOutputPlainRestoreUsesProductionRedirection() throws Exception {
         String config = System.getenv("GAUSSDB_REVIEW_CONNECTION"), jar = System.getenv("GAUSSDB_REVIEW_JDBC");
+        if (System.getenv("GAUSSDB_NATIVE_CONNECTION") != null) {
+            config = System.getenv("GAUSSDB_NATIVE_CONNECTION");
+        }
+        if (System.getenv("GAUSSDB_NATIVE_JDBC") != null) {
+            jar = System.getenv("GAUSSDB_NATIVE_JDBC");
+        }
         assumeTrue(config != null && jar != null && "true".equals(System.getenv("GAUSSDB_REVIEW_NATIVE")));
         Properties props = new Properties();
         try (var input = Files.newInputStream(Path.of(config))) { props.load(input); }
         String prefix = props.getProperty("review.databasePrefix", "");
-        assertTrue(prefix.matches("review_0917_[a-f0-9]{8}_"));
-        assertTrue(props.getProperty("url", "").endsWith("/" + prefix + "ora"));
-        String user = props.getProperty("user"), database = prefix + "ora";
-        assertEquals(prefix, user + "_");
+        String user = props.getProperty("user");
+        var endpoint = java.net.URI.create(props.getProperty("url").substring(5));
+        String database = endpoint.getPath().substring(1);
+        boolean legacyIsolated = prefix.matches("review_0917_[a-f0-9]{8}_")
+            && database.equals(prefix + "ora") && prefix.equals(user + "_");
+        boolean historicalIsolated = database.matches("dbv_hist_central_[0-9]{8}") && database.equals(user)
+            && "YES".equals(System.getenv("GAUSSDB_HISTORY_ALLOW_DDL"));
+        assertTrue(legacyIsolated || historicalIsolated, "Native restore requires an isolated test identity/database");
+        assertEquals("127.0.0.1", endpoint.getHost());
+        assertEquals(55452, endpoint.getPort());
         String remote = "/tmp/review-native-" + UUID.randomUUID() + ".sql";
         Path directory = Files.createTempDirectory("gaussdb-native-live-");
         Path dump = directory.resolve("dump.sql"), errors = directory.resolve("stderr.log");
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(jar).toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
-            Driver driver = (Driver) loader.loadClass(props.getProperty("review.driverClass")).getConstructor().newInstance();
+            Driver driver = (Driver) loader.loadClass(props.getProperty("review.driverClass", props.getProperty("driverClass")))
+                .getConstructor().newInstance();
             try (Connection c = driver.connect(props.getProperty("url"), props)) {
                 exec(c, "CREATE SCHEMA review_native");
                 var settings = mock(PostgreDatabaseRestoreSettings.class);
