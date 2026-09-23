@@ -127,6 +127,42 @@ class PostgreStructureSearchTest {
     }
 
     @Test
+    void schemaSearchHonorsTheSameEnabledSchemaFilter() throws Exception {
+        var schema = mock(PostgreSchema.class);
+        when(schema.getName()).thenReturn("allowed");
+        when(schema.getObjectId()).thenReturn(42L);
+        when(database.getSchemas(monitor)).thenReturn(List.of(schema));
+        var filter = new DBSObjectFilter("allowed", null);
+        filter.setEnabled(true);
+        when(source.getContainer().getObjectFilter(PostgreSchema.class, database, true)).thenReturn(filter);
+        var params = new DBSStructureAssistant.ObjectsSearchParams(
+            new DBSObjectType[] {RelationalObjectType.TYPE_SCHEMA}, "%");
+        params.setGlobalSearch(true);
+        assertTrue(assistant.findObjectsByMask(monitor, context, params).isEmpty());
+        verify(session).prepareStatement(argThat(sql -> sql.contains("n.oid IN (?)")
+            && sql.contains("has_schema_privilege")));
+        verify(statement).setString(1, "%");
+        verify(statement).setLong(2, 42L);
+    }
+
+    @Test
+    void columnSearchReferenceIsTypedAsAColumn() throws Exception {
+        var schema = mock(PostgreSchema.class);
+        when(database.getSchema(monitor, 42L)).thenReturn(schema);
+        when(result.next()).thenReturn(true, false);
+        when(result.getLong("relnamespace")).thenReturn(42L);
+        when(result.getLong("attrelid")).thenReturn(123L);
+        when(result.getString("attname")).thenReturn("target_col");
+        var params = new DBSStructureAssistant.ObjectsSearchParams(
+            new DBSObjectType[] {RelationalObjectType.TYPE_TABLE_COLUMN}, "%");
+        params.setGlobalSearch(true);
+        var references = assistant.findObjectsByMask(monitor, context, params);
+        assertEquals(1, references.size());
+        assertEquals(PostgreTableColumn.class, references.get(0).getObjectClass());
+        assertEquals(RelationalObjectType.TYPE_TABLE_COLUMN, references.get(0).getObjectType());
+    }
+
+    @Test
     void columnQueryExcludesInternalCatalogAttributes() throws Exception {
         var params = new DBSStructureAssistant.ObjectsSearchParams(
             new DBSObjectType[] {RelationalObjectType.TYPE_TABLE_COLUMN}, "%");

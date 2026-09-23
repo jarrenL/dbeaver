@@ -168,7 +168,7 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
                 } else if (type == RelationalObjectType.TYPE_TABLE_COLUMN) {
                     findTableColumnsByMask(session, database, nsList, params, references);
                 } else if (type == RelationalObjectType.TYPE_SCHEMA) {
-                    findSchemaByMask(session, database, params, references);
+                    findSchemaByMask(session, database, nsList, params, references);
                 } else if (type == RelationalObjectType.TYPE_DATA_TYPE) {
                     findDataTypesByMask(session, database, nsList, params, references);
                 }
@@ -239,16 +239,18 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
     private void findSchemaByMask(
         @NotNull JDBCSession session,
         @NotNull PostgreDatabase database,
+        @NotNull List<PostgreSchema> schemas,
         @NotNull ObjectsSearchParams params,
         @NotNull List<DBSObjectReference> references
     ) throws SQLException, DBException {
 
         DBRProgressMonitor monitor = session.getProgressMonitor();
-        PostgreQueryBuilder queryParams = buildQueryParamsForSchemaSearch(params, references);
+        PostgreQueryBuilder queryParams = buildQueryParamsForSchemaSearch(schemas, params, references);
         String sql = queryParams.build();
 
         try (JDBCPreparedStatement dbStat = session.prepareStatement(sql)) {
             dbStat.setString(1, params.getMask());
+            PostgreUtils.setArrayParameter(dbStat, 2, schemas);
             try (JDBCResultSet dbResult = dbStat.executeQuery()) {
                 while (!monitor.isCanceled() && dbResult.next()) {
                     final long schemaId = JDBCUtils.safeGetLong(dbResult, "oid");
@@ -275,6 +277,7 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
 
     @NotNull
     private PostgreQueryBuilder buildQueryParamsForSchemaSearch(
+        @NotNull List<PostgreSchema> schemas,
         @NotNull ObjectsSearchParams params,
         @NotNull List<DBSObjectReference> references
     ) {
@@ -282,8 +285,8 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
             "n.oid AS oid, n.nspname AS schema_name",
             "pg_namespace n",
             "n.nspname",
-            Collections.emptyList(),
-            "",
+            schemas,
+            "n.oid",
             "n.nspname"
         );
         queryParams.setWhereClause("has_schema_privilege(n.nspname, 'USAGE')");
@@ -516,7 +519,7 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
                         attributeName,
                         constrSchema,
                         null,
-                        PostgreTableBase.class,
+                        PostgreTableColumn.class,
                         RelationalObjectType.TYPE_TABLE_COLUMN
                     ) {
                         @NotNull

@@ -37,6 +37,18 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionSchemaSearchExecutesNamespaceIdBinding() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            var rows = searchObjects(c, s, s, true, 10, false,
+                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_SCHEMA);
+            assertEquals(List.of(s), rows.stream().map(r -> r.getName()).toList());
+            assertEquals(PostgreSchema.class, rows.get(0).getObjectClass());
+            assertTrue(searchObjects(c, s, "missing_schema", true, 10, false,
+                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_SCHEMA).isEmpty());
+        });
+    }
+
+    @Test
     void productionColumnSearchExcludesSystemDroppedAndIndexAttributes() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, search_col text, obsolete integer)");
