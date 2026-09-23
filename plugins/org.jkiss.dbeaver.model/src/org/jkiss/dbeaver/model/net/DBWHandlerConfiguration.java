@@ -207,8 +207,9 @@ public class DBWHandlerConfiguration {
     }
 
     public void setProperties(@NotNull Map<String, Object> properties) {
+        Map<String, Object> snapshot = new LinkedHashMap<>(properties);
         this.properties.clear();
-        this.properties.putAll(properties);
+        this.properties.putAll(snapshot);
     }
 
     @Nullable
@@ -234,8 +235,9 @@ public class DBWHandlerConfiguration {
     }
 
     public void setSecureProperties(@NotNull Map<String, String> secureProperties) {
+        Map<String, String> snapshot = new LinkedHashMap<>(secureProperties);
         this.secureProperties.clear();
-        this.secureProperties.putAll(secureProperties);
+        this.secureProperties.putAll(snapshot);
     }
 
     @NotNull

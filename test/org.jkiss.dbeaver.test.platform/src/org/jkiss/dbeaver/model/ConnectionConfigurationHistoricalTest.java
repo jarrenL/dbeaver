@@ -143,6 +143,41 @@ class ConnectionConfigurationHistoricalTest extends DBeaverUnitTest {
     }
 
     @Test
+    void replacingHandlerPropertiesSupportsOwnMapAndReadOnlyView() {
+        var ssl = handler("postgre_ssl");
+        var input = new HashMap<String, Object>(Map.of("sslMode", "verify-full", "rootCert", "/fixture/ca.pem"));
+        ssl.setProperties(input);
+        input.clear();
+        assertEquals("verify-full", ssl.getStringProperty("sslMode"));
+        ssl.setProperties(ssl.getProperties());
+        assertEquals("verify-full", ssl.getStringProperty("sslMode"));
+        ssl.setProperties(java.util.Collections.unmodifiableMap(ssl.getProperties()));
+        assertEquals("/fixture/ca.pem", ssl.getStringProperty("rootCert"));
+        ssl.setProperties(Map.of("sslMode", "require"));
+        assertEquals(Map.of("sslMode", "require"), ssl.getProperties());
+        ssl.setProperties(Map.of());
+        assertTrue(ssl.getProperties().isEmpty());
+    }
+
+    @Test
+    void replacingSecurePropertiesSupportsOwnMapAndReadOnlyView() {
+        var ssl = handler("postgre_ssl");
+        var input = new HashMap<>(Map.of("fixture-secret", "synthetic-value"));
+        ssl.setSecureProperties(input);
+        input.clear();
+        assertEquals("synthetic-value", ssl.getSecureProperty("fixture-secret"));
+        ssl.setSecureProperties(ssl.getSecureProperties());
+        assertEquals("synthetic-value", ssl.getSecureProperty("fixture-secret"));
+        ssl.setSecureProperties(java.util.Collections.unmodifiableMap(ssl.getSecureProperties()));
+        assertEquals("synthetic-value", ssl.getSecureProperty("fixture-secret"));
+        ssl.setSecureProperties(Map.of("replacement", "synthetic-replacement"));
+        assertNull(ssl.getSecureProperty("fixture-secret"));
+        assertEquals("synthetic-replacement", ssl.getSecureProperty("replacement"));
+        ssl.setSecureProperties(Map.of());
+        assertTrue(ssl.getSecureProperties().isEmpty());
+    }
+
+    @Test
     void copiedDriverAndProviderPropertiesDoNotMutateOriginal() {
         var original = new DBPConnectionConfiguration();
         original.setHostName("example.invalid");
