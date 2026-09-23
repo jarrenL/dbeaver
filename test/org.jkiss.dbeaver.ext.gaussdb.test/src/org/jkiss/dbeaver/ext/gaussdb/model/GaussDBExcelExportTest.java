@@ -502,6 +502,54 @@ public class GaussDBExcelExportTest {
         }
     }
 
+    @Test
+    public void firstColumnGroupingKeepsRepeatedAndNullValuesTogether() throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("splitByColNum", 1),
+            new Object[]{"甲"}, new Object[]{"乙"}, new Object[]{null}, new Object[]{"甲"})) {
+            assertEquals(3, workbook.getNumberOfSheets());
+            assertEquals(3, workbook.getSheetAt(0).getPhysicalNumberOfRows());
+            assertEquals("甲", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+            assertEquals("甲", workbook.getSheetAt(0).getRow(2).getCell(0).getStringCellValue());
+            assertEquals(2, workbook.getSheetAt(1).getPhysicalNumberOfRows());
+            assertEquals("乙", workbook.getSheetAt(1).getRow(1).getCell(0).getStringCellValue());
+            assertEquals(2, workbook.getSheetAt(2).getPhysicalNumberOfRows());
+            assertEquals("", workbook.getSheetAt(2).getRow(1).getCell(0).getStringCellValue());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 0, 2})
+    public void disabledOrOutOfRangeGroupingKeepsAllRowsInOneSheet(int column) throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("splitByColNum", column),
+            new Object[]{"甲"}, new Object[]{"乙"})) {
+            assertEquals(1, workbook.getNumberOfSheets());
+            assertEquals(3, workbook.getSheetAt(0).getPhysicalNumberOfRows());
+            assertEquals("甲", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+            assertEquals("乙", workbook.getSheetAt(0).getRow(2).getCell(0).getStringCellValue());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2})
+    public void groupingSelectsFirstOrLastColumnWithoutReorderingWithinGroup(int column) throws Exception {
+        String[][][] expected = column == 1
+            ? new String[][][]{{{"甲", "X"}, {"甲", "Y"}}, {{"乙", "X"}}}
+            : new String[][][]{{{"甲", "X"}, {"乙", "X"}}, {{"甲", "Y"}}};
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("splitByColNum", column),
+            new Object[]{"甲", "X"}, new Object[]{"甲", "Y"}, new Object[]{"乙", "X"})) {
+            assertEquals(2, workbook.getNumberOfSheets());
+            for (int s = 0; s < expected.length; s++) {
+                var sheet = workbook.getSheetAt(s);
+                assertEquals(expected[s].length + 1, sheet.getPhysicalNumberOfRows());
+                for (int r = 0; r < expected[s].length; r++) {
+                    for (int c = 0; c < 2; c++) {
+                        assertEquals(expected[s][r][c], sheet.getRow(r + 1).getCell(c).getStringCellValue());
+                    }
+                }
+            }
+        }
+    }
+
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {
         return export(kind, overrides, null, rows);
     }
@@ -521,7 +569,16 @@ public class GaussDBExcelExportTest {
         when(column.getLabel()).thenReturn("金额 中文");
         when(column.getDataKind()).thenReturn(kind);
         when(column.getValueHandler()).thenReturn(JDBCStringValueHandler.INSTANCE);
-        when(site.getAttributes()).thenReturn(new DBDAttributeBinding[]{column});
+        int columnCount = rows.length == 0 ? 1 : rows[0].length;
+        DBDAttributeBinding[] columns = new DBDAttributeBinding[columnCount];
+        columns[0] = column;
+        for (int i = 1; i < columnCount; i++) {
+            columns[i] = mock(DBDAttributeBinding.class);
+            when(columns[i].getName()).thenReturn("column_" + i);
+            when(columns[i].getDataKind()).thenReturn(kind);
+            when(columns[i].getValueHandler()).thenReturn(JDBCStringValueHandler.INSTANCE);
+        }
+        when(site.getAttributes()).thenReturn(columns);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         when(site.getOutputStream()).thenReturn(output);
         when(site.getOutputFile()).thenReturn(existing);

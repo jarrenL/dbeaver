@@ -417,7 +417,7 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
     }
 
     private Worksheet getWsh(DBCResultSet resultSet, Object[] row) throws DBException {
-        Object colValue = ((splitByCol <= 0) || (splitByCol >= columns.length)) ? "" : row[splitByCol];
+        Object colValue = ((splitByCol <= 0) || (splitByCol > columns.length)) ? "" : row[splitByCol - 1];
         Worksheet w = worksheets.get(colValue);
         if (w == null) {
             w = createSheet(resultSet, colValue);
