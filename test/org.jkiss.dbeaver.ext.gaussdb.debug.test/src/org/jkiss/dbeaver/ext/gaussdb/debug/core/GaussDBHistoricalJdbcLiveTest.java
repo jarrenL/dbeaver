@@ -37,6 +37,62 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void dateArithmeticCrossesLeapDayAndYearWithoutLosingMicroseconds() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT to_char(TIMESTAMP '2024-02-28 23:59:59.123456' + INTERVAL '1 day',"
+                    + "'YYYY-MM-DD HH24:MI:SS.US'),"
+                    + "to_char(TIMESTAMP '2023-12-31 23:59:59.999999' + INTERVAL '1 microsecond',"
+                    + "'YYYY-MM-DD HH24:MI:SS.US'),"
+                    + "to_char(date_trunc('month', TIMESTAMP '2024-02-29 12:34:56'), 'YYYY-MM-DD HH24:MI:SS')")) {
+                assertTrue(rows.next());
+                assertEquals("2024-02-29 23:59:59.123456", rows.getString(1));
+                assertEquals("2024-01-01 00:00:00.000000", rows.getString(2));
+                assertEquals("2024-02-01 00:00:00", rows.getString(3));
+                assertFalse(rows.next());
+            }
+        });
+    }
+
+    @Test
+    void timestampWithZonePreservesInstantAcrossSessionZoneChanges() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".zone_probe(id int, value timestamp with time zone)");
+            execute(c, "INSERT INTO " + s + ".zone_probe VALUES (1, TIMESTAMPTZ '2024-02-29 23:30:00.123456+08')");
+            java.math.BigDecimal epoch = null;
+            for (String zone : List.of("UTC", "Asia/Shanghai")) {
+                execute(c, "SET TIME ZONE '" + zone + "'");
+                try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                    "SELECT to_char(value,'YYYY-MM-DD HH24:MI:SS.US'),extract(epoch FROM value) FROM " + s + ".zone_probe")) {
+                    assertTrue(rows.next());
+                    assertEquals(zone.equals("UTC") ? "2024-02-29 15:30:00.123456" : "2024-02-29 23:30:00.123456",
+                        rows.getString(1));
+                    if (epoch == null) epoch = rows.getBigDecimal(2);
+                    else assertEquals(0, epoch.compareTo(rows.getBigDecimal(2)));
+                    assertFalse(rows.next());
+                }
+            }
+        });
+    }
+
+    @Test
+    void timestampFormattingPropagatesSqlNullWithoutConvertingItToText() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT to_char(NULL::timestamp,'YYYY-MM-DD'),date_trunc('day',NULL::timestamp),"
+                    + "extract(epoch FROM NULL::timestamp)")) {
+                assertTrue(rows.next());
+                assertNull(rows.getString(1));
+                assertTrue(rows.wasNull());
+                assertNull(rows.getTimestamp(2));
+                assertTrue(rows.wasNull());
+                assertNull(rows.getBigDecimal(3));
+                assertTrue(rows.wasNull());
+            }
+        });
+    }
+
+    @Test
     void productionSequenceBodyRebuildsAscendingCustomStartAndIncrement() throws Exception {
         inIsolatedSchema((c, s) -> assertSequenceBodyRoundtrip(c, s + ".seq_up",
             "START WITH 10 INCREMENT BY 3 MINVALUE 2 MAXVALUE 100", List.of("10", "13", "16")));
