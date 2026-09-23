@@ -125,4 +125,74 @@ public class CSVImporterTest  extends DBeaverUnitTest {
             return importer.readColumnsInfo(mapping, is);
         }
     }
+
+    @Test
+    void shortRowsWithWhitespaceTrimmingPreserveMissingColumnsAsNull() throws Exception {
+        properties.put("trimWhitespaces", true);
+        Assertions.assertEquals(java.util.Arrays.asList(java.util.Arrays.asList("one", null)),
+            importRows("a,b\n  one  \n", 2));
+    }
+
+    @Test
+    void quotedCommaQuotesAndMultilineCellsAreImportedIntact() throws Exception {
+        Assertions.assertEquals(List.of(List.of("a,b", "say \"hi\""), List.of("line1\nline2", "中文")),
+            importRows("a,b\n\"a,b\",\"say \"\"hi\"\"\"\n\"line1\nline2\",中文\n", 2));
+    }
+
+    @Test
+    void emptyStringAndExplicitNullMarkerAreDistinct() throws Exception {
+        properties.put("nullString", "<NULL>");
+        Assertions.assertEquals(java.util.Arrays.asList(java.util.Arrays.asList("", null)),
+            importRows("a,b\n,<NULL>\n", 2));
+    }
+
+    @Test
+    void unterminatedQuotedCellRaisesImportError() {
+        DBException error = Assertions.assertThrows(DBException.class,
+            () -> importRows("a,b\n1,\"unfinished\n", 2));
+        Assertions.assertInstanceOf(IOException.class, error.getCause());
+        Assertions.assertTrue(error.getCause().getMessage().contains("Un-terminated quote"));
+    }
+
+    @Test
+    void trimAndEmptyStringNullOptionsComposeWithoutLosingMissingCells() throws Exception {
+        properties.put("trimWhitespaces", true);
+        properties.put("emptyStringNull", true);
+        Assertions.assertEquals(java.util.Arrays.asList(java.util.Arrays.asList(null, null, null)),
+            importRows("a,b,c\n  ,  \n", 3));
+    }
+
+    private List<List<Object>> importRows(String data, int columns) throws Exception {
+        properties.put("header", DataImporterCSV.HeaderPosition.top);
+        properties.put("quoteChar", "\"");
+        properties.put("delimiter", ",");
+        var source = Mockito.mock(StreamEntityMapping.class);
+        var infos = new java.util.ArrayList<StreamDataImporterColumnInfo>();
+        for (int i = 0; i < columns; i++) {
+            infos.add(new StreamDataImporterColumnInfo(source, i, "c" + i, "VARCHAR", 1000, DBPDataKind.STRING));
+        }
+        Mockito.when(source.getStreamColumns()).thenReturn(infos);
+        Mockito.when(site.getSourceObject()).thenReturn(source);
+        Mockito.when(site.getSettings()).thenReturn(Mockito.mock(
+            org.jkiss.dbeaver.tools.transfer.stream.StreamProducerSettings.class));
+        var dataSource = Mockito.mock(org.jkiss.dbeaver.model.DBPDataSource.class, Mockito.RETURNS_DEEP_STUBS);
+        var monitor = Mockito.mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        var consumer = Mockito.mock(IDataTransferConsumer.class);
+        var rows = new java.util.ArrayList<List<Object>>();
+        Mockito.doAnswer(invocation -> {
+            org.jkiss.dbeaver.model.exec.DBCResultSet result = invocation.getArgument(1);
+            var row = new java.util.ArrayList<Object>();
+            for (int i = 0; i < columns; i++) {
+                row.add(result.getAttributeValue(i));
+            }
+            rows.add(row);
+            return null;
+        }).when(consumer).fetchRow(Mockito.any(), Mockito.any());
+        try (var input = new ByteArrayInputStream(data.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            importer.runImport(monitor, dataSource, input, consumer);
+        }
+        Mockito.verify(consumer).fetchEnd(Mockito.any(), Mockito.any());
+        Mockito.verify(consumer).close();
+        return rows;
+    }
 }
