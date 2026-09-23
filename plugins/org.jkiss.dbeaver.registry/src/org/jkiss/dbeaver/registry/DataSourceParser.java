@@ -57,10 +57,13 @@ public class DataSourceParser {
         if (subNode == null) subNode = NODE_CONNECTION;
 
         Map<String, Map<String, String>> nodeMap = contextParameters.secureProperties().computeIfAbsent(topNodeId, s -> new LinkedHashMap<>());
-        Map<String, String> propMap = nodeMap.computeIfAbsent(subNode, s -> new LinkedHashMap<>());
+        // A credential payload is a replacement, not a patch: removed secrets must not survive a save.
+        Map<String, String> propMap = new LinkedHashMap<>();
         saveCredentialsToMap(propMap, credentials);
         if (propMap.isEmpty()) {
             nodeMap.remove(subNode);
+        } else {
+            nodeMap.put(subNode, propMap);
         }
         if (nodeMap.isEmpty()) {
             contextParameters.secureProperties().remove(topNodeId);
@@ -317,4 +320,3 @@ public class DataSourceParser {
         }
     }
 }
-
