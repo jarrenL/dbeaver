@@ -22,6 +22,8 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.model.IValue;
+import org.eclipse.debug.core.model.IDebugElement;
+import org.eclipse.debug.ui.DebugUITools;
 import org.eclipse.debug.ui.IDebugModelPresentationExtension;
 import org.eclipse.debug.ui.IValueDetailListener;
 import org.eclipse.jface.viewers.ILabelProvider;
@@ -172,6 +174,15 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
         IEditorPart editorPart = new UITask<IEditorPart>() {
             @Override
             protected IEditorPart runTask() {
+                // Reusing the same source editor in a later launch must reload its
+                // document even when OPTION_DEBUGGER_SOURCE is already true.
+                // Keep the token stable while stepping within one launch.
+                var context = DebugUITools.getDebugContext();
+                IDebugElement debugElement = context instanceof IDebugElement element
+                    ? element : context == null ? null : context.getAdapter(IDebugElement.class);
+                if (debugElement != null && debugElement.getLaunch() != null) {
+                    editorAttrs.put("debugger.source.launch", debugElement.getLaunch()); //$NON-NLS-1$
+                }
                 return NavigatorHandlerObjectOpen.openEntityEditor(dbnNode, null, sourceFolderId, editorAttrs, UIUtils.getActiveWorkbenchWindow(), false);
             }
         }.execute();
