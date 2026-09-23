@@ -26,6 +26,60 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class QueryHistoryExecutionTest {
+    private QMMConnectionInfo historyConnection() {
+        return new QMMConnectionInfo(1000, 0, null, "fixture", "fixture", "gaussdb",
+            new org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration(), "instance", "editor", false);
+    }
+
+    @Test
+    void rollbackAndLaterAutoCommitTransitionRetainSeparateHistoryEvents() {
+        var connection = historyConnection();
+        connection.changeTransactional(true);
+        var original = connection.getTransaction();
+        long opened = original.getOpenTime();
+        assertTrue(opened > 0);
+        assertSame(original, connection.rollback(null));
+        assertTrue(original.isClosed());
+        assertFalse(original.isCommitted());
+        assertEquals(opened, original.getOpenTime());
+        assertTrue(original.getCloseTime() >= opened);
+        var next = connection.getTransaction();
+        assertNotSame(original, next);
+        assertSame(original, next.getPrevious());
+        assertSame(next, connection.changeTransactional(false));
+        assertTrue(next.isCommitted());
+        assertFalse(original.isCommitted(), "Auto-commit transition must not relabel the preceding rollback");
+        assertEquals(opened, original.getOpenTime());
+    }
+
+    @Test
+    void commitClosesCurrentTransactionAndStartsIndependentHistory() {
+        var connection = historyConnection();
+        connection.changeTransactional(true);
+        var original = connection.getTransaction();
+        assertSame(original, connection.commit());
+        assertTrue(original.isClosed());
+        assertTrue(original.isCommitted());
+        assertTrue(original.getCurrentSavepoint().isCommitted());
+        assertFalse(connection.getTransaction().isClosed());
+        assertSame(original, connection.getTransaction().getPrevious());
+    }
+
+    @Test
+    void closingHistoryConnectionRollsBackUnfinishedTransaction() {
+        var connection = historyConnection();
+        connection.changeTransactional(true);
+        var original = connection.getTransaction();
+        connection.close();
+        assertTrue(connection.isClosed());
+        assertNull(connection.getTransaction());
+        assertTrue(original.isClosed());
+        assertFalse(original.isCommitted());
+        assertFalse(original.getCurrentSavepoint().isCommitted());
+        connection.close();
+        assertFalse(original.isCommitted());
+    }
+
     private QMMStatementExecuteInfo create(String sql, DBCExecutionPurpose purpose, boolean modifying) throws Exception {
         var statement = mock(QMMStatementInfo.class);
         when(statement.getPurpose()).thenReturn(purpose);
