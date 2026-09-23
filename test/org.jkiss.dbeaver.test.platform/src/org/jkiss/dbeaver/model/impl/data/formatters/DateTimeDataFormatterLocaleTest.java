@@ -61,4 +61,43 @@ class DateTimeDataFormatterLocaleTest {
     void nullRemainsNullWithExplicitLocaleAndTimezone() {
         assertNull(formatter(Locale.FRENCH, "UTC").formatValue(null));
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "2023-02-29 12:00:00", "2024-02-30 12:00:00", "2024-04-31 12:00:00",
+        "2024-01-01 24:00:00", "2024-01-01 12:00:00junk", "2024-13-01 12:00:00"
+    })
+    void invalidDateIsRejectedRatherThanNormalizedOrPartiallyParsed(String input) {
+        var plain = new DateTimeDataFormatter();
+        plain.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd HH:mm:ss"));
+        assertThrows(java.text.ParseException.class, () -> plain.parseValue(input, LocalDateTime.class));
+        assertThrows(java.text.ParseException.class, () -> plain.parseValue(input, null));
+        var offset = new DateTimeDataFormatter();
+        offset.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd HH:mm:ss Z"));
+        assertThrows(java.text.ParseException.class,
+            () -> offset.parseValue(input + " +0800", java.time.OffsetDateTime.class));
+        assertThrows(java.text.ParseException.class, () -> offset.parseValue(input + " +0800", null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"yyyy", "uuuu"})
+    void validLeapDayAndOffsetRemainParsable(String yearPattern) throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", yearPattern + "-MM-dd HH:mm:ss Z"));
+        var expected = java.time.OffsetDateTime.parse("2024-02-29T23:59:59+08:00");
+        assertEquals(expected, formatter.parseValue("2024-02-29 23:59:59 +0800", java.time.OffsetDateTime.class));
+        assertEquals(expected, formatter.parseValue("2024-02-29 23:59:59 +0800", null));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"yyyy-MM-dd", "HH:mm:ss"})
+    void dateAndTimeOnlyLegacyProfilesStillRoundTrip(String pattern) throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", pattern));
+        String input = pattern.equals("yyyy-MM-dd") ? "2024-02-29" : "23:59:59";
+        Object parsed = formatter.parseValue(input, null);
+        assertInstanceOf(java.util.Date.class, parsed);
+        assertEquals(input, formatter.formatValue(parsed));
+        assertThrows(java.text.ParseException.class, () -> formatter.parseValue(input + "junk", null));
+    }
 }

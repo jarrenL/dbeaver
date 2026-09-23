@@ -31,7 +31,10 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
+import java.time.temporal.ChronoField;
 import java.time.temporal.TemporalAccessor;
 import java.util.Date;
 import java.util.Locale;
@@ -66,7 +69,12 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
         position = new FieldPosition(0);
         // DateTimeFormatter pattern for nanoseconds is "n" but old "f" (ExtendedDateFormat)
         String java8DatePattern = pattern.replaceAll("f+", "n");
-        dateTimeFormatter = DateTimeFormatter.ofPattern(java8DatePattern, locale);
+        dateTimeFormatter = new DateTimeFormatterBuilder()
+            .appendPattern(java8DatePattern)
+            // Existing profiles use yyyy (year of era) without an explicit era.
+            .parseDefaulting(ChronoField.ERA, 1)
+            .toFormatter(locale)
+            .withResolverStyle(ResolverStyle.STRICT);
         hasZone = java8DatePattern.contains("Z");
     }
 
@@ -138,7 +146,16 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
                 return LocalDateTime.parse(value, dateTimeFormatter);
             }
         } catch (Exception e) {
-            return dateFormat.parse(value);
+            // Date-only/time-only profiles need the legacy return type, but must
+            // still reject invalid fields and unconsumed trailing input.
+            try {
+                dateTimeFormatter.parse(value);
+            } catch (DateTimeParseException parseException) {
+                throw new ParseException(parseException.getParsedString(), parseException.getErrorIndex());
+            }
+            synchronized (dateFormat) {
+                return dateFormat.parse(value);
+            }
         }
     }
 
