@@ -67,8 +67,18 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
         dateFormat.setLenient(false);
         buffer = new StringBuffer();
         position = new FieldPosition(0);
-        // DateTimeFormatter pattern for nanoseconds is "n" but old "f" (ExtendedDateFormat)
-        String java8DatePattern = pattern.replaceAll("f+", "n");
+        // Legacy f is a fraction of a second, not the unscaled nano-of-second n.
+        // Keep its width and leave quoted literals (including escaped quotes) intact.
+        StringBuilder temporalPattern = new StringBuilder(pattern.length());
+        boolean quoted = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char symbol = pattern.charAt(i);
+            if (symbol == '\'') {
+                quoted = !quoted;
+            }
+            temporalPattern.append(!quoted && symbol == 'f' ? 'S' : symbol);
+        }
+        String java8DatePattern = temporalPattern.toString();
         dateTimeFormatter = new DateTimeFormatterBuilder()
             .appendPattern(java8DatePattern)
             // Existing profiles use yyyy (year of era) without an explicit era.

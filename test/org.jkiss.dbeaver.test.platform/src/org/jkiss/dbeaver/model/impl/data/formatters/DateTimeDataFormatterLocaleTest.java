@@ -100,4 +100,33 @@ class DateTimeDataFormatterLocaleTest {
         assertEquals(input, formatter.formatValue(parsed));
         assertThrows(java.text.ParseException.class, () -> formatter.parseValue(input + "junk", null));
     }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 6, 9})
+    void fractionalSecondWidthAndLeadingZerosSurviveFormattingAndParsing(int width) throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH,
+            Map.of("pattern", "yyyy-MM-dd HH:mm:ss." + "f".repeat(width), "timezone", "UTC"));
+        for (int nanos : new int[] {0, 1_000_000, 123_456_789}) {
+            var value = LocalDateTime.of(2024, 2, 29, 12, 34, 56, nanos);
+            String fraction = String.format(Locale.ROOT, "%09d", nanos).substring(0, width);
+            String expected = "2024-02-29 12:34:56." + fraction;
+            assertEquals(expected, formatter.formatValue(value));
+            assertEquals(expected, formatter.formatValue(Timestamp.from(value.toInstant(ZoneOffset.UTC))));
+            int unit = (int) Math.pow(10, 9 - width);
+            var truncated = value.withNano(nanos / unit * unit);
+            assertEquals(truncated, formatter.parseValue(expected, LocalDateTime.class));
+            assertEquals(truncated, formatter.parseValue(expected, null));
+        }
+    }
+
+    @Test
+    void quotedFractionLettersAreLiteralText() throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd 'fff' HH:mm:ss.fff"));
+        var value = LocalDateTime.of(2024, 2, 29, 12, 34, 56, 1_000_000);
+        String expected = "2024-02-29 fff 12:34:56.001";
+        assertEquals(expected, formatter.formatValue(value));
+        assertEquals(value, formatter.parseValue(expected, LocalDateTime.class));
+    }
 }
