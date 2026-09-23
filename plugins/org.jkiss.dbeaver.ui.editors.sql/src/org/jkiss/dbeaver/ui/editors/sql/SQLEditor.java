@@ -3227,7 +3227,7 @@ public class SQLEditor extends SQLEditorBase implements
     }
 
     private int createDangerousUpdateDeleteQueryConfirmationDialog(@NotNull SQLQuery dangerousQuery, int dialogType) {
-        String targetName = "multiple rows";
+        String targetName = SQLEditorMessages.confirm_dangerous_sql_multiple_rows;
         if (dangerousQuery.getEntityMetadata(false) != null) {
             targetName = dangerousQuery.getEntityMetadata(false).getEntityName();
         }
@@ -3236,7 +3236,8 @@ public class SQLEditor extends SQLEditorBase implements
             ConfirmationDialog.WARNING,
             ConfirmationConstants.CONFIRM_DANGER_SQL_ID,
             dialogType,
-            dangerousQuery.getType().name(),
+            StringUtils.truncateText(dangerousQuery.getText(), MAX_QUERY_PREVIEW_LENGTH),
+            dangerousQuery.getType() == SQLQueryType.UNKNOWN ? "SQL" : dangerousQuery.getType().name(),
             targetName
         );
     }
