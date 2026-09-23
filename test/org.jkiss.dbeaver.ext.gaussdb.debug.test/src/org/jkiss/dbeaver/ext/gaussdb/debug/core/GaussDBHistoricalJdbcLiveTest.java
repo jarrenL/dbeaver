@@ -2381,6 +2381,25 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void strictTlsRejectsTrustedCertificateWithWrongHostname() throws Exception {
+        String certificate = System.getenv("GAUSSDB_HISTORY_TLS_WRONG_HOST_CA");
+        assumeTrue(certificate != null, "Dedicated trusted but wrong-host server certificate required");
+        assertTrue(Files.isRegularFile(Path.of(certificate)));
+        inIsolatedSchema((c, s) -> {
+            withIndependentConnection(connection -> assertRows(connection, "SELECT 1", List.of(List.of("1"))),
+                null, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate));
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(connection -> fail("Wrong hostname must not connect in verify-full mode"),
+                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate)));
+            assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
+            assertTrue(failure.getMessage().toLowerCase(java.util.Locale.ROOT).contains("hostname"),
+                "Expected hostname verification rejection");
+            withIndependentConnection(connection -> assertRows(connection, "SELECT 2", List.of(List.of("2"))),
+                null, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate));
+        });
+    }
+
+    @Test
     void strictTlsRejectsExistingUnrelatedCertificateWithoutDowngrade() throws Exception {
         String trusted = System.getenv("GAUSSDB_HISTORY_TLS_CA");
         String unrelated = System.getenv("GAUSSDB_HISTORY_TLS_UNRELATED_CA");
