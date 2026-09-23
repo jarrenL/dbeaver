@@ -2171,6 +2171,53 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void multiObjectDropFailureRollsBackEarlierDdlAndAllowsCorrectedRetry() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            for (String name : List.of("first_target", "dependent_target", "untouched")) {
+                execute(c, "CREATE TABLE " + s + "." + name + "(id integer)");
+                execute(c, "INSERT INTO " + s + "." + name + " VALUES(7)");
+            }
+            execute(c, "CREATE VIEW " + s + ".dependency AS SELECT id FROM " + s + ".dependent_target");
+            c.setAutoCommit(false);
+            try {
+                execute(c, "DROP TABLE " + s + ".first_target");
+                var dependencyError = assertThrows(java.sql.SQLException.class,
+                    () -> execute(c, "DROP TABLE " + s + ".dependent_target"));
+                assertEquals("2BP01", dependencyError.getSQLState());
+                var aborted = assertThrows(java.sql.SQLException.class,
+                    () -> execute(c, "DROP TABLE " + s + ".untouched"));
+                assertEquals("25P02", aborted.getSQLState());
+            } finally {
+                c.rollback();
+                c.setAutoCommit(true);
+            }
+            withIndependentConnection(observer -> {
+                for (String name : List.of("first_target", "dependent_target", "untouched", "dependency")) {
+                    assertRows(observer, "SELECT id FROM " + s + "." + name, List.of(List.of("7")));
+                }
+            });
+            c.setAutoCommit(false);
+            try {
+                execute(c, "DROP VIEW " + s + ".dependency");
+                execute(c, "DROP TABLE " + s + ".first_target");
+                execute(c, "DROP TABLE " + s + ".dependent_target");
+                c.commit();
+            } finally {
+                c.rollback();
+                c.setAutoCommit(true);
+            }
+            withIndependentConnection(observer -> {
+                for (String name : List.of("first_target", "dependent_target", "dependency")) {
+                    try (var objects = observer.getMetaData().getTables(null, s, name, null)) {
+                        assertFalse(objects.next(), name + " must be absent after corrected commit");
+                    }
+                }
+                assertRows(observer, "SELECT id FROM " + s + ".untouched", List.of(List.of("7")));
+            });
+        });
+    }
+
+    @Test
     void sequenceIncrementAffectsReturnedValues() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE SEQUENCE " + s + ".seq START WITH 10 INCREMENT BY 3");
