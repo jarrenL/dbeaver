@@ -34,14 +34,65 @@ import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.struct.DBSEntity;
 import org.jkiss.dbeaver.model.struct.DBSDataManipulator;
+import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBResultSetEditabilityTest {
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "SELECT amount + 1 AS amount FROM accounts | 0 | false",
+        "SELECT amount FROM accounts | 0 | true",
+        "SELECT amount + 1 AS amount, * FROM accounts | 0 | false",
+        "SELECT *, amount + 1 AS amount FROM accounts | 2 | false",
+        "SELECT *, amount FROM accounts | 2 | true",
+        "SELECT * FROM accounts | 1 | true",
+        "SELECT amount + 1 AS amount, accounts.* FROM accounts | 0 | false",
+        "SELECT accounts.*, amount + 1 AS amount FROM accounts | 2 | false"
+    })
+    void wildcardDoesNotTurnExpressionAliasIntoPhysicalColumn(String sql, int ordinal, boolean physical) throws Exception {
+        DBCSession session = mock(DBCSession.class);
+        DBPDataSource source = mock(DBPDataSource.class, withSettings().extraInterfaces(DBSObjectContainer.class));
+        DBSObjectContainer catalog = (DBSObjectContainer) source;
+        DBPDataSourceContainer container = mock(DBPDataSourceContainer.class);
+        DBCExecutionContext context = mock(DBCExecutionContext.class);
+        DBSEntity table = mock(DBSEntity.class);
+        when(catalog.getDataSource()).thenReturn(source);
+        when(catalog.getChild(any(), eq("accounts"))).thenReturn(table);
+        when(context.getDataSource()).thenReturn(source);
+        when(session.getExecutionContext()).thenReturn(context);
+        when(session.getProgressMonitor()).thenReturn(new VoidProgressMonitor());
+        when(session.getDataSource()).thenReturn(source);
+        when(source.getContainer()).thenReturn(container);
+        when(source.getInfo()).thenReturn(mock(DBPDataSourceInfo.class));
+        when(container.isExtraMetadataReadEnabled()).thenReturn(true);
+        DBCResultSet resultSet = mock(DBCResultSet.class);
+        DBCStatement statement = mock(DBCStatement.class);
+        DBCExecutionSource execution = mock(DBCExecutionSource.class);
+        when(resultSet.getSourceStatement()).thenReturn(statement);
+        when(statement.getStatementSource()).thenReturn(execution);
+        when(execution.getSourceDescriptor()).thenReturn(new SQLQuery(null, sql));
+        DBCAttributeMetaData metadata = mock(DBCAttributeMetaData.class);
+        when(metadata.getName()).thenReturn("amount");
+        when(metadata.getLabel()).thenReturn("amount");
+        when(metadata.getOrdinalPosition()).thenReturn(ordinal);
+        DBDAttributeBindingMeta binding = mock(DBDAttributeBindingMeta.class, CALLS_REAL_METHODS);
+        doReturn(metadata).when(binding).getMetaAttribute();
+        doReturn("amount").when(binding).getName();
+        int count = sql.contains("*") ? (sql.contains(",") ? 3 : 2) : 1;
+        DBDAttributeBinding[] bindings = new DBDAttributeBinding[count];
+        for (int i = 0; i < count; i++) {
+            bindings[i] = i == ordinal ? binding : mock(DBDAttributeBinding.class);
+        }
+        DBExecUtils.bindAttributes(session, null, resultSet, bindings, null);
+        verify(table, physical ? times(1) : never()).getAttribute(any(), eq("amount"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "SELECT 1 AS amount",

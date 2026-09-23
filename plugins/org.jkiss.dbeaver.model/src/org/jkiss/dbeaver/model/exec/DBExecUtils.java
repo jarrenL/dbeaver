@@ -802,7 +802,8 @@ public class DBExecUtils {
                     continue;
                 }
 
-                SQLSelectItem selectItem = sqlQuery == null ? null : sqlQuery.getSelectItem(attrMeta.getOrdinalPosition());
+                SQLSelectItem selectItem = sqlQuery == null ? null :
+                    getResultSelectItem(sqlQuery, attrMeta.getOrdinalPosition(), bindings.length);
                 // We got table name and column name
                 // To be editable we need this resultset contain set of columns from the same table
                 // which construct any unique key
@@ -889,8 +890,8 @@ public class DBExecUtils {
                     if (bindingMeta.getPseudoAttribute() != null) {
                         tableColumn = bindingMeta.getPseudoAttribute().createFakeAttribute(attrEntity, attrMeta);
                     } else if (columnName != null) {
-                        boolean isAllColumns = sqlQuery != null && sqlQuery.getSelectItemAsteriskIndex() != -1;
-                        boolean isPlainOrAsterisk = selectItem != null && (selectItem.isPlainColumn() || selectItem.getName().equals("*"));
+                        boolean isAllColumns = selectItem == null && sqlQuery != null && sqlQuery.getSelectItemAsteriskIndex() != -1;
+                        boolean isPlainOrAsterisk = selectItem != null && (selectItem.isPlainColumn() || selectItem.isAsterisk());
                         if (sqlQuery == null || isAllColumns || isPlainOrAsterisk) {
                             // Ensure all attributes are cached.
                             // Some implementations of DBSEntity use struct caches that provide granular
@@ -966,6 +967,28 @@ public class DBExecUtils {
         finally {
             monitor.done();
         }
+    }
+
+    /** Map result ordinals around wildcard expansion without treating explicit expressions as table columns. */
+    @Nullable
+    private static SQLSelectItem getResultSelectItem(SQLQuery query, int ordinal, int resultColumnCount) {
+        int firstWildcard = query.getSelectItemAsteriskIndex();
+        if (firstWildcard < 0 || ordinal < firstWildcard) {
+            return query.getSelectItem(ordinal);
+        }
+        int lastWildcard = firstWildcard;
+        for (int i = firstWildcard + 1; i < query.getSelectItemCount(); i++) {
+            if (query.getSelectItem(i).isAsterisk()) {
+                lastWildcard = i;
+            }
+        }
+        int trailingItems = query.getSelectItemCount() - lastWildcard - 1;
+        int trailingOffset = ordinal - (resultColumnCount - trailingItems);
+        if (trailingOffset >= 0) {
+            return query.getSelectItem(lastWildcard + 1 + trailingOffset);
+        }
+        // Multiple wildcard expansions cannot be apportioned using the total count alone.
+        return firstWildcard == lastWildcard ? query.getSelectItem(firstWildcard) : null;
     }
 
     @NotNull
