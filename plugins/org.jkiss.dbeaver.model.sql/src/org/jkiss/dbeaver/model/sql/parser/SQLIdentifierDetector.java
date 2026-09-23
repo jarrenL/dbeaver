@@ -110,13 +110,22 @@ public class SQLIdentifierDetector extends TPWordDetector {
     }
 
     public String removeQuotes(String name) {
-        // Remove leading (and trailing) quotes if any
+        // Decode only a quoted component. Raw names may themselves contain quote characters.
         for (String[] quoteString : quoteStrings) {
-            if (name.startsWith(quoteString[0])) {
-                name = name.substring(quoteString[0].length());
-            }
-            if (name.endsWith(quoteString[1])) {
-                name = name.substring(0, name.length() - quoteString[0].length());
+            if (!quoteString[0].isEmpty() && !quoteString[1].isEmpty() && name.startsWith(quoteString[0])) {
+                String closing = quoteString[1];
+                StringBuilder decoded = new StringBuilder();
+                for (int i = quoteString[0].length(); i < name.length();) {
+                    if (name.startsWith(closing + closing, i)) {
+                        decoded.append(closing);
+                        i += 2 * closing.length();
+                    } else if (name.startsWith(closing, i) && i + closing.length() == name.length()) {
+                        break;
+                    } else {
+                        decoded.append(name.charAt(i++));
+                    }
+                }
+                return decoded.toString();
             }
         }
 

@@ -443,6 +443,34 @@ public class SQLCompletionAnalyzerTest extends DBeaverUnitTest {
             + (suffix.length() > 1 ? suffix.substring(1) : ""), completed);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"a\".schema", "a\"schema", "schema\""})
+    public void testEscapedSchemaNameCompletion(String schemaName) throws DBException {
+        final RequestResult request = RequestBuilder.databases(x -> x.database("Database1", d ->
+            d.schema(schemaName, s -> s.table("Table1", empty())))).prepare();
+        String prefix = "SELECT * FROM Database1.\"" + schemaName.replace("\"", "\"\"") + "\".";
+        String original = prefix + "Tab WHERE 1 = 1";
+        var proposals = request.request(prefix + "Tab| WHERE 1 = 1");
+        Assertions.assertEquals(1, proposals.size());
+        var proposal = proposals.get(0);
+        Assertions.assertEquals("Table1 t", proposal.getReplacementString());
+        String completed = original.substring(0, proposal.getReplacementOffset()) + proposal.getReplacementString()
+            + original.substring(proposal.getReplacementOffset() + proposal.getReplacementLength());
+        Assertions.assertEquals(prefix + "Table1 t WHERE 1 = 1", completed);
+    }
+
+    @Test
+    public void testIdentifierDecoderPreservesRawAndIncompleteEscapes() {
+        for (String[] pair : new String[][] {{"\"", "\""}, {"`", "`"}, {"[", "]"}, {"<", ">>"}}) {
+            var detector = new org.jkiss.dbeaver.model.sql.parser.SQLIdentifierDetector(null, '.', new String[][] {pair});
+            String prefix = pair[0] + "a" + pair[1] + pair[1];
+            Assertions.assertEquals("a" + pair[1], detector.removeQuotes(prefix));
+            Assertions.assertEquals("a" + pair[1], detector.removeQuotes(prefix + pair[1]));
+            Assertions.assertEquals("a" + pair[1] + ".b", detector.removeQuotes(prefix + ".b" + pair[1]));
+            Assertions.assertEquals("raw" + pair[1], detector.removeQuotes("raw" + pair[1]));
+        }
+    }
+
     @Test
     public void testColumnsQuotedNamesCompletion() throws DBException {
         final RequestResult request = RequestBuilder
