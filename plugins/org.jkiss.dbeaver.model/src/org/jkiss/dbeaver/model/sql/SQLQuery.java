@@ -490,7 +490,12 @@ public class SQLQuery implements SQLScriptElement {
     public boolean isDeleteUpdateDangerous() {
         parseQuery();
         if (statement == null) {
-            return false;
+            try {
+                return SQLSemanticProcessor.isUnrestrictedDml(dataSource == null ? null : dataSource.getSQLDialect(), text);
+            } catch (DBException e) {
+                // A lexical failure still cannot establish the statement's type.
+                return false;
+            }
         }
         if (statement instanceof Delete delete) {
             return delete.getWhere() == null;

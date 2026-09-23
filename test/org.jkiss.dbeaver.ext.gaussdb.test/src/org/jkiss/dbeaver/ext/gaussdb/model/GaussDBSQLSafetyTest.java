@@ -17,6 +17,8 @@
 package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.jkiss.dbeaver.model.sql.SQLQuery;
+import org.jkiss.dbeaver.model.sql.parser.SQLSemanticProcessor;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -24,6 +26,31 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Tests the production predicate used by the SQL editor's execution confirmation. */
 class GaussDBSQLSafetyTest {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT 'UPDATE ONLY t SET a=1'",
+        "WITH s AS (SELECT 1) SELECT * FROM s",
+        "WITH s AS (SELECT 1) INSERT INTO t SELECT * FROM s",
+        "WITH \"update\" AS (SELECT 1) SELECT * FROM \"update\"",
+        "UPDATE ONLY t SET a=(SELECT 1 WHERE true) WHERE id=1",
+        "DELETE FROM ONLY t WHERE id=1",
+        "/* UPDATE t SET a=1 */ SELECT 1",
+        "SELECT 1; DELETE FROM ONLY t"
+    })
+    void fallbackDoesNotClassifyNonDmlOrRestrictedDmlAsUnrestricted(String sql) throws Exception {
+        assertFalse(SQLSemanticProcessor.isUnrestrictedDml(null, sql), sql);
+    }
+
+    @Test
+    void safetyFallbackNeverChangesExecutableText() {
+        String sql = "/* WHERE */ UPDATE ONLY \"模式\".\"表\" SET label='WHERE'";
+        SQLQuery query = new SQLQuery(null, sql);
+        assertTrue(query.isDeleteUpdateDangerous());
+        assertTrue(query.isDeleteUpdateDangerous());
+        assertEquals(sql, query.getText());
+        assertEquals(sql, query.getOriginalText());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "UPDATE public.t SET amount = 1",
@@ -35,6 +62,12 @@ class GaussDBSQLSafetyTest {
         "DELETE FROM public.t USING public.s",
         "UPDATE ONLY public.t SET amount=1",
         "DELETE FROM ONLY public.t",
+        "/* WHERE */ UPDATE ONLY public.t SET amount=1",
+        "DELETE /* WHERE */ FROM ONLY public.t",
+        "UPDATE ONLY public.t SET label='WHERE id=1'",
+        "UPDATE ONLY public.t SET amount=(SELECT max(amount) FROM public.s WHERE id=1)",
+        "WITH s AS (SELECT id FROM public.s WHERE id=1) DELETE FROM ONLY public.t",
+        "UPDATE ONLY \"模式\".\"表\" SET \"where\"=1",
         "UPDATE \"模式\".\"表\" SET \"where\"=1",
         "WITH s AS (SELECT id FROM public.s WHERE id=1) UPDATE public.t SET amount=1",
         "WITH s AS (SELECT id FROM public.s WHERE id=1) DELETE FROM public.t"
@@ -51,6 +84,9 @@ class GaussDBSQLSafetyTest {
         "DELETE FROM public.t USING public.s WHERE t.id=s.id",
         "UPDATE ONLY public.t SET amount=1 WHERE id=1",
         "DELETE FROM ONLY public.t WHERE id=1",
+        "/* WHERE */ UPDATE ONLY public.t SET amount=1 WHERE id=1",
+        "WITH s AS (SELECT id FROM public.s) DELETE FROM ONLY public.t WHERE id IN (SELECT id FROM s)",
+        "UPDATE ONLY public.t SET label='WHERE' WHERE id IN (SELECT id FROM public.s)",
         "UPDATE public.t SET label='WHERE' WHERE id IN (SELECT id FROM public.s)",
         "DELETE FROM public.t WHERE EXISTS (SELECT 1 FROM public.s WHERE s.id=t.id)",
         "SELECT 'DELETE FROM public.t'",

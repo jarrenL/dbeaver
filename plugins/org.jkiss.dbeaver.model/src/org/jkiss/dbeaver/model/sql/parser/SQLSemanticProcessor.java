@@ -134,6 +134,56 @@ public class SQLSemanticProcessor {
         return parseQuery(null, sql);
     }
 
+    /**
+     * Fallback for execution confirmation when the full grammar cannot parse a dialect's DML.
+     * Uses lexical tokens (not substring matching) so quoted text, comments and nested WHERE
+     * clauses cannot hide an unrestricted outer UPDATE/DELETE. This does not validate SQL.
+     */
+    public static boolean isUnrestrictedDml(@Nullable SQLDialect dialect, @NotNull String sql) throws DBCException {
+        CCJSqlParser parser = buildParser(dialect, sql);
+        return callWithTimeout(parser, () -> {
+            int depth = 0;
+            boolean first = true;
+            boolean with = false;
+            boolean modifying = false;
+            for (Token token = parser.getNextToken(); token.kind != 0; token = parser.getNextToken()) {
+                String word = token.image;
+                if ("(".equals(word)) {
+                    depth++;
+                    continue;
+                }
+                if (")".equals(word)) {
+                    depth--;
+                    continue;
+                }
+                if (depth != 0) {
+                    continue;
+                }
+                if (";".equals(word)) {
+                    break;
+                }
+                if (first) {
+                    first = false;
+                    with = "WITH".equalsIgnoreCase(word);
+                    modifying = "UPDATE".equalsIgnoreCase(word) || "DELETE".equalsIgnoreCase(word);
+                    if (!with && !modifying) {
+                        return false;
+                    }
+                } else if (with && !modifying) {
+                    if ("UPDATE".equalsIgnoreCase(word) || "DELETE".equalsIgnoreCase(word)) {
+                        modifying = true;
+                    } else if ("SELECT".equalsIgnoreCase(word) || "INSERT".equalsIgnoreCase(word)
+                        || "MERGE".equalsIgnoreCase(word)) {
+                        return false;
+                    }
+                } else if (modifying && "WHERE".equalsIgnoreCase(word)) {
+                    return false;
+                }
+            }
+            return modifying;
+        });
+    }
+
     @Nullable
     public static Expression parseExpression(@NotNull String expression) throws DBCException {
         return parseExpression(expression, true);

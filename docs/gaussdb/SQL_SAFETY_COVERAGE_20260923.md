@@ -1,10 +1,22 @@
 # SQL 静态检查迁移：执行安全检查
 
+## 修复后结果
+
+当前生产代码在完整解析失败时，使用同一解析器的词法token进行外层UPDATE/DELETE、WHERE识别。括号内子查询、注释和引用字符串不能代替外层WHERE；支持WITH外层DML。该回退不改写执行文本，也不证明SQL语法合法。词法错误或超时仍不能确定语句类型，不宣称这是完整的安全审计机制。
+
+新增9个ONLY组合边界及9个回退/原文不变测试后，本类51项全通过。最终run-rAR5u0：1063总数、1039通过、24跳过、0失败/错误，见`test-results-20260923-sql-safety-green.json`。保留下面红灯证据，不能把修复前的失败记录删除成全程成功。
+
+### GaussDB 507真实语法验证
+
+使用独立gsql本地管理员会话，集中式和分布式各执行同一临时表脚本：BEGIN→建临时表→插入2行→UPDATE ONLY无WHERE，返回UPDATE 2且目标值计数2→DELETE FROM ONLY无WHERE，返回DELETE 2且剩余0→ROLLBACK。会话结束后两实例目录中该测试表均为0。证明漏报涉及实际可执行的全表修改语法，不是无效SQL。脚本在测试仓`fixtures/sql-safety-only.sql`。
+
+第一次分布式准备使用ON COMMIT DROP被服务端拒绝，未执行DML；最终脚本移除该非必要选项，依靠显式回滚及会话临时表清理，两环境重新通过。此验证不是普通用户权限测试，也不是JDBC/UI确认链路；相关GUI验收仍待补。临时回归grantee角色已删除。
+
 对应历史清单5.1。测试调用SQL编辑器实际使用的`SQLQuery.isDeleteUpdateDangerous()`和`isDropDangerous()`，不是在测试代码中另写一个检查器。
 
 新增`GaussDBSQLSafetyTest`共33个参数化场景：12个缺失外层WHERE、12个存在外层WHERE或不属于该规则的语句、6个DROP、3个注释/字符串中出现DROP。
 
-## 当前结果：发现缺陷，尚未通过
+## 修复前结果：发现缺陷
 
 run-y1bSnO中31个新增场景通过，2个失败：
 
@@ -13,7 +25,7 @@ UPDATE ONLY public.t SET amount=1;
 DELETE FROM ONLY public.t;
 ```
 
-两条语句都没有限制行范围，却得到`isDeleteUpdateDangerous()==false`。当前`SQLQuery`解析失败时statement为null，危险检查直接返回false。该失败不能跳过，也不能改成预期false来获得绿灯。下一步需补语法识别或可靠的安全检查回退，同时验证带WHERE、嵌套查询、注释和引用标识符不被误判。尚未实施修复。
+两条语句都没有限制行范围，却得到`isDeleteUpdateDangerous()==false`。修复前`SQLQuery`解析失败时statement为null，危险检查直接返回false。保留原预期true，通过上述生产修复恢复检查，没有跳过或降低断言。
 
 本轮完整结果以`test-results-20260923-sql-safety-red.json`为准；上一轮1012项无失败不代表本轮新增检查通过。这里只解析SQL，没有执行上述UPDATE/DELETE/DROP，真实数据库回归仍使用隔离测试对象，临时授权角色已清理。
 
