@@ -123,6 +123,29 @@ class GaussDBNativeLiveTest {
                     try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("SELECT count(*),sum(n) FROM review_native.rows_to_restore")) {
                         assertTrue(rs.next()); assertEquals(3, rs.getInt(1)); assertEquals(6, rs.getInt(2));
                     }
+                    // A failed script must report failure and stop before the following destructive statement.
+                    Files.writeString(dump, "SELECT 1/0;\nDELETE FROM review_native.rows_to_restore;\n");
+                    run(new ProcessBuilder("docker", "cp", dump.toString(), "gaussdb-507-ha-lab:" + remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "chown", "gausscore:dbgrp", remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    var invalid = new ProcessBuilder(tool("gsql", database, user, "-v", "ON_ERROR_STOP=1", "-f", remote));
+                    AssertionError failure = assertThrows(AssertionError.class, () -> run(invalid, errors, settings));
+                    String safeFailure = failure.getMessage().replace(props.getProperty("password"), "[REDACTED]");
+                    assertTrue(safeFailure.toLowerCase(Locale.ROOT).contains("division by zero"), safeFailure);
+                    assertFalse(Files.readString(errors).contains(props.getProperty("password")));
+                    try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("SELECT count(*),sum(n) FROM review_native.rows_to_restore")) {
+                        assertTrue(rs.next()); assertEquals(3, rs.getInt(1)); assertEquals(6, rs.getInt(2));
+                    }
+                    Files.writeString(dump, "INSERT INTO review_native.rows_to_restore VALUES(4);\n");
+                    run(new ProcessBuilder("docker", "cp", dump.toString(), "gaussdb-507-ha-lab:" + remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "chown", "gausscore:dbgrp", remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder(tool("gsql", database, user, "-v", "ON_ERROR_STOP=1", "-f", remote)), errors, settings);
+                    try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("SELECT count(*),sum(n) FROM review_native.rows_to_restore")) {
+                        assertTrue(rs.next()); assertEquals(4, rs.getInt(1)); assertEquals(10, rs.getInt(2));
+                    }
                 } finally { exec(c, "DROP SCHEMA IF EXISTS review_native CASCADE"); }
             }
         } finally {
