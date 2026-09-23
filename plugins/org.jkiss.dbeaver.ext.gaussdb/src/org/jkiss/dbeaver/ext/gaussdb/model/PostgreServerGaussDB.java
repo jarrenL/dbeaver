@@ -48,6 +48,12 @@ import java.util.Locale;
 import java.util.Map;
 
 public class PostgreServerGaussDB extends PostgreServerExtensionBase {
+    @Override
+    public boolean supportsSequenceRestart() {
+        // Verified unsupported on both centralized and distributed GaussDB 507.
+        // Do not emulate RESTART with non-transactional setval.
+        return false;
+    }
     private static final Log log = Log.getLog(PostgreServerGaussDB.class);
 
     private boolean supportJobs;

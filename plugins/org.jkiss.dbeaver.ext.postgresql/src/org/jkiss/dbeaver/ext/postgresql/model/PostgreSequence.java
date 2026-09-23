@@ -64,7 +64,8 @@ public class PostgreSequence extends PostgreTableBase implements DBSSequence, DB
         private long cacheValue;
         private boolean isCycled;
 
-        @Property(viewable = true, editable = true, updatable = true, order = 10)
+        @Property(viewable = true, editable = true, updatable = true, order = 10,
+            editableExpr = "object.supportsSequenceRestart()", updatableExpr = "object.supportsSequenceRestart()")
         public Long getLastValue() {
             return lastValue;
         }
@@ -234,6 +235,10 @@ public class PostgreSequence extends PostgreTableBase implements DBSSequence, DB
 
     public boolean supportsCacheAndCycle() {
         return true;
+    }
+
+    public boolean supportsSequenceRestart() {
+        return getDataSource().getServerType().supportsSequenceRestart();
     }
 
     ///////////////////////////////////////////////////////////////////////

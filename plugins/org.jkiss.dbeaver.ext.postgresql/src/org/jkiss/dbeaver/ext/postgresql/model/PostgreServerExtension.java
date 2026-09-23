@@ -93,6 +93,10 @@ public interface PostgreServerExtension {
 
     boolean supportsSequences();
 
+    default boolean supportsSequenceRestart() {
+        return true;
+    }
+
     @NotNull
     PostgreSequence createSequence(@NotNull PostgreSchema schema);
 

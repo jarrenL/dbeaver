@@ -19,6 +19,7 @@ package org.jkiss.dbeaver.ext.postgresql.edit;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTableBase;
@@ -67,6 +68,7 @@ public class PostgreSequenceManager extends SQLObjectEditor<PostgreTableBase, Po
         if (CommonUtils.isEmpty(command.getObject().getName())) {
             throw new DBException("Sequence name cannot be empty");
         }
+        validateRestart(command);
     }
 
     @Override
@@ -90,7 +92,8 @@ public class PostgreSequenceManager extends SQLObjectEditor<PostgreTableBase, Po
     }
 
     @Override
-    protected void addObjectModifyActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectChangeCommand command, @NotNull Map<String, Object> options) {
+    protected void addObjectModifyActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectChangeCommand command, @NotNull Map<String, Object> options) throws DBException {
+        validateRestart(command);
         final PostgreSequence sequence = (PostgreSequence) command.getObject();
         final String sequenceName = sequence.getFullyQualifiedName(DBPEvaluationContext.DDL);
         final StringBuilder sequenceOptions = new StringBuilder();
@@ -137,6 +140,13 @@ public class PostgreSequenceManager extends SQLObjectEditor<PostgreTableBase, Po
                 ddl.append("NO ");
             }
             ddl.append("CYCLE");
+        }
+    }
+
+    private void validateRestart(@NotNull ObjectChangeCommand command) throws DBException {
+        if (command.getProperties().get("lastValue") != null
+            && !((PostgreSequence) command.getObject()).supportsSequenceRestart()) {
+            throw new DBException(PostgreSQLMessages.sequence_restart_not_supported);
         }
     }
 

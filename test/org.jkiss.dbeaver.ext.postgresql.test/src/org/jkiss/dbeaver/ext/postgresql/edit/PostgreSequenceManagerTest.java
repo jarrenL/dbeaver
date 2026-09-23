@@ -32,8 +32,26 @@ import static org.mockito.Mockito.*;
 
 class PostgreSequenceManagerTest extends org.jkiss.junit.DBeaverUnitTest {
     private static class Manager extends PostgreSequenceManager {
-        String change(Map<Object, Object> properties) {
+        void validateUnsupportedRestart() throws Exception {
             var sequence = mock(PostgreSequence.class);
+            when(sequence.getName()).thenReturn("sequence_name");
+            when(sequence.supportsSequenceRestart()).thenReturn(false);
+            var command = new ObjectChangeCommand(sequence) {
+                @Override
+                public Map<Object, Object> getProperties() {
+                    return Map.of("lastValue", 0L);
+                }
+            };
+            validateObjectProperties(new VoidProgressMonitor(), command, Map.of());
+        }
+
+        String change(Map<Object, Object> properties) throws Exception {
+            return change(properties, true);
+        }
+
+        String change(Map<Object, Object> properties, boolean restartSupported) throws Exception {
+            var sequence = mock(PostgreSequence.class);
+            when(sequence.supportsSequenceRestart()).thenReturn(restartSupported);
             when(sequence.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("\"业务\".\"流水 号\"");
             var command = new ObjectChangeCommand(sequence) {
                 @Override
@@ -42,14 +60,19 @@ class PostgreSequenceManagerTest extends org.jkiss.junit.DBeaverUnitTest {
                 }
             };
             var actions = new ArrayList<DBEPersistAction>();
-            addObjectModifyActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
+            try {
+                addObjectModifyActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
+            } catch (org.jkiss.dbeaver.DBException failure) {
+                assertTrue(actions.isEmpty(), "Unsupported restart must not leave partial ALTER actions");
+                throw failure;
+            }
             assertTrue(actions.size() <= 1);
             return actions.isEmpty() ? null : actions.get(0).getScript();
         }
     }
 
     @Test
-    void completeModificationPreservesZeroNegativeValuesAndQualifiedName() {
+    void completeModificationPreservesZeroNegativeValuesAndQualifiedName() throws Exception {
         assertEquals("ALTER SEQUENCE \"业务\".\"流水 号\"\n\tINCREMENT BY -3\n\tMINVALUE -100"
             + "\n\tMAXVALUE 0\n\tSTART -90\n\tRESTART -30\n\tCACHE 64\n\tNO CYCLE",
             new Manager().change(Map.of("incrementBy", -3L, "minValue", -100L, "maxValue", 0L,
@@ -57,21 +80,60 @@ class PostgreSequenceManagerTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
-    void cycleEnableDoesNotResetUnchangedSequenceProperties() {
+    void cycleEnableDoesNotResetUnchangedSequenceProperties() throws Exception {
         assertEquals("ALTER SEQUENCE \"业务\".\"流水 号\"\n\tCYCLE", new Manager().change(Map.of("cycled", true)));
     }
 
     @Test
-    void emptyOrUnrelatedChangesDoNotEmitAnEmptyAlterStatement() {
+    void emptyOrUnrelatedChangesDoNotEmitAnEmptyAlterStatement() throws Exception {
         assertNull(new Manager().change(Map.of()));
         assertNull(new Manager().change(Map.of("description", "仅修改说明")));
     }
 
     @Test
-    void nullLastValueDoesNotGenerateRestartNull() {
+    void nullLastValueDoesNotGenerateRestartNull() throws Exception {
         var properties = new LinkedHashMap<Object, Object>();
         properties.put("lastValue", null);
         properties.put("incrementBy", 2L);
         assertEquals("ALTER SEQUENCE \"业务\".\"流水 号\"\n\tINCREMENT BY 2", new Manager().change(properties));
+    }
+
+    @Test
+    void unsupportedRestartRejectsTheWholeChangeBeforeGeneratingSql() {
+        var failure = assertThrows(org.jkiss.dbeaver.DBException.class,
+            () -> new Manager().change(Map.of("lastValue", 0L, "incrementBy", 3L), false));
+        assertEquals(org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages.sequence_restart_not_supported,
+            failure.getMessage());
+    }
+
+    @Test
+    void commandValidationAlsoRejectsUnsupportedRestart() {
+        assertThrows(org.jkiss.dbeaver.DBException.class, () -> new Manager().validateUnsupportedRestart());
+    }
+
+    @Test
+    void unsupportedRestartDoesNotBlockOtherSequenceOptions() throws Exception {
+        assertEquals("ALTER SEQUENCE \"业务\".\"流水 号\"\n\tCYCLE",
+            new Manager().change(Map.of("cycled", true), false));
+    }
+
+    @Test
+    void currentValuePropertyRemainsVisibleButUsesRestartCapabilityForEditing() throws Exception {
+        var getter = PostgreSequence.AdditionalInfo.class.getMethod("getLastValue");
+        var property = getter.getAnnotation(org.jkiss.dbeaver.model.meta.Property.class);
+        var descriptor = new org.jkiss.dbeaver.runtime.properties.ObjectPropertyDescriptor(
+            null, null, property, getter, "en", false);
+        var source = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource.class);
+        var schema = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema.class);
+        var server = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreServerExtension.class);
+        when(schema.getDataSource()).thenReturn(source);
+        when(source.getServerType()).thenReturn(server);
+        var sequence = new PostgreSequence(schema);
+        when(server.supportsSequenceRestart()).thenReturn(false);
+        assertTrue(descriptor.isViewable());
+        assertFalse(descriptor.isEditPossible(sequence));
+        when(server.supportsSequenceRestart()).thenReturn(true);
+        assertTrue(descriptor.isEditPossible(sequence));
+        assertEquals(property.editableExpr(), property.updatableExpr());
     }
 }

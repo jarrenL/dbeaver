@@ -38,6 +38,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class PostgreServerGaussDBTest {
+    @Test
+    public void gaussSequenceRestartIsDisabledWhilePostgreSqlKeepsDefaultCapability() {
+        var source = Mockito.mock(GaussDBDataSource.class);
+        var server = new PostgreServerGaussDB(source);
+        Mockito.when(source.getServerType()).thenReturn(server);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(schema.getDataSource()).thenReturn(source);
+        Assertions.assertFalse(server.supportsSequenceRestart());
+        Assertions.assertFalse(new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence(schema).supportsSequenceRestart());
+        var extension = Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreServerExtension.class,
+            Mockito.CALLS_REAL_METHODS);
+        Assertions.assertTrue(extension.supportsSequenceRestart());
+    }
 
     private final class TableDDLFixture {
         final org.jkiss.dbeaver.ext.postgresql.model.PostgreTable table = Mockito.mock(
