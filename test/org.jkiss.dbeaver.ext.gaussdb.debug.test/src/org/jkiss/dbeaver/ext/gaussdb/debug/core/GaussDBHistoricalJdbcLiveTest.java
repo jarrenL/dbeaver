@@ -37,6 +37,37 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionTableDdlRebuildsUniqueAndOrderedCompositeIndexes() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".indexed_ddl";
+            execute(c, "CREATE TABLE " + table + "(id integer,label varchar(30),amount integer) DISTRIBUTE BY HASH(id)");
+            execute(c, "CREATE UNIQUE INDEX unique_id_label ON " + table + "(id,label)");
+            execute(c, "CREATE INDEX amount_label ON " + table + "(amount DESC,label ASC)");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            execute(c, "INSERT INTO " + table + " VALUES(1,'a',10),(1,'b',20)");
+            assertEquals("23505", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "INSERT INTO " + table + " VALUES(1,'a',30)")).getSQLState());
+            var indexedColumns = new java.util.ArrayList<String>();
+            try (var rows = c.getMetaData().getIndexInfo(null, s, "indexed_ddl", false, false)) {
+                while (rows.next()) {
+                    String name = rows.getString("INDEX_NAME");
+                    if ("amount_label".equals(name)) {
+                        indexedColumns.add(rows.getShort("ORDINAL_POSITION") + ":" + rows.getString("COLUMN_NAME")
+                            + ":" + rows.getString("ASC_OR_DESC"));
+                    }
+                }
+            }
+            indexedColumns.sort(String::compareTo);
+            assertEquals(List.of("1:amount:D", "2:label:A"), indexedColumns);
+            assertRows(c, "SELECT id,label,amount FROM " + table + " ORDER BY amount DESC",
+                List.of(List.of("1", "b", "20"), List.of("1", "a", "10")));
+        });
+    }
+
+    @Test
     void productionTableDdlRebuildsHashDefaultsConstraintsAndComments() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".ddl_hash";
