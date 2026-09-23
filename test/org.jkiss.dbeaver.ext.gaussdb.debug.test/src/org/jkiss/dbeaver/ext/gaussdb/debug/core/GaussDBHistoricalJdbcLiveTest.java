@@ -37,6 +37,67 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void textArrayPreservesEscapesAndDistinguishesNullArrayFromEmptyArray() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".text_arrays(id int, value text[])");
+            String[] values = {"中文,逗号", "quoted\"value", "slash\\value", "line1\nline2", "NULL", null};
+            var array = c.createArrayOf("text", values);
+            try (var insert = c.prepareStatement("INSERT INTO " + s + ".text_arrays VALUES(1,?)")) {
+                insert.setArray(1, array);
+                assertEquals(1, insert.executeUpdate());
+            } finally {
+                array.free();
+            }
+            execute(c, "INSERT INTO " + s + ".text_arrays VALUES(2,ARRAY[]::text[]),(3,NULL)");
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT value FROM " + s + ".text_arrays ORDER BY id")) {
+                assertTrue(rows.next());
+                var actual = rows.getArray(1);
+                assertFalse(rows.wasNull());
+                try { assertArrayEquals(values, (Object[]) actual.getArray()); }
+                finally { actual.free(); }
+                assertTrue(rows.next());
+                actual = rows.getArray(1);
+                assertFalse(rows.wasNull());
+                try { assertEquals(0, ((Object[]) actual.getArray()).length); }
+                finally { actual.free(); }
+                assertTrue(rows.next());
+                assertNull(rows.getArray(1));
+                assertTrue(rows.wasNull());
+                assertFalse(rows.next());
+            }
+        });
+    }
+
+    @Test
+    void compositeValueRetainsNamedFieldsAndSqlNulls() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TYPE " + s + ".address_value AS (label text, amount numeric(12,4))");
+            execute(c, "CREATE TABLE " + s + ".composites(id int, value " + s + ".address_value)");
+            try (var insert = c.prepareStatement("INSERT INTO " + s + ".composites VALUES(1,ROW(?,?)::" + s + ".address_value)")) {
+                insert.setString(1, "中文,\"引号\"");
+                insert.setBigDecimal(2, new java.math.BigDecimal("123.4500"));
+                assertEquals(1, insert.executeUpdate());
+            }
+            execute(c, "INSERT INTO " + s + ".composites VALUES(2,NULL)");
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT value,(value).label,(value).amount FROM " + s + ".composites ORDER BY id")) {
+                assertTrue(rows.next());
+                assertEquals("\"" + s + "\".\"address_value\"", rows.getMetaData().getColumnTypeName(1));
+                assertNotNull(rows.getObject(1));
+                assertEquals("中文,\"引号\"", rows.getString(2));
+                assertEquals(new java.math.BigDecimal("123.4500"), rows.getBigDecimal(3));
+                assertTrue(rows.next());
+                assertNull(rows.getObject(1));
+                assertTrue(rows.wasNull());
+                assertNull(rows.getString(2));
+                assertNull(rows.getBigDecimal(3));
+                assertFalse(rows.next());
+            }
+        });
+    }
+
+    @Test
     void dateArithmeticCrossesLeapDayAndYearWithoutLosingMicroseconds() throws Exception {
         inIsolatedSchema((c, s) -> {
             try (var statement = c.createStatement(); var rows = statement.executeQuery(
