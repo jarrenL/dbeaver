@@ -1,0 +1,27 @@
+# SQL 静态检查迁移：执行安全检查
+
+对应历史清单5.1。测试调用SQL编辑器实际使用的`SQLQuery.isDeleteUpdateDangerous()`和`isDropDangerous()`，不是在测试代码中另写一个检查器。
+
+新增`GaussDBSQLSafetyTest`共33个参数化场景：12个缺失外层WHERE、12个存在外层WHERE或不属于该规则的语句、6个DROP、3个注释/字符串中出现DROP。
+
+## 当前结果：发现缺陷，尚未通过
+
+run-y1bSnO中31个新增场景通过，2个失败：
+
+```sql
+UPDATE ONLY public.t SET amount=1;
+DELETE FROM ONLY public.t;
+```
+
+两条语句都没有限制行范围，却得到`isDeleteUpdateDangerous()==false`。当前`SQLQuery`解析失败时statement为null，危险检查直接返回false。该失败不能跳过，也不能改成预期false来获得绿灯。下一步需补语法识别或可靠的安全检查回退，同时验证带WHERE、嵌套查询、注释和引用标识符不被误判。尚未实施修复。
+
+本轮完整结果以`test-results-20260923-sql-safety-red.json`为准；上一轮1012项无失败不代表本轮新增检查通过。这里只解析SQL，没有执行上述UPDATE/DELETE/DROP，真实数据库回归仍使用隔离测试对象，临时授权角色已清理。
+
+## 已证明的范围与未证明的范围
+
+- 外层WHERE和子查询WHERE不同；仅子查询含WHERE仍应触发确认。本次场景通过。
+- 注释或字符串中的WHERE不能代替实际WHERE。本次场景通过。
+- `WHERE 1=1`当前不会触发此规则：这是“是否有WHERE”检查，不是“是否安全”证明，不能宣传为全表操作检测完整覆盖。
+- DROP识别与UPDATE/DELETE确认是不同规则，测试分别断言。
+- GUI确认弹窗、用户取消后是否不执行、偏好设置开关尚需界面验证。
+- 清单5.2的INSERT显式列名、ORDER BY列名、LIKE前导通配符、NULL直接比较、重复表达式、SELECT星号、EXISTS的WHERE、重复CASE条件、NOT IN可空子查询仍需逐项核对并补覆盖。不能把语法解析成功或本报告的执行确认当成这些规则已实现；也不能直接将它们标为不适用。
