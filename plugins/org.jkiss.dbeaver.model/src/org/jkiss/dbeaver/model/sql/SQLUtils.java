@@ -1187,8 +1187,7 @@ public final class SQLUtils {
         if (ArrayUtils.isEmpty(quoteStrings)) {
             return name.split(Pattern.quote(nameSeparator));
         }
-        if (!name.contains(nameSeparator)) {
-            name = keepQuotes ? name : DBUtils.getUnQuotedIdentifier(name, quoteStrings);
+        if (name.isEmpty()) {
             return new String[] {name};
         }
         List<String> nameList = new ArrayList<>();
@@ -1199,19 +1198,19 @@ public final class SQLUtils {
                 String endQuote = quotePair[1];
                 if (!CommonUtils.isEmpty(startQuote) && !CommonUtils.isEmpty(endQuote) && name.startsWith(startQuote)) {
                     int endPos = name.indexOf(endQuote, startQuote.length());
+                    while (endPos != -1 && name.startsWith(endQuote, endPos + endQuote.length())) {
+                        endPos = name.indexOf(endQuote, endPos + 2 * endQuote.length());
+                    }
                     if (endPos == -1) {
                         // Completion may stop inside a quoted identifier containing a separator.
-                        nameList.add(keepQuotes ? name : name.substring(startQuote.length()));
+                        nameList.add(keepQuotes ? name : name.substring(startQuote.length()).replace(endQuote + endQuote, endQuote));
                         return nameList.toArray(new String[0]);
                     }
                     if (endPos != -1) {
                         // Quoted part
                         String partName = keepQuotes ?
                             name.substring(0, endPos + endQuote.length()) :
-                            name.substring(startQuote.length(), endPos);
-                        while (partName.endsWith(nameSeparator)) {
-                            partName = partName.substring(0, partName.length() - 1);
-                        }
+                            name.substring(startQuote.length(), endPos).replace(endQuote + endQuote, endQuote);
                         if (!partName.isEmpty()) {
                             nameList.add(partName);
                         }

@@ -38,6 +38,36 @@ public class SQLUtilsTest extends DBeaverUnitTest {
     }
 
     @Test
+    public void splitQuotedIdentifierPreservesEscapedQuote() {
+        String input = "\"a\"\".schema\".\"table\"";
+        String[][] quotes = {{"\"", "\""}};
+        Assertions.assertArrayEquals(new String[] {"\"a\"\".schema\"", "\"table\""},
+            SQLUtils.splitFullIdentifier(input, ".", quotes, true));
+        Assertions.assertArrayEquals(new String[] {"a\".schema", "table"},
+            SQLUtils.splitFullIdentifier(input, ".", quotes, false));
+    }
+
+    @Test
+    public void splitQuotedIdentifierPreservesTrailingDotInsideName() {
+        Assertions.assertArrayEquals(new String[] {"schema.", "table."},
+            SQLUtils.splitFullIdentifier("\"schema.\".\"table.\"", ".", new String[][] {{"\"", "\""}}, false));
+    }
+
+    @Test
+    public void splitSingleAndIncompleteEscapedIdentifiers() {
+        for (String[] pair : new String[][] {{"\"", "\""}, {"`", "`"}, {"[", "]"}}) {
+            String escaped = "a" + pair[1] + pair[1] + "b";
+            String input = pair[0] + escaped + pair[1];
+            Assertions.assertArrayEquals(new String[] {input},
+                SQLUtils.splitFullIdentifier(input, ".", new String[][] {pair}, true));
+            Assertions.assertArrayEquals(new String[] {"a" + pair[1] + "b"},
+                SQLUtils.splitFullIdentifier(input, ".", new String[][] {pair}, false));
+            Assertions.assertArrayEquals(new String[] {"schema", "a" + pair[1] + "b.tail"},
+                SQLUtils.splitFullIdentifier("schema." + pair[0] + escaped + ".tail", ".", new String[][] {pair}, false));
+        }
+    }
+
+    @Test
     public void makeRegexFromLikeTest() {
         Assertions.assertEquals("^ABC$", SQLUtils.makeRegexFromLike("ABC"));
         Assertions.assertEquals("^A.*C$", SQLUtils.makeRegexFromLike("A%C"));

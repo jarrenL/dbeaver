@@ -978,6 +978,32 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
 
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"GAUSSDB_HISTORY_CONNECTION", "GAUSSDB_HISTORY_CENTRAL_CONNECTION"})
+    void splitQualifiedIdentifiersMatchRealCatalogNames(String configuration) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            GaussDBDialect dialect = new GaussDBDialect();
+            for (String name : List.of("a\".table", "table.", "研发.表", "space . name")) {
+                String qualified = dialect.getQuotedIdentifier(schema, true, true) + "."
+                    + dialect.getQuotedIdentifier(name, true, true);
+                execute(connection, "CREATE TABLE " + qualified + "(id integer)");
+                execute(connection, "INSERT INTO " + qualified + " VALUES (7)");
+                String[] parts = org.jkiss.dbeaver.model.sql.SQLUtils.splitFullIdentifier(
+                    qualified, ".", dialect.getIdentifierQuoteStrings(), false);
+                assertArrayEquals(new String[] {schema, name}, parts);
+                assertEquals(List.of(name), searchTables(connection, parts[0], parts[1], true, 10, false)
+                    .stream().map(reference -> reference.getName()).toList());
+                String rebuilt = dialect.getQuotedIdentifier(parts[0], true, true) + "."
+                    + dialect.getQuotedIdentifier(parts[1], true, true);
+                try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT id FROM " + rebuilt)) {
+                    assertTrue(rows.next());
+                    assertEquals(7, rows.getInt(1));
+                    assertFalse(rows.next());
+                }
+            }
+        }, java.util.Map.of(), System.getenv(configuration));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"GAUSSDB_HISTORY_CONNECTION", "GAUSSDB_HISTORY_CENTRAL_CONNECTION"})
     void productionTableSearchDistinguishesEscapedWildcardsAndQuotedNames(String configuration) throws Exception {
         inIsolatedSchema((connection, schema) -> {
             List<String> names = List.of("literal%percent", "literal_percent", "literalXpercent",
