@@ -41,6 +41,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.Reader;
+import java.io.OutputStream;
 import java.io.StringReader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -425,6 +426,51 @@ public class GaussDBExcelExportTest {
         assertSame(failure, assertThrows(IOException.class,
             () -> export(DBPDataKind.STRING, Map.of(), new Object[]{content})));
         verify(content).release();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 512})
+    public void outputFailureClearsWorkbookAndSheetsAndAllowsRepeatedDispose(int byteLimit) throws Exception {
+        IStreamDataExporterSite site = mock(IStreamDataExporterSite.class);
+        when(site.getProperties()).thenReturn(DataExporterXLSX.getDefaultProperties());
+        when(site.getSource()).thenReturn(mock(DBPNamedObject.class));
+        when(site.getExportFormat()).thenReturn(DBDDisplayFormat.NATIVE);
+        DBDAttributeBinding column = mock(DBDAttributeBinding.class);
+        when(column.getName()).thenReturn("content");
+        when(column.getDataKind()).thenReturn(DBPDataKind.STRING);
+        when(column.getValueHandler()).thenReturn(JDBCStringValueHandler.INSTANCE);
+        when(site.getAttributes()).thenReturn(new DBDAttributeBinding[]{column});
+        java.util.concurrent.atomic.AtomicInteger written = new java.util.concurrent.atomic.AtomicInteger();
+        when(site.getOutputStream()).thenReturn(new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                if (written.getAndIncrement() >= byteLimit) {
+                    throw new IOException("Test output failure");
+                }
+            }
+        });
+        DataExporterXLSX exporter = new DataExporterXLSX();
+        exporter.init(site);
+        exporter.exportHeader(mock(DBCSession.class));
+        exporter.exportRow(null, null, new Object[]{"待写出内容"});
+        var workbookField = DataExporterXLSX.class.getDeclaredField("wb");
+        workbookField.setAccessible(true);
+        var sheetsField = DataExporterXLSX.class.getDeclaredField("worksheets");
+        sheetsField.setAccessible(true);
+        assertThrows(IOException.class, exporter::dispose);
+        try {
+            assertNull(workbookField.get(exporter), "Failed output must still release the workbook reference");
+            assertTrue(((Map<?, ?>) sheetsField.get(exporter)).isEmpty(), "Sheet references must be cleared");
+            int attempts = written.get();
+            assertDoesNotThrow(exporter::dispose);
+            assertEquals(attempts, written.get(), "Repeated dispose must not retry a partially written export");
+        } finally {
+            // Keep a failing regression test from leaking its own streaming workbook resources.
+            Object remaining = workbookField.get(exporter);
+            if (remaining instanceof AutoCloseable closeable) {
+                closeable.close();
+            }
+        }
     }
 
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {

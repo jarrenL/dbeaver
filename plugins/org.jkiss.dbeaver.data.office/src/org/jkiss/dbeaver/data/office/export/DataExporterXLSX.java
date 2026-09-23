@@ -259,16 +259,18 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
                 log.error("Dispose error", e);
             }
         }
-        if (wb != null) {
-            wb.write(getSite().getOutputStream());
-            wb.close();
+        try (SXSSFWorkbook workbook = wb) {
             wb = null;
-        }
-        if (!CommonUtils.isEmpty(worksheets)) {
-            for (Worksheet w : worksheets.values()) {
-                w.dispose();
+            if (workbook != null) {
+                workbook.write(getSite().getOutputStream());
             }
-            worksheets.clear();
+        } finally {
+            if (!CommonUtils.isEmpty(worksheets)) {
+                for (Worksheet w : worksheets.values()) {
+                    w.dispose();
+                }
+                worksheets.clear();
+            }
         }
     }
 

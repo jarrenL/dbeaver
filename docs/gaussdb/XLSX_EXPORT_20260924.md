@@ -100,3 +100,13 @@
 `run-hTYMBb` 有 1 项测试装配异常：spy 的 StringReader 内部 lock 为 null；改为真实 StringReader 子类记录 close 次数，其余 4 项原本通过。未据此修改生产代码。上述释放是导出器层的接口调用断言，不代表真实 JDBC LOB 生命周期、磁盘写失败或 GUI 取消已经验收。
 
 `run-QfJhtG` 完整回归 **1,313 项，1,289 通过，24 跳过，0 失败/错误**，本类累计 48 项。[脱敏结果](test-results-20260924-xlsx-content.json)。临时 grantee 已删除。
+
+## 输出流失败后的清理
+
+新增 2 项故障注入：输出流在第 0/512 字节后抛 IOException。调用生产 init、exportHeader、exportRow、dispose；要求 IOException 向上传播、工作簿引用清空、Sheet 映射清空，再次 dispose 不报错且不继续写入半成品输出。
+
+`run-cPnfVE` 两项复现失败，write 抛异常后跳过 wb.close 和后续清理，工作簿引用仍存在。改用 try-with-resources 写出并关闭工作簿，在 finally 清理 Sheet 引用；先移除实例中的工作簿引用，避免重复 dispose 重写不完整文件。
+
+此处是输出流故障模拟与引用清理断言，不是真实磁盘空间耗尽、操作系统句柄统计或临时文件残留检查。输出失败会留下不完整输出，本修复不把它当作成功文件，也不自动删除调用方管理的输出路径。
+
+修复后 `run-hcvL7P` 完整回归 **1,315 项，1,291 通过，24 跳过，0 失败/错误**，本类累计 50 项。[脱敏结果](test-results-20260924-xlsx-output-failure.json)。临时 grantee 已删除。
