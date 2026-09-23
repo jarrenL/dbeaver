@@ -24,7 +24,9 @@ import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSDataBulkLoader;
 import org.jkiss.dbeaver.model.struct.DBSDataManipulator;
+import org.jkiss.dbeaver.model.struct.DBSDataManipulatorExt;
 import org.jkiss.dbeaver.tools.transfer.database.DatabaseTransferConsumer;
+import org.jkiss.dbeaver.tools.transfer.database.DatabaseConsumerSettings;
 import org.jkiss.junit.DBeaverUnitTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -167,6 +169,55 @@ class DatabaseConsumerCleanupTest extends DBeaverUnitTest {
         Mockito.verify(batch).close();
         Mockito.verifyNoMoreInteractions(batch);
         Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
+    }
+
+    @Test
+    void cancellationDuringFinalBulkFlushDoesNotFinishLoad() throws Exception {
+        assertCancellationDuringFlush(false);
+    }
+
+    @Test
+    void sourceCancellationDuringFinalBulkFlushDoesNotFinishLoad() throws Exception {
+        assertCancellationDuringFlush(true);
+    }
+
+    private void assertCancellationDuringFlush(boolean cancelSource) throws Exception {
+        DBRProgressMonitor progress = Mockito.mock(DBRProgressMonitor.class);
+        DBCSession source = Mockito.mock(DBCSession.class);
+        Mockito.when(source.getProgressMonitor()).thenReturn(cancelSource ? progress : monitor);
+        Mockito.when(session.getProgressMonitor()).thenReturn(cancelSource ? monitor : progress);
+        var target = Mockito.mock(DBSDataManipulatorExt.class);
+        consumer.setTargetObject(target);
+        set("targetAttributes", java.util.List.of());
+        var bulk = Mockito.mock(DBSDataBulkLoader.BulkLoadManager.class);
+        Mockito.doAnswer(invocation -> {
+            Mockito.when(progress.isCanceled()).thenReturn(true);
+            return null;
+        }).when(bulk).flushRows(session);
+        set("settings", Mockito.mock(DatabaseConsumerSettings.class));
+        set("bulkLoadManager", bulk);
+        set("rowsExported", 3L);
+        consumer.fetchEnd(source, Mockito.mock(DBCResultSet.class));
+        Mockito.verify(bulk).flushRows(session);
+        Mockito.verify(bulk, Mockito.never()).finishBulkLoad(Mockito.any());
+        Mockito.verifyNoInteractions(target);
+        consumer.close();
+        Mockito.verify(bulk).close();
+        Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
+    }
+
+    @Test
+    void nonCanceledBulkFetchStillFlushesAndFinishesBeforeClose() throws Exception {
+        var bulk = Mockito.mock(DBSDataBulkLoader.BulkLoadManager.class);
+        set("settings", Mockito.mock(DatabaseConsumerSettings.class));
+        set("bulkLoadManager", bulk);
+        set("rowsExported", 3L);
+        consumer.fetchEnd(session, Mockito.mock(DBCResultSet.class));
+        consumer.close();
+        var order = Mockito.inOrder(bulk);
+        order.verify(bulk).flushRows(session);
+        order.verify(bulk).finishBulkLoad(session);
+        order.verify(bulk).close();
     }
 
     private void set(String name, Object value) throws Exception {

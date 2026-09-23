@@ -510,7 +510,8 @@ public class DatabaseTransferConsumer implements IDataTransferConsumer<DatabaseC
             if (!canceled && rowsExported > 0) {
                 insertBatch(true);
             }
-            if (!canceled && bulkLoadManager != null) {
+            // Cancellation may arrive while the final batch is being flushed.
+            if (!isTransferCanceled(session) && bulkLoadManager != null) {
                 bulkLoadManager.finishBulkLoad(targetSession);
             } else if (executeBatch != null) {
                 executeBatch.close();
@@ -518,7 +519,7 @@ public class DatabaseTransferConsumer implements IDataTransferConsumer<DatabaseC
             }
         } finally {
             DBSDataManipulator targetObject = getTargetObject();
-            if (!canceled && !isPreview && targetObject instanceof DBSDataManipulatorExt) {
+            if (!isTransferCanceled(session) && !isPreview && targetObject instanceof DBSDataManipulatorExt) {
                 ((DBSDataManipulatorExt) targetObject).afterDataChange(
                     targetSession,
                     DBSManipulationType.INSERT,
