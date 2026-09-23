@@ -77,8 +77,12 @@ public class DBSObjectFilter {
         return caseSensitive;
     }
 
-    public void setCaseSensitive(boolean caseSensitive) {
-        this.caseSensitive = caseSensitive;
+    public synchronized void setCaseSensitive(boolean caseSensitive) {
+        if (this.caseSensitive != caseSensitive) {
+            this.caseSensitive = caseSensitive;
+            this.includePatterns = null;
+            this.excludePatterns = null;
+        }
     }
 
     public String getDescription() {
@@ -250,7 +254,7 @@ public class DBSObjectFilter {
             return caseSensitive ? Pattern.compile(
                 SQLUtils.makeLikePattern(str), Pattern.MULTILINE) : Pattern.compile(SQLUtils.makeLikePattern(str), Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
         } else {
-            return str;
+            return caseSensitive ? Pattern.compile(Pattern.quote(str)) : str;
         }
     }
 
