@@ -21,9 +21,12 @@ import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.jkiss.dbeaver.data.office.export.DataExporterXLSX;
 import org.jkiss.dbeaver.model.DBPDataKind;
+import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBPNamedObject;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
 import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
+import org.jkiss.dbeaver.model.data.DBDContent;
+import org.jkiss.dbeaver.model.data.DBDContentStorage;
 import org.jkiss.dbeaver.model.exec.DBCResultSet;
 import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCStringValueHandler;
@@ -36,6 +39,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.file.Files;
@@ -343,6 +349,82 @@ public class GaussDBExcelExportTest {
             new Object[]{Timestamp.valueOf("1899-12-31 12:34:56")})) {
             assertEquals("12/31/99", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
         }
+    }
+
+    @Test
+    public void textContentReadsMultipleChunksAndReleasesResources() throws Exception {
+        String value = "中文𠀀\n'内容'".repeat(600);
+        DBDContent content = mock(DBDContent.class);
+        DBDContentStorage storage = mock(DBDContentStorage.class);
+        java.util.concurrent.atomic.AtomicInteger closes = new java.util.concurrent.atomic.AtomicInteger();
+        StringReader reader = new StringReader(value) {
+            @Override
+            public void close() {
+                closes.incrementAndGet();
+                super.close();
+            }
+        };
+        when(content.getContentType()).thenReturn("text/plain");
+        when(content.getContents(any())).thenReturn(storage);
+        when(storage.getContentReader()).thenReturn(reader);
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of(), new Object[]{content})) {
+            assertEquals(value, workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+        }
+        assertEquals(1, closes.get());
+        verify(content).release();
+        verify(storage, never()).getContentStream();
+    }
+
+    @Test
+    public void binaryContentUsesPlaceholderWithoutOpeningItsStream() throws Exception {
+        DBDContent content = mock(DBDContent.class);
+        DBDContentStorage storage = mock(DBDContentStorage.class);
+        when(content.getContentType()).thenReturn("application/octet-stream");
+        when(content.getContents(any())).thenReturn(storage);
+        try (XSSFWorkbook workbook = export(DBPDataKind.BINARY, Map.of(), new Object[]{content})) {
+            assertEquals("[BINARY]", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+        }
+        verify(storage, never()).getContentStream();
+        verify(storage, never()).getContentReader();
+        verify(content).release();
+    }
+
+    @Test
+    public void absentContentStorageWritesNullLabelAndReleasesValue() throws Exception {
+        DBDContent content = mock(DBDContent.class);
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of(), new Object[]{content})) {
+            assertEquals(DBConstants.NULL_VALUE_LABEL, workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+        }
+        verify(content).release();
+    }
+
+    @Test
+    public void contentReadFailurePreservesExceptionAndClosesReader() throws Exception {
+        DBDContent content = mock(DBDContent.class);
+        DBDContentStorage storage = mock(DBDContentStorage.class);
+        Reader reader = mock(Reader.class);
+        IOException failure = new IOException("Test content read failure");
+        when(content.getContentType()).thenReturn("text/plain");
+        when(content.getContents(any())).thenReturn(storage);
+        when(storage.getContentReader()).thenReturn(reader);
+        when(reader.read(any(char[].class))).thenThrow(failure);
+        assertSame(failure, assertThrows(IOException.class,
+            () -> export(DBPDataKind.STRING, Map.of(), new Object[]{content})));
+        verify(reader).close();
+        verify(content).release();
+    }
+
+    @Test
+    public void contentReaderOpenFailureStillReleasesValue() throws Exception {
+        DBDContent content = mock(DBDContent.class);
+        DBDContentStorage storage = mock(DBDContentStorage.class);
+        IOException failure = new IOException("Test reader open failure");
+        when(content.getContentType()).thenReturn("text/plain");
+        when(content.getContents(any())).thenReturn(storage);
+        when(storage.getContentReader()).thenThrow(failure);
+        assertSame(failure, assertThrows(IOException.class,
+            () -> export(DBPDataKind.STRING, Map.of(), new Object[]{content})));
+        verify(content).release();
     }
 
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {

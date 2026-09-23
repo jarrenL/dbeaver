@@ -86,3 +86,17 @@
 默认显示格式只包含日期和两位年份，这是原界面已声明的格式，并非完整时间戳文本。需要历史日期的完整年份和时间时仍应显式选择相应格式；此修复保证不因空配置整格丢失，不承诺所有格式下时间信息都显示。
 
 修复后 `run-Etbjwr` 完整回归 **1,308 项，1,284 通过，24 跳过，0 失败/错误**，本类累计 43 项。[脱敏结果](test-results-20260924-xlsx-date-default.json)。临时 grantee 已删除。该默认值修复作用于共享导出器，不限 GaussDB；GUI 与真实 JDBC 取数仍需独立验证。
+
+## 大对象与读取异常
+
+新增 5 项，生产导出器配合模拟 DBDContent/Storage；文本成功路径使用真实 StringReader，写出后重新打开 XLSX 断言：
+
+- 中文、扩展汉字、换行、引号组成超过读取缓冲区的文本，分块读取后逐字符相等；Reader 关闭一次，内容对象 release 一次，不打开二进制流。
+- 二进制内容仅输出 `[BINARY]` 文本，不打开 Reader 或二进制流，并释放内容对象。此项验证现有占位策略，不是二进制无损导出。
+- 非 NULL 内容对象但 storage 缺失，输出 DBConstants.NULL_VALUE_LABEL 并释放。
+- Reader.read 抛 IOException，原异常对象向上传播，Reader 关闭且内容对象释放。
+- getContentReader 抛 IOException，原异常向上传播，内容对象仍释放。
+
+`run-hTYMBb` 有 1 项测试装配异常：spy 的 StringReader 内部 lock 为 null；改为真实 StringReader 子类记录 close 次数，其余 4 项原本通过。未据此修改生产代码。上述释放是导出器层的接口调用断言，不代表真实 JDBC LOB 生命周期、磁盘写失败或 GUI 取消已经验收。
+
+`run-QfJhtG` 完整回归 **1,313 项，1,289 通过，24 跳过，0 失败/错误**，本类累计 48 项。[脱敏结果](test-results-20260924-xlsx-content.json)。临时 grantee 已删除。
