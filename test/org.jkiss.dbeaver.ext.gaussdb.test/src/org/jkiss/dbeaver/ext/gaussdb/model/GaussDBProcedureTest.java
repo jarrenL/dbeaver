@@ -64,6 +64,35 @@ public class GaussDBProcedureTest {
     }
 
     @Test
+    public void debuggerSourceReloadsPersistedBodyInsteadOfCachedCatalogText() throws Exception {
+        var monitor = Mockito.mock(DBRProgressMonitor.class);
+        var context = Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var rows = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var server = Mockito.mock(PostgreServerGaussDB.class);
+        Mockito.when(dataSource.getServerType()).thenReturn(server);
+        Mockito.when(dataSource.getDefaultInstance()).thenReturn(database);
+        Mockito.when(database.isInstanceConnected()).thenReturn(true);
+        Mockito.when(database.getDefaultContext(Mockito.any(), Mockito.eq(true))).thenReturn(context);
+        Mockito.when(context.openSession(Mockito.eq(monitor), Mockito.any(), Mockito.anyString())).thenReturn(session);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(rows);
+        Mockito.when(rows.next()).thenReturn(true);
+        Mockito.when(rows.getString(1)).thenReturn("BEGIN new_call(); END;", "BEGIN newer_call(); END;");
+        procedure.setPersisted(true);
+        procedure.procSrc = "BEGIN old_call(); END;";
+        var options = java.util.Map.<String, Object>of(
+            org.jkiss.dbeaver.model.DBPScriptObject.OPTION_DEBUGGER_SOURCE, true);
+        Assertions.assertEquals("BEGIN new_call(); END;", procedure.getObjectDefinitionText(monitor, options));
+        Assertions.assertEquals("BEGIN newer_call(); END;", procedure.getObjectDefinitionText(monitor, options));
+        Mockito.verify(statement, Mockito.times(2)).setObject(1, procedure.getObjectId());
+        Mockito.verify(rows, Mockito.times(2)).close();
+        Mockito.verify(statement, Mockito.times(2)).close();
+        Mockito.verify(session, Mockito.times(2)).close();
+    }
+
+    @Test
     public void recognizesBothOracleCompatibilityValuesWithoutDuplicatingExistingBlock() {
         String source = "BEGIN\n\tNULL;\nEND;";
 

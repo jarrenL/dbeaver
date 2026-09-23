@@ -116,7 +116,9 @@ public class GaussDBProcedure extends PostgreProcedure {
      * Used when pg_get_functiondef() is not available or not reliable.
      */
     private String readProcedureSource(@NotNull DBRProgressMonitor monitor, boolean omitHeader, @NotNull String procDDL) throws DBCException, DBException {
-        if (procSrc == null) {
+        // A debug launch must use the persisted body, not a catalog snapshot from
+        // before another connection replaced the routine.
+        if (procSrc == null || omitHeader) {
             try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read procedure body")) {
                 procSrc = JDBCUtils.queryString(session, "SELECT prosrc FROM pg_catalog.pg_proc WHERE oid = ?", getObjectId());
             } catch (SQLException e) {
