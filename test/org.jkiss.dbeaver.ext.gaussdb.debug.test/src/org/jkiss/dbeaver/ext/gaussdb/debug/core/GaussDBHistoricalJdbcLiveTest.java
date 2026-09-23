@@ -1538,10 +1538,25 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private static void assertRealPlan(Connection c, String query, String... requiredNodeTypes) throws Exception {
+        assertRealPlan(c, query, false, requiredNodeTypes);
+    }
+
+    @Test
+    void realAnalyzePlanPreservesActualRowsTimingAndLoops() throws Exception {
+        inIsolatedSchema((c, s) -> assertRealPlan(c,
+            "WITH RECURSIVE numbers(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM numbers WHERE n<5) SELECT sum(n) FROM numbers",
+            true, "Recursive Union", "WorkTable Scan"));
+    }
+
+    private static void assertRealPlan(Connection c, String query, boolean analyze, String... requiredNodeTypes) throws Exception {
         // Dedicated fixture session only: expose the operator tree instead of an opaque shipped query.
         execute(c, "SET enable_fast_query_shipping = off");
-        var plan = new org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreExecutionPlan(false, false, query,
-            new org.jkiss.dbeaver.model.exec.plan.DBCQueryPlannerConfiguration());
+        var configuration = new org.jkiss.dbeaver.model.exec.plan.DBCQueryPlannerConfiguration();
+        if (analyze) {
+            configuration.getParameters().put("ANALYZE", true);
+            configuration.getParameters().put("TIMING", true);
+        }
+        var plan = new org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreExecutionPlan(false, false, query, configuration);
         String xml;
         try (var statement = c.createStatement()) {
             statement.setQueryTimeout(15);
@@ -1572,6 +1587,11 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         var document = factory.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(
             xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         var expectedPlans = document.getElementsByTagName("Plan");
+        if (analyze) {
+            assertTrue(document.getElementsByTagName("Actual-Rows").getLength() > 0);
+            assertTrue(document.getElementsByTagName("Actual-Total-Time").getLength() > 0);
+            assertTrue(document.getElementsByTagName("Actual-Loops").getLength() > 0);
+        }
         var typeElements = document.getElementsByTagName("Node-Type");
         var actualTypes = new java.util.HashSet<String>();
         for (int i = 0; i < typeElements.getLength(); i++) {
@@ -1595,12 +1615,18 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         String type = null;
         String cost = null;
         String planRows = null;
+        String actualRows = null;
+        String actualTime = null;
+        String actualLoops = null;
         var children = new java.util.ArrayList<org.w3c.dom.Element>();
         for (var child = expected.getFirstChild(); child != null; child = child.getNextSibling()) {
             if (child instanceof org.w3c.dom.Element element) {
                 if ("Node-Type".equals(element.getTagName())) type = element.getTextContent();
                 if ("Total-Cost".equals(element.getTagName())) cost = element.getTextContent();
                 if ("Plan-Rows".equals(element.getTagName())) planRows = element.getTextContent();
+                if ("Actual-Rows".equals(element.getTagName())) actualRows = element.getTextContent();
+                if ("Actual-Total-Time".equals(element.getTagName())) actualTime = element.getTextContent();
+                if ("Actual-Loops".equals(element.getTagName())) actualLoops = element.getTextContent();
                 if ("Plans".equals(element.getTagName())) {
                     for (var nested = element.getFirstChild(); nested != null; nested = nested.getNextSibling()) {
                         if (nested instanceof org.w3c.dom.Element e && "Plan".equals(e.getTagName())) children.add(e);
@@ -1612,7 +1638,18 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         var pgNode = (org.jkiss.dbeaver.ext.postgresql.model.plan.PostgrePlanNodeBase<?>) node;
         assertEquals(type, pgNode.getNodeType());
         if (cost != null) assertEquals(Double.parseDouble(cost), pgNode.getNodeCost().doubleValue());
-        if (planRows != null) assertEquals(Long.parseLong(planRows), pgNode.getNodeRowCount().longValue());
+        String displayedRows = actualRows == null ? planRows : actualRows;
+        if (displayedRows != null) {
+            assertEquals(Long.parseLong(displayedRows), pgNode.getNodeRowCount().longValue());
+            assertEquals(displayedRows, pgNode.getActualRows());
+        }
+        if (actualTime != null) {
+            assertEquals(actualTime, pgNode.getTotalTime());
+            assertEquals(Double.parseDouble(actualTime), pgNode.getNodeDuration().doubleValue());
+        }
+        if (actualLoops != null) {
+            assertEquals(actualLoops, pgNode.getPropertyValue(null, "Actual-Loops"));
+        }
         var actualChildren = new java.util.ArrayList<>(node.getNested());
         assertEquals(children.size(), actualChildren.size());
         int count = 1;
