@@ -186,4 +186,25 @@ class PostgreSequenceManagerTest extends org.jkiss.junit.DBeaverUnitTest {
         when(sequence.supportsSequenceRename()).thenReturn(true);
         assertTrue(new Manager().canRenameObject(sequence));
     }
+
+    @Test
+    void sequenceNameAllowsCreationButRejectsUnsupportedPersistedRename() throws Exception {
+        var source = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource.class);
+        var schema = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema.class);
+        var server = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreServerExtension.class);
+        when(schema.getDataSource()).thenReturn(source);
+        when(source.getServerType()).thenReturn(server);
+        var sequence = new PostgreSequence(schema);
+        var getter = PostgreSequence.class.getMethod("getName");
+        var property = getter.getAnnotation(org.jkiss.dbeaver.model.meta.Property.class);
+        var descriptor = new org.jkiss.dbeaver.runtime.properties.ObjectPropertyDescriptor(
+            null, null, property, getter, "en", false);
+        assertFalse(sequence.isPersisted());
+        assertTrue(descriptor.isEditPossible(sequence), "Creating a new sequence must still permit a name");
+        sequence.setPersisted(true);
+        assertFalse(descriptor.isEditPossible(sequence));
+        assertTrue(descriptor.isViewable());
+        when(server.supportsSequenceRename()).thenReturn(true);
+        assertTrue(descriptor.isEditPossible(sequence), "PostgreSQL rename must remain editable");
+    }
 }

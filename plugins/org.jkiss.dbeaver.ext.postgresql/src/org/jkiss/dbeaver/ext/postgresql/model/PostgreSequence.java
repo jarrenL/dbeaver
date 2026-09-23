@@ -151,6 +151,16 @@ public class PostgreSequence extends PostgreTableBase implements DBSSequence, DB
         super(catalog);
     }
 
+    @NotNull
+    @Override
+    @Property(viewable = true, editable = true, order = 1,
+        valueTransformer = org.jkiss.dbeaver.model.impl.DBObjectNameCaseTransformer.class,
+        editableExpr = "!object.persisted || object.supportsSequenceRename()",
+        updatableExpr = "object.supportsSequenceRename()")
+    public String getName() {
+        return super.getName();
+    }
+
     @PropertyGroup()
     @LazyProperty(cacheValidator = AdditionalInfoValidator.class)
     public AdditionalInfo getAdditionalInfo(DBRProgressMonitor monitor) throws DBCException
