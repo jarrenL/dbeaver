@@ -530,24 +530,27 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
 
     @Override
     public void exportFooter(DBRProgressMonitor monitor) throws DBException, IOException {
-        if (wb != null && sheetIndex > 0) { // if any sheets are present, then sheetIndex > 0
+        if (wb != null && sheetIndex > 0) { // Only imported/reused sheets advance sheetIndex.
             // Do it here because we can have a few sheets
-            SXSSFSheet sheet = wb.getSheetAt(sheetIndex);
             HSSFFormulaEvaluator.evaluateAllFormulaCells(wb);
-            if (!HEADLESS_MODE) {
-                sheet.trackAllColumnsForAutoSizing();
-            }
-            for (int i = 0; i < columns.length; i++) {
+            // sheetIndex is the count of reused sheets, not the index of the last sheet.
+            for (int index = 0; index < sheetIndex; index++) {
+                SXSSFSheet sheet = wb.getSheetAt(index);
                 if (!HEADLESS_MODE) {
-                    sheet.autoSizeColumn(i);
+                    sheet.trackAllColumnsForAutoSizing();
                 }
-                if (sheet.getColumnWidth(i) < MINIMUM_LENGTH) {
-                    // Auto-size failed, use default minimum column width
-                    sheet.setColumnWidth(i, MINIMUM_LENGTH);
+                for (int i = 0; i < columns.length; i++) {
+                    if (!HEADLESS_MODE) {
+                        sheet.autoSizeColumn(i);
+                    }
+                    if (sheet.getColumnWidth(i) < MINIMUM_LENGTH) {
+                        // Auto-size failed, use default minimum column width
+                        sheet.setColumnWidth(i, MINIMUM_LENGTH);
+                    }
                 }
-            }
-            if (!HEADLESS_MODE) {
-                sheet.untrackAllColumnsForAutoSizing();
+                if (!HEADLESS_MODE) {
+                    sheet.untrackAllColumnsForAutoSizing();
+                }
             }
         }
         if (rowCount == 0) {

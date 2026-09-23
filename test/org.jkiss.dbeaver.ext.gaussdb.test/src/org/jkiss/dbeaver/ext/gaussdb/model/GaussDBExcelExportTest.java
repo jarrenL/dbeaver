@@ -29,6 +29,7 @@ import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCStringValueHandler;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.tools.transfer.stream.IStreamDataExporterSite;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -36,6 +37,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,6 +46,9 @@ import static org.mockito.Mockito.*;
 
 /** Uses the production streaming exporter and reopens the serialized XLSX, not a mocked workbook. */
 public class GaussDBExcelExportTest {
+    @TempDir
+    Path temporaryDirectory;
+
     @ParameterizedTest
     @ValueSource(strings = {"中文银行𠀀", "O'Reilly\n第二行", "=1+1", "+SUM(A1:A2)", "@SUM(A1:A2)", "001", ""})
     public void stringsAndFormulaLikeInputRemainLiteralText(String value) throws Exception {
@@ -153,7 +159,41 @@ public class GaussDBExcelExportTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"use existing sheets", "create new sheets"})
+    public void appendingWorkbookRetainsOldDataAndWritesNewRows(String strategy) throws Exception {
+        Path existing = temporaryDirectory.resolve("existing.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            var sheet = seed.createSheet("历史数据");
+            sheet.createRow(0).createCell(0).setCellValue("原始表头");
+            sheet.createRow(1).createCell(0).setCellValue("旧数据");
+            seed.write(output);
+        }
+        byte[] original = Files.readAllBytes(existing);
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("appendStrategy", strategy), existing,
+            new Object[]{"新增一"}, new Object[]{"新增二"})) {
+            assertEquals("原始表头", workbook.getSheetAt(0).getRow(0).getCell(0).getStringCellValue());
+            assertEquals("旧数据", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+            boolean reuse = "use existing sheets".equals(strategy);
+            assertEquals(reuse ? 1 : 2, workbook.getNumberOfSheets());
+            var target = workbook.getSheetAt(reuse ? 0 : 1);
+            assertEquals(reuse ? 4 : 3, target.getPhysicalNumberOfRows());
+            assertEquals("新增一", target.getRow(reuse ? 2 : 1).getCell(0).getStringCellValue());
+            assertEquals("新增二", target.getRow(reuse ? 3 : 2).getCell(0).getStringCellValue());
+            if (!reuse) {
+                assertEquals("金额 中文", target.getRow(0).getCell(0).getStringCellValue());
+            }
+        }
+        // The input file is never the output stream in this test; verify reading it did not alter its bytes.
+        assertArrayEquals(original, Files.readAllBytes(existing));
+    }
+
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {
+        return export(kind, overrides, null, rows);
+    }
+
+    private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Path existing, Object[]... rows)
+        throws Exception {
         IStreamDataExporterSite site = mock(IStreamDataExporterSite.class);
         var properties = DataExporterXLSX.getDefaultProperties();
         properties.putAll(overrides);
@@ -168,11 +208,15 @@ public class GaussDBExcelExportTest {
         when(site.getAttributes()).thenReturn(new DBDAttributeBinding[]{column});
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         when(site.getOutputStream()).thenReturn(output);
+        when(site.getOutputFile()).thenReturn(existing);
         DBCSession session = mock(DBCSession.class);
         when(session.getProgressMonitor()).thenReturn(new VoidProgressMonitor());
         DBCResultSet resultSet = mock(DBCResultSet.class);
         when(resultSet.getSession()).thenReturn(session);
         DataExporterXLSX exporter = new DataExporterXLSX();
+        if (existing != null) {
+            exporter.importData(site);
+        }
         exporter.init(site);
         try {
             exporter.exportHeader(session);
