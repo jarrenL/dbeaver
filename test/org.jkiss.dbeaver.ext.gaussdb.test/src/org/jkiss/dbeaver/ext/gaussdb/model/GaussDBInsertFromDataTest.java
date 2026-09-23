@@ -83,6 +83,41 @@ class GaussDBInsertFromDataTest {
         when(provider.getCellValue(first, row)).thenReturn("001");
     }
 
+    static Stream<Arguments> typedValues() {
+        return Stream.of(
+            Arguments.of(DBPDataKind.NUMERIC, Long.MIN_VALUE, "-9223372036854775808"),
+            Arguments.of(DBPDataKind.NUMERIC, Long.MAX_VALUE, "9223372036854775807"),
+            Arguments.of(DBPDataKind.NUMERIC, new java.math.BigInteger("99999999999999999999999999999999999999"),
+                "99999999999999999999999999999999999999"),
+            Arguments.of(DBPDataKind.NUMERIC, new java.math.BigDecimal("12345678901234567890.123456789012345678"),
+                "12345678901234567890.123456789012345678"),
+            Arguments.of(DBPDataKind.NUMERIC, new java.math.BigDecimal("0.00000000000000000000000000000000000001"),
+                "0.00000000000000000000000000000000000001"),
+            Arguments.of(DBPDataKind.NUMERIC, new java.math.BigDecimal("-12.3400"), "-12.3400"),
+            Arguments.of(DBPDataKind.NUMERIC, null, "NULL"),
+            Arguments.of(DBPDataKind.BOOLEAN, true, "true"),
+            Arguments.of(DBPDataKind.BOOLEAN, false, "false"),
+            Arguments.of(DBPDataKind.BOOLEAN, null, "NULL")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource("typedValues")
+    void preservesNumericPrecisionAndBooleanLiterals(DBPDataKind kind, Object value, String literal) throws Exception {
+        when(second.getDataKind()).thenReturn(kind);
+        when(second.getTypeName()).thenReturn(kind == DBPDataKind.NUMERIC ? "numeric" : "bool");
+        when(second.getTypeID()).thenReturn(kind == DBPDataKind.NUMERIC ? java.sql.Types.NUMERIC : java.sql.Types.BOOLEAN);
+        var handler = kind == DBPDataKind.NUMERIC
+            ? new org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCNumberValueHandler(second,
+                mock(org.jkiss.dbeaver.model.data.DBDFormatSettings.class))
+            : org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCBooleanValueHandler.INSTANCE;
+        when(((DBDValueHandlerProvider) second.getDataSource()).getValueHandler(any(), any(), eq(second)))
+            .thenReturn(handler);
+        when(provider.getCellValue(second, row)).thenReturn(value);
+        assertEquals("INSERT INTO \"订单 表\" (\"second col\", \"first col\") VALUES(" + literal + ", '001');\n",
+            generate(false, true));
+    }
+
     @ParameterizedTest
     @MethodSource("values")
     void generatesInsertUsingVisibleColumnOrderAndRealStringHandler(String value, String expectedLiteral) throws Exception {
