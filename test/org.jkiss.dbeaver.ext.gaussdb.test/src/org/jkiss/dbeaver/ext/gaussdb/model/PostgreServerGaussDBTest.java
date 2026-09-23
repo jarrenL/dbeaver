@@ -39,6 +39,92 @@ import java.util.Map;
 
 public class PostgreServerGaussDBTest {
 
+    private final class TableDDLFixture {
+        final org.jkiss.dbeaver.ext.postgresql.model.PostgreTable table = Mockito.mock(
+            org.jkiss.dbeaver.ext.postgresql.model.PostgreTable.class);
+        final org.jkiss.dbeaver.model.exec.jdbc.JDBCSession session = Mockito.mock(
+            org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        final org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement statement = Mockito.mock(
+            org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        final org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet rows = Mockito.mock(
+            org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        final org.jkiss.dbeaver.model.runtime.DBRProgressMonitor monitor = Mockito.mock(
+            org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+
+        TableDDLFixture() throws Exception {
+            var database = Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase.class);
+            var context = Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
+            Mockito.when(dataSource.getServerInfo()).thenReturn(GaussDBServerInfo.forTest(
+                DBCompatibilityEnum.ORACLE, java.util.Set.of(), java.util.Set.of("pg_get_tabledef")));
+            Mockito.when(table.getDataSource()).thenReturn(dataSource);
+            Mockito.when(table.getObjectId()).thenReturn(12345L);
+            Mockito.when(dataSource.getDefaultInstance()).thenReturn(database);
+            Mockito.when(database.isInstanceConnected()).thenReturn(true);
+            Mockito.when(database.getDefaultContext(Mockito.any(), Mockito.eq(true))).thenReturn(context);
+            Mockito.when(context.openSession(Mockito.eq(monitor), Mockito.any(), Mockito.anyString())).thenReturn(session);
+            Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+            Mockito.when(statement.executeQuery()).thenReturn(rows);
+        }
+
+        String read() throws Exception {
+            return new PostgreServerGaussDB(dataSource).readTableDDL(monitor, table);
+        }
+    }
+
+    @Test
+    public void nativeTableDDLReturnsVendorTextUnchangedAndBindsOid() throws Exception {
+        var fixture = new TableDDLFixture();
+        String ddl = "CREATE TABLE s.t(id integer) DISTRIBUTE BY HASH(id);\n-- 中文\n";
+        Mockito.when(fixture.rows.next()).thenReturn(true);
+        Mockito.when(fixture.rows.getString(1)).thenReturn(ddl);
+        Assertions.assertEquals(ddl, fixture.read());
+        Mockito.verify(fixture.session).prepareStatement("SELECT pg_catalog.pg_get_tabledef(?::oid::regclass)");
+        Mockito.verify(fixture.statement).setLong(1, 12345L);
+        Mockito.verify(fixture.rows).close();
+        Mockito.verify(fixture.statement).close();
+        Mockito.verify(fixture.session).close();
+    }
+
+    @Test
+    public void absentNativeTableDefinitionFunctionAvoidsOpeningSession() throws Exception {
+        var fixture = new TableDDLFixture();
+        Mockito.when(dataSource.getServerInfo()).thenReturn(GaussDBServerInfo.forTest(
+            DBCompatibilityEnum.ORACLE, java.util.Set.of(), java.util.Set.of()));
+        Assertions.assertNull(fixture.read());
+        Mockito.verifyNoInteractions(fixture.session, fixture.statement, fixture.rows);
+    }
+
+    @Test
+    public void emptyNativeTableDefinitionResultClosesResourcesAndAllowsFallback() throws Exception {
+        var fixture = new TableDDLFixture();
+        Mockito.when(fixture.rows.next()).thenReturn(false);
+        Assertions.assertNull(fixture.read());
+        Mockito.verify(fixture.rows, Mockito.never()).getString(Mockito.anyInt());
+        Mockito.verify(fixture.rows).close();
+        Mockito.verify(fixture.statement).close();
+        Mockito.verify(fixture.session).close();
+    }
+
+    @Test
+    public void deniedNativeTableDefinitionAllowsFallbackAndClosesStatement() throws Exception {
+        var fixture = new TableDDLFixture();
+        Mockito.when(fixture.statement.executeQuery()).thenThrow(new java.sql.SQLException("denied", "42501"));
+        Assertions.assertNull(fixture.read());
+        Mockito.verifyNoInteractions(fixture.rows);
+        Mockito.verify(fixture.statement).close();
+        Mockito.verify(fixture.session).close();
+    }
+
+    @Test
+    public void nativeTableDefinitionPrepareFailureStillClosesSession() throws Exception {
+        var fixture = new TableDDLFixture();
+        Mockito.when(fixture.session.prepareStatement(Mockito.anyString()))
+            .thenThrow(new java.sql.SQLException("unavailable", "08006"));
+        Assertions.assertNull(fixture.read());
+        Mockito.verifyNoInteractions(fixture.statement, fixture.rows);
+        Mockito.verify(fixture.session).close();
+    }
+
     private GaussDBDataSource dataSource;
 
     private PostgreSetting setting;
