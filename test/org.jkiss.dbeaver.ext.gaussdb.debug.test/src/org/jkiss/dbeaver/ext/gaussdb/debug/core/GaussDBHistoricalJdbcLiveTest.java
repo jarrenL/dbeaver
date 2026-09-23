@@ -25,6 +25,54 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionGrantCommandsPreservePerPrivilegeGrantabilityInDatabase() throws Exception {
+        String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
+        assumeTrue(grantee != null, "Dedicated NOLOGIN grantee role not configured; permission test not executed");
+        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_]+"), "Only a dedicated test role is allowed");
+        inIsolatedSchema((c, s) -> {
+            // GaussDB filters pg_roles for ordinary users. The administrator must provision
+            // the NOLOGIN fixture; a missing role will fail the actual GRANT below.
+            execute(c, "CREATE TABLE " + s + ".t(id integer)");
+            var source = mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource.class);
+            when(source.getSQLDialect()).thenReturn(new org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialect());
+            when(source.getSupportedPrivilegeTypes()).thenReturn(new org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType[] {
+                org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.SELECT,
+                org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.INSERT
+            });
+            var role = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreRole.class);
+            when(role.getDataSource()).thenReturn(source);
+            when(role.getName()).thenReturn(grantee);
+            var table = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreTable.class);
+            var privilege = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreRolePrivilege.class);
+            when(privilege.getFullObjectName()).thenReturn(s + ".t");
+            when(privilege.getKind()).thenReturn(org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeGrant.Kind.TABLE);
+            when(privilege.getPermission(org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.SELECT))
+                .thenReturn(org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilege.WITH_GRANT_OPTION);
+            for (boolean grant : new boolean[] {true, false}) {
+                var command = new org.jkiss.dbeaver.ext.postgresql.edit.PostgreCommandGrantPrivilege(
+                    role, grant, table, privilege, null);
+                var actions = command.getPersistActions(mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class),
+                    mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), java.util.Map.of());
+                for (var action : actions) {
+                    execute(c, action.getScript());
+                }
+                try (var statement = c.prepareStatement("SELECT has_table_privilege(?,?,?)")) {
+                    for (String permission : List.of("SELECT", "INSERT", "SELECT WITH GRANT OPTION", "INSERT WITH GRANT OPTION", "UPDATE")) {
+                        statement.setString(1, grantee);
+                        statement.setString(2, s + ".t");
+                        statement.setString(3, permission);
+                        try (var result = statement.executeQuery()) {
+                            assertTrue(result.next());
+                            assertEquals(grant && !permission.equals("INSERT WITH GRANT OPTION") && !permission.equals("UPDATE"),
+                                result.getBoolean(1), permission + " after grant=" + grant);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    @Test
     void csvImporterValuesSurviveVendorJdbcInsertionAndCommit() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, value text)");

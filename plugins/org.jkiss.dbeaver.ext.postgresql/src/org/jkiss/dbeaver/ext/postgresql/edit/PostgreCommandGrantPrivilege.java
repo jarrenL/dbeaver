@@ -47,10 +47,10 @@ public class PostgreCommandGrantPrivilege extends DBECommandAbstract<PostgrePriv
         super(user, grant ? "Grant" : "Revoke");
         this.grant = grant;
         this.privilege = privilege;
-        this.privilegeTypes = new HashSet<>();
+        this.privilegeTypes = EnumSet.noneOf(PostgrePrivilegeType.class);
         this.privilegeOwner = privilegeOwner;
 
-        if (privilegeTypes != null) {
+        if (privilegeTypes != null && !Arrays.asList(privilegeTypes).contains(PostgrePrivilegeType.ALL)) {
             this.privilegeTypes.addAll(Arrays.asList(privilegeTypes));
         } else {
             // Expand PostgrePrivilegeType.ALL to simplify command merging later
@@ -69,7 +69,25 @@ public class PostgreCommandGrantPrivilege extends DBECommandAbstract<PostgrePriv
             return new DBEPersistAction[0];
         }
 
-        boolean withGrantOption = false;
+        Set<PostgrePrivilegeType> grantable = EnumSet.noneOf(PostgrePrivilegeType.class);
+        for (PostgrePrivilegeType type : privilegeTypes) {
+            if (CommonUtils.isBitSet(privilege.getPermission(type), PostgrePrivilege.WITH_GRANT_OPTION)) {
+                grantable.add(type);
+            }
+        }
+        if (grant && !grantable.isEmpty() && grantable.size() != privilegeTypes.size()) {
+            // A single GRANT would incorrectly make every listed privilege grantable.
+            Set<PostgrePrivilegeType> ordinary = EnumSet.copyOf(privilegeTypes);
+            ordinary.removeAll(grantable);
+            List<DBEPersistAction> actions = new ArrayList<>();
+            for (Set<PostgrePrivilegeType> group : List.of(ordinary, grantable)) {
+                Collections.addAll(actions, new PostgreCommandGrantPrivilege(
+                    getObject(), true, privilegeOwner, privilege, group.toArray(PostgrePrivilegeType[]::new)
+                ).getPersistActions(monitor, executionContext, options));
+            }
+            return actions.toArray(DBEPersistAction[]::new);
+        }
+        boolean withGrantOption = !grantable.isEmpty();
         final StringJoiner privName = new StringJoiner(", ");
 
         if (hasAllPrivilegeTypes()) {
@@ -77,7 +95,6 @@ public class PostgreCommandGrantPrivilege extends DBECommandAbstract<PostgrePriv
         } else {
             for (PostgrePrivilegeType pn : privilegeTypes) {
                 privName.add(pn.name());
-                withGrantOption |= CommonUtils.isBitSet(privilege.getPermission(pn), PostgrePrivilege.WITH_GRANT_OPTION);
             }
         }
 
