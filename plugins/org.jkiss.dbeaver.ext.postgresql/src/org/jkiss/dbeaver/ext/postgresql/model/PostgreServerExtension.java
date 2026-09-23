@@ -135,6 +135,12 @@ public interface PostgreServerExtension {
     @NotNull
     String getProceduresOidColumn();
 
+    /** SQL text expression for a catalog routine definition; the argument is a trusted column expression. */
+    @NotNull
+    default String getRoutineDefinitionSearchExpression(@NotNull String oidExpression) {
+        return "pg_catalog.pg_get_functiondef(" + oidExpression + ")";
+    }
+
     // Table DDL extraction
     @Nullable
     String readTableDDL(@NotNull DBRProgressMonitor monitor, @NotNull PostgreTableBase table) throws DBException;

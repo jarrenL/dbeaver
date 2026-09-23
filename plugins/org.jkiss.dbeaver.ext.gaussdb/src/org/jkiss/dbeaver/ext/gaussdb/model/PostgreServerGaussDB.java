@@ -63,6 +63,13 @@ public class PostgreServerGaussDB extends PostgreServerExtensionBase {
         return "GaussDB";
     }
 
+    @NotNull
+    @Override
+    public String getRoutineDefinitionSearchExpression(@NotNull String oidExpression) {
+        // GaussDB returns a record (headerlines, definition), not PostgreSQL's scalar text.
+        return "(SELECT definition FROM pg_catalog.pg_get_functiondef(" + oidExpression + "))";
+    }
+
     @Override
     public boolean supportsNativeClient() {
         return true;

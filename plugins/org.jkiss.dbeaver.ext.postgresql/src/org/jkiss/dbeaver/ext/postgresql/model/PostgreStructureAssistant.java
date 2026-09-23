@@ -382,7 +382,8 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
             queryParams.setDescriptionClause("obj_description(pp.oid, 'pg_proc')");
         }
         if (params.isSearchInDefinitions()) {
-            queryParams.setDefinitionClause("pp.prokind <> 'm' AND pp.prokind <> 'a' AND pg_get_functiondef(pp.\"" + proceduresOidColumn + "\")");
+            queryParams.setDefinitionClause("pp.prokind <> 'm' AND pp.prokind <> 'a' AND "
+                + serverType.getRoutineDefinitionSearchExpression("pp.\"" + proceduresOidColumn + "\""));
         }
         queryParams.setMaxResults(params.getMaxResults() - objects.size());
         String sql = queryParams.build();

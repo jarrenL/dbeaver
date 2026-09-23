@@ -64,6 +64,12 @@ public class PostgreServerExtensionBaseTest extends DBeaverUnitTest {
         Assertions.assertEquals("", withClause);
     }
 
+    @Test
+    public void routineDefinitionSearchRetainsPostgreSqlScalarExpression() {
+        Assertions.assertEquals("pg_catalog.pg_get_functiondef(pp.\"oid\")",
+            serverExtension.getRoutineDefinitionSearchExpression("pp.\"oid\""));
+    }
+
     private void setupGeneralWhenMocks(boolean hasOids) {
         when(dataSource.getServerType()).thenReturn(serverExtension);
         when(table.getDataSource()).thenReturn(dataSource);

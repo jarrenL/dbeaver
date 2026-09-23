@@ -469,6 +469,32 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }));
     }
 
+    @Test
+    void productionRoutineDefinitionSearchFindsBodyWithoutNameOrCommentMatch() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE FUNCTION " + s + ".body_probe() RETURN text AS BEGIN RETURN 'UniqueBodyToken'; END;");
+            var type = org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_PROCEDURE;
+            assertTrue(searchObjects(c, s, "%UniqueBodyToken%", true, 10, false, type).isEmpty());
+            assertEquals(List.of("body_probe"), searchObjects(c, s, "%UniqueBodyToken%", true, 10, false, type, true)
+                .stream().map(r -> r.getName()).toList());
+            assertTrue(searchObjects(c, s, "%uniquebodytoken%", true, 10, false, type, true).isEmpty());
+            assertEquals(1, searchObjects(c, s, "%uniquebodytoken%", false, 10, false, type, true).size());
+        });
+    }
+
+    @Test
+    void productionRoutineSearchPreservesInputAndOutputSignatureTypes() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE PROCEDURE " + s
+                + ".signature_probe(IN p_id numeric, OUT p_value varchar) AS BEGIN p_value := p_id::text; END;");
+            var matches = searchObjects(c, s, "signature_probe", true, 10, false,
+                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_PROCEDURE);
+            assertEquals(1, matches.size());
+            assertEquals(s + ".signature_probe(in numeric, out varchar)", matches.get(0).getFullyQualifiedName(
+                org.jkiss.dbeaver.model.DBPEvaluationContext.DDL));
+        });
+    }
+
     /** Production search algorithm and SQL, with a thin mock JDBC interface bridge to the real driver. */
     private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchTables(
         Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments
@@ -480,6 +506,13 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchObjects(
         Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments,
         org.jkiss.dbeaver.model.struct.DBSObjectType objectType
+    ) throws Exception {
+        return searchObjects(c, schemaName, mask, caseSensitive, limit, comments, objectType, false);
+    }
+
+    private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchObjects(
+        Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments,
+        org.jkiss.dbeaver.model.struct.DBSObjectType objectType, boolean definitions
     ) throws Exception {
         long schemaId;
         try (var lookup = c.prepareStatement("SELECT oid FROM pg_namespace WHERE nspname=?")) {
@@ -506,6 +539,22 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         when(schema.getDataSource()).thenReturn(source);
         when(schema.getName()).thenReturn(schemaName);
         when(schema.getDatabase()).thenReturn(database);
+        when(database.getDataType(eq(monitor), anyLong())).thenAnswer(invocation -> {
+            try (var query = c.prepareStatement("SELECT typname FROM pg_catalog.pg_type WHERE oid=?")) {
+                query.setLong(1, invocation.getArgument(1, Long.class));
+                try (var rows = query.executeQuery()) {
+                    if (!rows.next()) {
+                        return null;
+                    }
+                    var type = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataType.class);
+                    var catalog = mock(PostgreSchema.class);
+                    when(catalog.isCatalogSchema()).thenReturn(true);
+                    when(type.getParentObject()).thenReturn(catalog);
+                    when(type.getName()).thenReturn(rows.getString(1));
+                    return type;
+                }
+            }
+        });
         when(schema.getObjectId()).thenReturn(schemaId);
         when(database.getSchema(monitor, schemaId)).thenReturn(schema);
         var context = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
@@ -546,6 +595,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         params.setCaseSensitive(caseSensitive);
         params.setMaxResults(limit);
         params.setSearchInComments(comments);
+        params.setSearchInDefinitions(definitions);
         var result = new org.jkiss.dbeaver.ext.postgresql.model.PostgreStructureAssistant(source)
             .findObjectsByMask(monitor, context, params);
         verify(session).close();
