@@ -37,6 +37,47 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     private static class SequenceActions extends org.jkiss.dbeaver.ext.postgresql.edit.PostgreSequenceManager {
+        private org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence model(String schemaName, String name, String description) {
+            var source = mock(GaussDBDataSource.class);
+            when(source.getSQLDialect()).thenReturn(new org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialect());
+            var schema = mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBSchema.class);
+            when(schema.getDataSource()).thenReturn(source);
+            when(schema.getName()).thenReturn(schemaName);
+            var sequence = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence.class);
+            when(sequence.getDataSource()).thenReturn(source);
+            when(sequence.getSchema()).thenReturn(schema);
+            when(sequence.getName()).thenReturn(name);
+            when(sequence.getDescription()).thenReturn(description);
+            String qualifiedName = org.jkiss.dbeaver.model.DBUtils.getQuotedIdentifier(schema) + "."
+                + org.jkiss.dbeaver.model.DBUtils.getQuotedIdentifier(source, name);
+            when(sequence.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn(qualifiedName);
+            return sequence;
+        }
+
+        String rename(String schema, String oldName, String newName) {
+            var sequence = model(schema, oldName, null);
+            var command = new ObjectRenameCommand(sequence, "Rename test sequence", java.util.Map.of(), newName);
+            var actions = new java.util.ArrayList<org.jkiss.dbeaver.model.edit.DBEPersistAction>();
+            addObjectRenameActions(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(),
+                mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), actions, command, java.util.Map.of());
+            assertEquals(1, actions.size());
+            return actions.get(0).getScript();
+        }
+
+        String comment(String schema, String name, String description) {
+            var command = new ObjectChangeCommand(model(schema, name, description)) {
+                @Override
+                public boolean hasProperty(Object id) {
+                    return org.jkiss.dbeaver.model.DBConstants.PROP_ID_DESCRIPTION.equals(id);
+                }
+            };
+            var actions = new java.util.ArrayList<org.jkiss.dbeaver.model.edit.DBEPersistAction>();
+            addObjectExtraActions(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(),
+                mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), actions, command, java.util.Map.of());
+            assertEquals(1, actions.size());
+            return actions.get(0).getScript();
+        }
+
         String action(String qualifiedName, boolean create) {
             var sequence = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence.class);
             when(sequence.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn(qualifiedName);
@@ -60,6 +101,77 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
     void sequenceManagerCreateDropAgainstDistributedDatabase() throws Exception {
         assertSequenceManagerLifecycle(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void sequenceManagerRenameAndCommentAgainstDistributedDatabase() throws Exception {
+        assertSequenceRenameAndComment(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void sequenceManagerRenameAndCommentAgainstCentralizedDatabase() throws Exception {
+        assertSequenceRenameAndComment(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertSequenceRenameAndComment(String config) throws Exception {
+        inIsolatedSchema((c, s) -> {
+            var manager = new SequenceActions();
+            String oldName = s + ".\"流水 号\"";
+            String newName = s + ".\"流水\"\"改名\"";
+            execute(c, manager.action(oldName, true));
+            assertRows(c, "SELECT nextval('" + oldName + "')", List.of(List.of("1")));
+            String oid;
+            try (var statement = c.createStatement(); var rows = statement.executeQuery("SELECT '" + oldName + "'::regclass::oid")) {
+                assertTrue(rows.next());
+                oid = rows.getString(1);
+            }
+            String description = "中文 '注释'; SELECT 99;\n第二行";
+            execute(c, manager.comment(s, "流水 号", description));
+            try {
+                execute(c, manager.rename(s, "流水 号", "流水\"改名"));
+            } catch (java.sql.SQLException failure) {
+                if ("0A000".equals(failure.getSQLState()) && failure.getMessage().contains("RENAME SEQUENCE is not yet supported")) {
+                    assumeTrue(false, "Server rejects sequence rename; rename preservation/collision positive paths not verified");
+                }
+                throw failure;
+            }
+            assertRows(c, "SELECT '" + newName + "'::regclass::oid,nextval('" + newName + "'),obj_description('"
+                + newName + "'::regclass)", List.of(List.of(oid, "2", description)));
+            assertEquals("42P01", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "SELECT nextval('" + oldName + "')")).getSQLState());
+            execute(c, manager.action(s + ".occupied", true));
+            assertEquals("42P07", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, manager.rename(s, "流水\"改名", "occupied"))).getSQLState());
+            assertRows(c, "SELECT '" + newName + "'::regclass::oid,nextval('" + newName + "')", List.of(List.of(oid, "3")));
+            execute(c, manager.comment(s, "流水\"改名", null));
+            assertRows(c, "SELECT obj_description('" + newName + "'::regclass) IS NULL", List.of(List.of("t")));
+        }, java.util.Map.of(), config);
+    }
+
+    @Test
+    void sequenceManagerCommentRoundtripAgainstDistributedDatabase() throws Exception {
+        assertSequenceComment(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void sequenceManagerCommentRoundtripAgainstCentralizedDatabase() throws Exception {
+        assertSequenceComment(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertSequenceComment(String config) throws Exception {
+        inIsolatedSchema((c, s) -> {
+            var manager = new SequenceActions();
+            String name = s + ".\"流水 号\"";
+            execute(c, manager.action(name, true));
+            assertRows(c, "SELECT nextval('" + name + "')", List.of(List.of("1")));
+            String description = "中文 '注释'; SELECT 99;\n第二行";
+            execute(c, manager.comment(s, "流水 号", description));
+            assertRows(c, "SELECT obj_description('" + name + "'::regclass),nextval('" + name + "')",
+                List.of(List.of(description, "2")));
+            execute(c, manager.comment(s, "流水 号", null));
+            assertRows(c, "SELECT obj_description('" + name + "'::regclass) IS NULL,nextval('" + name + "')",
+                List.of(List.of("t", "3")));
+        }, java.util.Map.of(), config);
     }
 
     @Test
