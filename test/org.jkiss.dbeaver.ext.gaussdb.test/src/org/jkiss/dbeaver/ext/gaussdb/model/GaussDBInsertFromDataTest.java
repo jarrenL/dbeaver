@@ -90,7 +90,8 @@ class GaussDBInsertFromDataTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"empty-selection", "two-rows", "exclude-generated", "include-generated", "visible-only", "multiline"})
+    @ValueSource(strings = {"empty-selection", "two-rows", "exclude-generated", "include-generated", "visible-only", "multiline",
+        "hidden-column", "pseudo-column", "missing-binding"})
     void preservesSelectedRowsAndColumnOptions(String scenario) throws Exception {
         when(provider.getCellValue(second, row)).thenReturn("a");
         String expected = "INSERT INTO \"订单 表\" (\"second col\", \"first col\") VALUES('a', '001');\n";
@@ -117,9 +118,27 @@ class GaussDBInsertFromDataTest {
                 expected = "INSERT INTO \"订单 表\" (\"first col\") VALUES('001');\n";
             }
             case "multiline" -> expected = "INSERT INTO \"订单 表\"\n(\"second col\", \"first col\")\nVALUES('a', '001');\n";
+            case "hidden-column", "pseudo-column" -> {
+                if (scenario.equals("hidden-column")) {
+                    when(((org.jkiss.dbeaver.model.DBPHiddenObject) first).isHidden()).thenReturn(true);
+                } else {
+                    when(first.isPseudoAttribute()).thenReturn(true);
+                }
+                expected = "INSERT INTO \"订单 表\" (\"second col\") VALUES('a');\n";
+            }
+            case "missing-binding" -> {
+                when(provider.getAttributes()).thenReturn(new DBDAttributeBinding[] {first});
+                expected = "INSERT INTO \"订单 表\" (\"second col\", \"first col\") VALUES('', '001');\n";
+            }
             default -> fail("Unexpected scenario");
         }
         assertEquals(expected, generate(scenario.equals("exclude-generated"), !scenario.equals("multiline")));
+        if (scenario.equals("hidden-column") || scenario.equals("pseudo-column")) {
+            verify(provider, never()).getCellValue(first, row);
+        }
+        if (scenario.equals("missing-binding")) {
+            verify(provider, never()).getCellValue(second, row);
+        }
     }
 
     private String generate(boolean excludeGenerated, boolean compact) throws Exception {
@@ -140,7 +159,8 @@ class GaussDBInsertFromDataTest {
     }
 
     private DBDAttributeBinding column(DBPDataSource source, String name) {
-        DBDAttributeBinding binding = mock(DBDAttributeBinding.class);
+        DBDAttributeBinding binding = mock(DBDAttributeBinding.class,
+            withSettings().extraInterfaces(org.jkiss.dbeaver.model.DBPHiddenObject.class));
         when(binding.getDataSource()).thenReturn(source);
         when(binding.getName()).thenReturn(name);
         when(binding.getDataKind()).thenReturn(DBPDataKind.STRING);
