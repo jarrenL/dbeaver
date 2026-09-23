@@ -89,12 +89,14 @@ public class PostgreCommandGrantPrivilege extends DBECommandAbstract<PostgrePriv
         }
         boolean withGrantOption = !grantable.isEmpty();
         final StringJoiner privName = new StringJoiner(", ");
+        final String columnRestriction = getObject() instanceof PostgreTableColumn
+            ? "(" + DBUtils.getQuotedIdentifier(getObject()) + ")" : "";
 
         if (hasAllPrivilegeTypes()) {
-            privName.add(PostgrePrivilegeType.ALL.name());
+            privName.add(PostgrePrivilegeType.ALL.name() + columnRestriction);
         } else {
             for (PostgrePrivilegeType pn : privilegeTypes) {
-                privName.add(pn.name());
+                privName.add(pn.name() + columnRestriction);
             }
         }
 
@@ -132,9 +134,8 @@ public class PostgreCommandGrantPrivilege extends DBECommandAbstract<PostgrePriv
             objectType = PostgreUtils.getObjectTypeName(object);
         }
 
-        String grantedCols = "", grantedTypedObject;
+        String grantedTypedObject;
         if (object instanceof PostgreTableColumn) {
-            grantedCols = "(" + DBUtils.getQuotedIdentifier(object) + ")";
             grantedTypedObject = ((PostgreTableColumn) object).getTable().getFullyQualifiedName(DBPEvaluationContext.DDL);
         } else if (privilege instanceof PostgreDefaultPrivilege) {
             PostgrePrivilegeGrant.Kind underKind = ((PostgreDefaultPrivilege) privilege).getUnderKind();
@@ -159,7 +160,7 @@ public class PostgreCommandGrantPrivilege extends DBECommandAbstract<PostgrePriv
             }
             ddl.append(" IN SCHEMA ").append(DBUtils.getQuotedIdentifier(privilege.getOwner())).append(" ");
         }
-        ddl.append(grant ? "GRANT " : "REVOKE ").append(privName).append(grantedCols).append(" ON ").append(grantedTypedObject);
+        ddl.append(grant ? "GRANT " : "REVOKE ").append(privName).append(" ON ").append(grantedTypedObject);
         ddl.append(grant ? " TO" : " FROM");
         if (roleType != null) {
             ddl.append(" ").append(roleType.toUpperCase());

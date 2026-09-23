@@ -32,7 +32,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         inIsolatedSchema((c, s) -> {
             // GaussDB filters pg_roles for ordinary users. The administrator must provision
             // the NOLOGIN fixture; a missing role will fail the actual GRANT below.
-            execute(c, "CREATE TABLE " + s + ".t(id integer)");
+            execute(c, "CREATE TABLE " + s + ".t(id integer, restricted_value text)");
             var source = mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource.class);
             when(source.getSQLDialect()).thenReturn(new org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialect());
             when(source.getSupportedPrivilegeTypes()).thenReturn(new org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType[] {
@@ -43,6 +43,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             when(role.getDataSource()).thenReturn(source);
             when(role.getName()).thenReturn(grantee);
             var table = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreTable.class);
+            when(table.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn(s + ".t");
             var privilege = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreRolePrivilege.class);
             when(privilege.getFullObjectName()).thenReturn(s + ".t");
             when(privilege.getKind()).thenReturn(org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeGrant.Kind.TABLE);
@@ -65,6 +66,45 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                             assertTrue(result.next());
                             assertEquals(grant && !permission.equals("INSERT WITH GRANT OPTION") && !permission.equals("UPDATE"),
                                 result.getBoolean(1), permission + " after grant=" + grant);
+                        }
+                    }
+                }
+            }
+            when(source.getSupportedPrivilegeTypes()).thenReturn(new org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType[] {
+                org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.SELECT,
+                org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.INSERT,
+                org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.UPDATE
+            });
+            var column = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreTableColumn.class);
+            when(column.getDataSource()).thenReturn(source);
+            when(column.getName()).thenReturn("id");
+            when(column.getTable()).thenReturn(table);
+            var columnPrivilege = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreObjectPrivilege.class);
+            var reference = new org.jkiss.dbeaver.ext.postgresql.model.PostgreRoleReference(
+                mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase.class), grantee, null);
+            when(columnPrivilege.getGrantee()).thenReturn(reference);
+            for (boolean grant : new boolean[] {true, false}) {
+                var command = new org.jkiss.dbeaver.ext.postgresql.edit.PostgreCommandGrantPrivilege(
+                    column, grant, column, columnPrivilege, new org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType[] {
+                        org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.SELECT,
+                        org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType.UPDATE
+                    });
+                for (var action : command.getPersistActions(mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class),
+                    mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), java.util.Map.of())) {
+                    execute(c, action.getScript());
+                }
+                try (var statement = c.prepareStatement("SELECT has_column_privilege(?,?,?,?)")) {
+                    for (String columnName : List.of("id", "restricted_value")) {
+                        for (String permission : List.of("SELECT", "UPDATE", "INSERT")) {
+                            statement.setString(1, grantee);
+                            statement.setString(2, s + ".t");
+                            statement.setString(3, columnName);
+                            statement.setString(4, permission);
+                            try (var result = statement.executeQuery()) {
+                                assertTrue(result.next());
+                                assertEquals(grant && columnName.equals("id") && !permission.equals("INSERT"),
+                                    result.getBoolean(1), columnName + ":" + permission + " grant=" + grant);
+                            }
                         }
                     }
                 }

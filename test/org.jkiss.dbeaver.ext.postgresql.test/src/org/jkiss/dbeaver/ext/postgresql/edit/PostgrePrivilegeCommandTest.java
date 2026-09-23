@@ -107,6 +107,51 @@ class PostgrePrivilegeCommandTest {
     }
 
     @Test
+    void multipleColumnPrivilegesEachCarryTheColumnRestriction() {
+        var source = role.getDataSource();
+        var column = mock(PostgreTableColumn.class);
+        when(column.getDataSource()).thenReturn(source);
+        when(column.getName()).thenReturn("private\" field");
+        when(column.getTable()).thenReturn(table);
+        when(table.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn("s.t");
+        var permission = mock(PostgreObjectPrivilege.class);
+        when(permission.getGrantee()).thenReturn(new PostgreRoleReference(mock(PostgreDatabase.class), "reader", null));
+        when(source.getSupportedPrivilegeTypes()).thenReturn(new PostgrePrivilegeType[] {
+            PostgrePrivilegeType.SELECT, PostgrePrivilegeType.INSERT, PostgrePrivilegeType.UPDATE
+        });
+        assertEquals("GRANT SELECT(\"private\"\" field\"), UPDATE(\"private\"\" field\") ON s.t TO reader",
+            sql(new PostgreCommandGrantPrivilege(column, true, column, permission,
+                new PostgrePrivilegeType[] {PostgrePrivilegeType.SELECT, PostgrePrivilegeType.UPDATE})));
+    }
+
+    @Test
+    void defaultPrivilegesQuoteSchemaGrantorAndGrantee() {
+        var source = role.getDataSource();
+        var schema = mock(PostgreSchema.class);
+        when(schema.getDataSource()).thenReturn(source);
+        when(schema.getName()).thenReturn("schema space");
+        var permission = mock(PostgreDefaultPrivilege.class);
+        when(permission.getOwner()).thenReturn(schema);
+        when(permission.getDataSource()).thenReturn(source);
+        when(permission.getGrantee()).thenReturn(new PostgreRoleReference(mock(PostgreDatabase.class), "read role", null));
+        when(permission.getGrantor()).thenReturn(new PostgreRoleReference(mock(PostgreDatabase.class), "owner role", null));
+        when(permission.getUnderKind()).thenReturn(PostgrePrivilegeGrant.Kind.TABLE);
+        assertEquals("ALTER DEFAULT PRIVILEGES FOR ROLE \"owner role\" IN SCHEMA \"schema space\" GRANT SELECT ON TABLES TO \"read role\"",
+            sql(new PostgreCommandGrantPrivilege(schema, true, table, permission,
+                new PostgrePrivilegeType[] {PostgrePrivilegeType.SELECT})));
+    }
+
+    @Test
+    void repeatedMergeIsIdempotent() {
+        var grant = command(true, PostgrePrivilegeType.SELECT);
+        Map<Object, Object> context = new HashMap<>();
+        grant.merge(null, context);
+        String before = sql(grant);
+        grant.merge(grant, context);
+        assertEquals(before, sql(grant));
+    }
+
+    @Test
     void grantThenRevokeSamePrivilegeLeavesNoActions() {
         var grant = command(true, PostgrePrivilegeType.SELECT);
         var revoke = command(false, PostgrePrivilegeType.SELECT);
