@@ -210,3 +210,7 @@ RESTART 在本 507 分布式服务端返回 0A000，提示 ALTER SEQUENCE 仅支
 新增 5 项生产 runImport 测试，覆盖缺列补 NULL 与 trim、多行中文/引号/逗号、空串与 NULL 标记、未闭合引号、trim 和空串转 NULL 组合。红测复现短行补 null 后 trim 引发 NPE，修复为保留 null 不执行 trim。正常流程同时验证接收器结束和关闭。会话采用 mock，未将本批称为 GUI/真实数据库写入验收。
 
 CSVImporterTest 12 项全部通过，完整回归 **800 项：787 通过、13 跳过、零失败/错误**。详见 [CSV 导入逐项结果](test-results-20260923-import-followup.json)。运行中的 GUI 副本和已发布包尚未包含本次导入修复。
+
+### 导入编码和生命周期
+
+追加 GB18030 中文/扩展字符、UTF-16LE BOM、数据行数上限、开始前及首行后取消 5 项生产导入器测试。成功、取消及异常引号路径均核验接收器结束和关闭。完整回归 **805 项：792 通过、13 跳过、零失败/错误**，CSVImporterTest 17 项全部通过。详见 [导入生命周期结果](test-results-20260923-import-lifecycle.json)。不替代 GUI、真实写库取消事务或数据库 client_encoding 验证。

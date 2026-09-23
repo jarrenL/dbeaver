@@ -163,7 +163,45 @@ public class CSVImporterTest  extends DBeaverUnitTest {
     }
 
     private List<List<Object>> importRows(String data, int columns) throws Exception {
-        properties.put("header", DataImporterCSV.HeaderPosition.top);
+        return importRows(data.getBytes(java.nio.charset.StandardCharsets.UTF_8), columns, 0, -1);
+    }
+
+    @Test
+    void gb18030InputRetainsChineseAndSupplementaryCharacters() throws Exception {
+        properties.put("encoding", "GB18030");
+        String content = "a,b\n银行,𠀀\n";
+        Assertions.assertEquals(List.of(List.of("银行", "𠀀")),
+            importRows(content.getBytes(java.nio.charset.Charset.forName("GB18030")), 2, 0, -1));
+    }
+
+    @Test
+    void utf16BomIsConsumedWithoutPollutingFirstValue() throws Exception {
+        properties.put("encoding", "UTF-16LE");
+        properties.put("header", DataImporterCSV.HeaderPosition.none);
+        Assertions.assertEquals(List.of(List.of("中文", "00123")),
+            importRows("\uFEFF中文,00123\r\n".getBytes(java.nio.charset.StandardCharsets.UTF_16LE), 2, 0, -1));
+    }
+
+    @Test
+    void maximumRowsLimitsDeliveredDataRatherThanCountingHeader() throws Exception {
+        Assertions.assertEquals(List.of(List.of("1"), List.of("2")),
+            importRows("a\n1\n2\n3\n".getBytes(java.nio.charset.StandardCharsets.UTF_8), 1, 2, -1));
+    }
+
+    @Test
+    void cancellationBeforeReadingDeliversNoRowsAndClosesReceiver() throws Exception {
+        Assertions.assertEquals(List.of(),
+            importRows("a\n1\n2\n".getBytes(java.nio.charset.StandardCharsets.UTF_8), 1, 0, 0));
+    }
+
+    @Test
+    void cancellationAfterFirstRowDoesNotDeliverSecondRow() throws Exception {
+        Assertions.assertEquals(List.of(List.of("1")),
+            importRows("a\n1\n2\n".getBytes(java.nio.charset.StandardCharsets.UTF_8), 1, 0, 1));
+    }
+
+    private List<List<Object>> importRows(byte[] data, int columns, long maxRows, int cancelAfter) throws Exception {
+        properties.putIfAbsent("header", DataImporterCSV.HeaderPosition.top);
         properties.put("quoteChar", "\"");
         properties.put("delimiter", ",");
         var source = Mockito.mock(StreamEntityMapping.class);
@@ -173,12 +211,14 @@ public class CSVImporterTest  extends DBeaverUnitTest {
         }
         Mockito.when(source.getStreamColumns()).thenReturn(infos);
         Mockito.when(site.getSourceObject()).thenReturn(source);
-        Mockito.when(site.getSettings()).thenReturn(Mockito.mock(
-            org.jkiss.dbeaver.tools.transfer.stream.StreamProducerSettings.class));
+        var settings = Mockito.mock(org.jkiss.dbeaver.tools.transfer.stream.StreamProducerSettings.class);
+        Mockito.when(settings.getMaxRows()).thenReturn(maxRows);
+        Mockito.when(site.getSettings()).thenReturn(settings);
         var dataSource = Mockito.mock(org.jkiss.dbeaver.model.DBPDataSource.class, Mockito.RETURNS_DEEP_STUBS);
         var monitor = Mockito.mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
         var consumer = Mockito.mock(IDataTransferConsumer.class);
         var rows = new java.util.ArrayList<List<Object>>();
+        Mockito.when(monitor.isCanceled()).thenAnswer(invocation -> cancelAfter >= 0 && rows.size() >= cancelAfter);
         Mockito.doAnswer(invocation -> {
             org.jkiss.dbeaver.model.exec.DBCResultSet result = invocation.getArgument(1);
             var row = new java.util.ArrayList<Object>();
@@ -188,11 +228,13 @@ public class CSVImporterTest  extends DBeaverUnitTest {
             rows.add(row);
             return null;
         }).when(consumer).fetchRow(Mockito.any(), Mockito.any());
-        try (var input = new ByteArrayInputStream(data.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+        try (var input = new ByteArrayInputStream(data)) {
             importer.runImport(monitor, dataSource, input, consumer);
+        } finally {
+            // Also check malformed input and cancellation paths, not just successful parsing.
+            Mockito.verify(consumer).fetchEnd(Mockito.any(), Mockito.any());
+            Mockito.verify(consumer).close();
         }
-        Mockito.verify(consumer).fetchEnd(Mockito.any(), Mockito.any());
-        Mockito.verify(consumer).close();
         return rows;
     }
 }
