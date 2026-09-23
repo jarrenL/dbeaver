@@ -370,13 +370,8 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
                     registry.getProject().getName()));
             throw new DBInterruptedException("Project secure credentials read canceled by user.");
         }
-        try {
-            configurationMap = readConfiguration(configurationStorage, configurationManager, dataSourceIds);
-        } catch (DBInterruptedException e) {
-            throw e;
-        } catch (DBException e) {
-            log.error(e);
-        }
+        // Let the registry record a failed load instead of treating unreadable configuration as absent.
+        configurationMap = readConfiguration(configurationStorage, configurationManager, dataSourceIds);
         // process project credential
         if (!DBWorkbench.getPlatform().getApplication().isHeadlessMode()
             && DBWorkbench.getPlatform().getApplication().isCommunity() &&
@@ -400,13 +395,8 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
                 throw new DBInterruptedException("Project secure credentials read canceled by user.");
             }
         }
-        try {
-            secureCredentialsMap = readSecureCredentials(configurationStorage, configurationManager, dataSourceIds);
-        } catch (DBInterruptedException e) {
-            throw e;
-        } catch (DBException e) {
-            log.error(e);
-        }
+        // Both inputs must be readable before applying any parsed objects or credentials.
+        secureCredentialsMap = readSecureCredentials(configurationStorage, configurationManager, dataSourceIds);
         if (secureCredentialsMap != null) {
             secureProperties.putAll(secureCredentialsMap);
         }
