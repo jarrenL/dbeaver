@@ -2222,6 +2222,48 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void terminatedOwnSessionRollsBackAndFreshConnectionCanWrite() throws Exception {
+        inIsolatedSchema((controller, schema) -> {
+            String table = schema + ".terminated_audit";
+            execute(controller, "CREATE TABLE " + table + "(id integer PRIMARY KEY, note text)");
+            withIndependentConnection(writer -> {
+                long writerPid;
+                try (var statement = writer.createStatement();
+                     var result = statement.executeQuery("SELECT pg_backend_pid()")) {
+                    assertTrue(result.next());
+                    writerPid = result.getLong(1);
+                }
+                writer.setAutoCommit(false);
+                execute(writer, "INSERT INTO " + table + " VALUES(1,'uncommitted')");
+                assertEquals(1, count(writer, table));
+                assertEquals(0, count(controller, table));
+                // Only terminate the independent connection created by this test.
+                try (var statement = controller.prepareStatement("SELECT pg_terminate_backend(?)")) {
+                    statement.setLong(1, writerPid);
+                    statement.setQueryTimeout(15);
+                    try (var result = statement.executeQuery()) {
+                        assertTrue(result.next());
+                        assertTrue(result.getBoolean(1), "Server must acknowledge termination");
+                    }
+                }
+                var failure = assertThrows(java.sql.SQLException.class,
+                    () -> execute(writer, "SELECT 1"));
+                assertTrue("57P01".equals(failure.getSQLState()) ||
+                    (failure.getSQLState() != null && failure.getSQLState().startsWith("08")),
+                    "Expected backend termination/connection SQLSTATE, got " + failure.getSQLState());
+            });
+            assertObserverCount(table, 0);
+            withIndependentConnection(reconnected -> {
+                execute(reconnected, "INSERT INTO " + table + " VALUES(2,'reconnected')");
+                assertRows(reconnected, "SELECT id,note FROM " + table,
+                    List.of(List.of("2", "reconnected")));
+            });
+            assertRows(controller, "SELECT id,note FROM " + table,
+                List.of(List.of("2", "reconnected")));
+        });
+    }
+
+    @Test
     void enablingAutocommitCommitsPendingRowsButLaterManualRollbackRemainsIsolated() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".mode_audit";
