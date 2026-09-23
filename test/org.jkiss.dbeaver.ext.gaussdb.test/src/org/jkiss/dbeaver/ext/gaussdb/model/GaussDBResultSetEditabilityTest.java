@@ -21,10 +21,17 @@ import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DBPDataSourceInfo;
 import org.jkiss.dbeaver.model.DBPDataSourcePermission;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.model.data.DBDAttributeBindingMeta;
 import org.jkiss.dbeaver.model.data.DBDRowIdentifier;
 import org.jkiss.dbeaver.model.exec.DBCAttributeMetaData;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
+import org.jkiss.dbeaver.model.exec.DBCExecutionSource;
+import org.jkiss.dbeaver.model.exec.DBCResultSet;
+import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.exec.DBCStatement;
 import org.jkiss.dbeaver.model.exec.DBExecUtils;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.struct.DBSEntity;
 import org.jkiss.dbeaver.model.struct.DBSDataManipulator;
 import org.junit.jupiter.api.Test;
@@ -35,6 +42,53 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBResultSetEditabilityTest {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT 1 AS amount",
+        "SELECT 1 + 2 AS amount",
+        "SELECT '*' AS amount",
+        "SELECT CASE WHEN true THEN 1 ELSE 2 END AS amount",
+        "WITH q AS (SELECT 1 AS amount) SELECT amount FROM q",
+        "WITH q AS (SELECT 1 AS amount) SELECT v.amount FROM q v",
+        "SELECT v.amount FROM (SELECT 1 AS amount) v",
+        "SELECT v.amount FROM (SELECT 1 AS amount UNION ALL SELECT 2) v"
+    })
+    void bindingWithoutPhysicalOriginCannotInventWritableColumn(String sql) throws Exception {
+        DBCSession session = mock(DBCSession.class);
+        DBPDataSource source = mock(DBPDataSource.class);
+        DBPDataSourceContainer container = mock(DBPDataSourceContainer.class);
+        DBPDataSourceInfo info = mock(DBPDataSourceInfo.class);
+        when(session.getProgressMonitor()).thenReturn(new VoidProgressMonitor());
+        when(session.getDataSource()).thenReturn(source);
+        when(source.getContainer()).thenReturn(container);
+        when(source.getInfo()).thenReturn(info);
+        when(container.isExtraMetadataReadEnabled()).thenReturn(true);
+
+        DBCResultSet resultSet = mock(DBCResultSet.class);
+        DBCStatement statement = mock(DBCStatement.class);
+        DBCExecutionSource execution = mock(DBCExecutionSource.class);
+        when(resultSet.getSourceStatement()).thenReturn(statement);
+        when(statement.getStatementSource()).thenReturn(execution);
+        when(execution.getSourceDescriptor()).thenReturn(new SQLQuery(null, sql));
+
+        DBCAttributeMetaData metadata = mock(DBCAttributeMetaData.class);
+        when(metadata.getName()).thenReturn("amount");
+        when(metadata.getLabel()).thenReturn("amount");
+        // Real binding state and setters; only driver-supplied metadata is replaced.
+        DBDAttributeBindingMeta binding = mock(DBDAttributeBindingMeta.class, CALLS_REAL_METHODS);
+        doReturn(metadata).when(binding).getMetaAttribute();
+        doReturn("amount").when(binding).getName();
+        DBExecUtils.bindAttributes(session, null, resultSet, new DBDAttributeBinding[] {binding}, null);
+
+        assertNull(binding.getEntityAttribute());
+        assertNull(binding.getRowIdentifier());
+        assertNotNull(binding.getRowIdentifierStatus());
+        assertTrue(DBExecUtils.isAttributeReadOnly(binding, true));
+        assertEquals(binding.getRowIdentifierStatus(), DBExecUtils.getAttributeReadOnlyStatus(binding, true));
+        verify(binding, never()).setEntityAttribute(any(), anyBoolean());
+        verify(binding, never()).setRowIdentifier(any());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"missing-metadata", "driver-readonly", "missing-identifier",
         "custom-identifier-reason", "non-manipulator", "update-unsupported", "incomplete-key", "writable"})
