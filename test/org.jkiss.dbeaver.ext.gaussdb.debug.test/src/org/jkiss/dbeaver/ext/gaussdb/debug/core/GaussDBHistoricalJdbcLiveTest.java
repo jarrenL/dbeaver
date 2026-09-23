@@ -1363,6 +1363,18 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                     role, grant, table, privilege, null);
                 var actions = command.getPersistActions(mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class),
                     mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), java.util.Map.of());
+                c.setAutoCommit(false);
+                try {
+                    for (var action : actions) {
+                        execute(c, action.getScript());
+                    }
+                    assertTableReadPrivilege(c, grantee, s + ".t", grant);
+                } finally {
+                    c.rollback();
+                    c.setAutoCommit(true);
+                }
+                assertTableReadPrivilege(c, grantee, s + ".t", !grant);
+                withIndependentConnection(observer -> assertTableReadPrivilege(observer, grantee, s + ".t", !grant));
                 for (var action : actions) {
                     execute(c, action.getScript());
                 }
@@ -1503,6 +1515,19 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                 }
             }
         });
+    }
+
+    private static void assertTableReadPrivilege(Connection connection, String role, String table, boolean expected) throws Exception {
+        try (var statement = connection.prepareStatement("SELECT has_table_privilege(?,?, 'SELECT')")) {
+            statement.setString(1, role);
+            statement.setString(2, table);
+            statement.setQueryTimeout(15);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next());
+                assertEquals(expected, rows.getBoolean(1));
+                assertFalse(rows.next());
+            }
+        }
     }
 
     @Test
