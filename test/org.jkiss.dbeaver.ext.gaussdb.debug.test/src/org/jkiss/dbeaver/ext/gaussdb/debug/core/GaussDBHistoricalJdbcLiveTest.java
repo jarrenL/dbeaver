@@ -528,6 +528,55 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         });
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"GAUSSDB_HISTORY_CONNECTION", "GAUSSDB_HISTORY_CENTRAL_CONNECTION"})
+    void timestampJdbcPreservesDistinctInstantsAcrossDaylightSavingTransitions(String configuration) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            String table = schema + ".dst_values";
+            execute(connection, "CREATE TABLE " + table + "(id integer, value timestamp with time zone)");
+            String[] instants = {
+                "2024-03-10T06:59:59.123456Z", "2024-03-10T07:00:00.123456Z",
+                "2024-11-03T05:30:00.123456Z", "2024-11-03T06:30:00.123456Z"
+            };
+            var utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"));
+            try (var insert = connection.prepareStatement("INSERT INTO " + table + " VALUES(?,?)")) {
+                for (int i = 0; i <= instants.length; i++) {
+                    insert.setInt(1, i);
+                    if (i == instants.length) {
+                        insert.setNull(2, java.sql.Types.TIMESTAMP);
+                    } else {
+                        insert.setTimestamp(2, java.sql.Timestamp.from(java.time.Instant.parse(instants[i])), utc);
+                    }
+                    assertEquals(1, insert.executeUpdate());
+                }
+            }
+            String[] localTimes = {
+                "2024-03-10 01:59:59.123456", "2024-03-10 03:00:00.123456",
+                "2024-11-03 01:30:00.123456", "2024-11-03 01:30:00.123456"
+            };
+            for (String zone : List.of("America/New_York", "UTC", "Asia/Shanghai")) {
+                execute(connection, "SET TIME ZONE '" + zone + "'");
+                try (var query = connection.createStatement(); var rows = query.executeQuery(
+                    "SELECT value,to_char(value,'YYYY-MM-DD HH24:MI:SS.US') FROM " + table + " ORDER BY id")) {
+                    for (int i = 0; i < instants.length; i++) {
+                        assertTrue(rows.next());
+                        assertEquals(java.time.Instant.parse(instants[i]), rows.getTimestamp(1, utc).toInstant());
+                        assertFalse(rows.wasNull());
+                        if (zone.equals("America/New_York")) {
+                            assertEquals(localTimes[i], rows.getString(2));
+                        }
+                    }
+                    assertTrue(rows.next());
+                    assertNull(rows.getTimestamp(1, utc));
+                    assertTrue(rows.wasNull());
+                    assertNull(rows.getString(2));
+                    assertTrue(rows.wasNull());
+                    assertFalse(rows.next());
+                }
+            }
+        }, java.util.Map.of(), System.getenv(configuration));
+    }
+
     @Test
     void productionSequenceBodyRebuildsAscendingCustomStartAndIncrement() throws Exception {
         inIsolatedSchema((c, s) -> assertSequenceBodyRoundtrip(c, s + ".seq_up",
