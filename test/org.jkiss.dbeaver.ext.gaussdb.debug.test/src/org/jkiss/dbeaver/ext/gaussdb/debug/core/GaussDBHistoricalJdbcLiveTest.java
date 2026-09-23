@@ -1324,6 +1324,12 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             // GaussDB filters pg_roles for ordinary users. The administrator must provision
             // the NOLOGIN fixture; a missing role will fail the actual GRANT below.
             execute(c, "CREATE TABLE " + s + ".t(id integer, restricted_value text)");
+            boolean verifyAccess = "YES".equals(System.getenv("GAUSSDB_HISTORY_VERIFY_ROLE_ACCESS"));
+            if (verifyAccess) {
+                assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_]+"));
+                execute(c, "GRANT USAGE ON SCHEMA " + s + " TO " + grantee);
+                execute(c, "INSERT INTO " + s + ".t VALUES (7, 'restricted')");
+            }
             var source = mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource.class);
             when(source.getSQLDialect()).thenReturn(new org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialect());
             when(source.getSupportedPrivilegeTypes()).thenReturn(new org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType[] {
@@ -1358,6 +1364,28 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                     mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), java.util.Map.of());
                 for (var action : actions) {
                     execute(c, action.getScript());
+                }
+                if (verifyAccess) {
+                    String rolePassword = System.getenv("GAUSSDB_HISTORY_GRANTEE_PASSWORD");
+                    assertNotNull(rolePassword, "Temporary role password required for live SET ROLE verification");
+                    execute(c, "SET ROLE " + grantee + " PASSWORD '" + rolePassword.replace("'", "''") + "'");
+                    try {
+                        if (grant) {
+                            try (var statement = c.createStatement(); var rows = statement.executeQuery("SELECT id FROM " + s + ".t")) {
+                                assertTrue(rows.next());
+                                assertEquals(7, rows.getInt(1));
+                                assertFalse(rows.next());
+                            }
+                        } else {
+                            var denied = assertThrows(java.sql.SQLException.class, () -> execute(c, "SELECT id FROM " + s + ".t"));
+                            assertEquals("42501", denied.getSQLState());
+                        }
+                        var updateDenied = assertThrows(java.sql.SQLException.class,
+                            () -> execute(c, "UPDATE " + s + ".t SET restricted_value='forbidden'"));
+                        assertEquals("42501", updateDenied.getSQLState());
+                    } finally {
+                        execute(c, "RESET ROLE");
+                    }
                 }
                 try (var aclStatement = c.prepareStatement("SELECT relacl FROM pg_class WHERE oid=?::regclass")) {
                     aclStatement.setString(1, s + ".t");
