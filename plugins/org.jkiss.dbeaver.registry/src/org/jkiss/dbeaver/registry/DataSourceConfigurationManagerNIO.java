@@ -129,13 +129,7 @@ public class DataSourceConfigurationManagerNIO implements DataSourceConfiguratio
         ContentUtils.makeFileBackup(configFile);
 
         if (data == null || data.length == 0) {
-            if (Files.exists(configFile)) {
-                try {
-                    Files.delete(configFile);
-                } catch (IOException e) {
-                    log.debug("Error deleting file " + configFile.toAbsolutePath(), e);
-                }
-            }
+            Files.deleteIfExists(configFile);
         } else {
             Files.write(configFile, data);
         }
