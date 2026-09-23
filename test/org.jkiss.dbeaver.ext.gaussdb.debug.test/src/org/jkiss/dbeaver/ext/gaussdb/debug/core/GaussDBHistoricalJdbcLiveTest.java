@@ -2183,6 +2183,41 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void viewColumnMetadataRetainsAliasesPrecisionAndOrderAfterRename() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".source_data(amount numeric(20,4), label varchar(40), id integer)");
+            execute(c, "CREATE VIEW " + s + ".original_view AS SELECT label AS \"中文 Name\","
+                + " amount AS \"Amount Value\", id AS \"Identifier\" FROM " + s + ".source_data");
+            execute(c, "ALTER VIEW " + s + ".original_view RENAME TO renamed_view");
+            try (var old = c.getMetaData().getColumns(null, s, "original_view", "%")) {
+                assertFalse(old.next());
+            }
+            try (var columns = c.getMetaData().getColumns(null, s, "renamed_view", "%")) {
+                assertTrue(columns.next());
+                assertEquals("中文 Name", columns.getString("COLUMN_NAME"));
+                assertEquals(1, columns.getInt("ORDINAL_POSITION"));
+                assertEquals(java.sql.Types.VARCHAR, columns.getInt("DATA_TYPE"));
+                assertEquals(40, columns.getInt("COLUMN_SIZE"));
+                assertTrue(columns.next());
+                assertEquals("Amount Value", columns.getString("COLUMN_NAME"));
+                assertEquals(2, columns.getInt("ORDINAL_POSITION"));
+                assertEquals(java.sql.Types.NUMERIC, columns.getInt("DATA_TYPE"));
+                assertEquals(20, columns.getInt("COLUMN_SIZE"));
+                assertEquals(4, columns.getInt("DECIMAL_DIGITS"));
+                assertTrue(columns.next());
+                assertEquals("Identifier", columns.getString("COLUMN_NAME"));
+                assertEquals(3, columns.getInt("ORDINAL_POSITION"));
+                assertEquals(java.sql.Types.INTEGER, columns.getInt("DATA_TYPE"));
+                assertFalse(columns.next());
+            }
+            execute(c, "DROP VIEW " + s + ".renamed_view");
+            try (var removed = c.getMetaData().getColumns(null, s, "renamed_view", "%")) {
+                assertFalse(removed.next());
+            }
+        });
+    }
+
+    @Test
     void viewAndSequenceRoundTripAndDropRefreshMetadata() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE SEQUENCE " + s + ".seq START WITH 7");
