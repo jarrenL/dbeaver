@@ -412,7 +412,7 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
             List<Long> sessionsToClose;
             synchronized (QMMCollectorImpl.this) {
                 events = obtainEvents();
-                sessionsToClose = closedConnections;
+                sessionsToClose = new ArrayList<>(closedConnections);
                 closedConnections.clear();
             }
             if (!events.isEmpty()) {
@@ -441,7 +441,7 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
             synchronized (connectionMap) {
                 for (Long sessionId : sessionsToClose) {
                     final QMMConnectionInfo session = connectionMap.get(sessionId);
-                    if (session != null && !session.isClosed()) {
+                    if (session != null && session.isClosed()) {
                         // It is possible (rarely) that session was reopened before event dispatcher run
                         // In that case just ignore it
                         connectionMap.remove(sessionId);
