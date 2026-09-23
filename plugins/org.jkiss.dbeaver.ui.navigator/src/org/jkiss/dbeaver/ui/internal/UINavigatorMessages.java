@@ -320,4 +320,7 @@ public class UINavigatorMessages extends NLS {
 
     private UINavigatorMessages() {
     }
+
+    public static String actions_navigator_atomic_delete_task;
+    public static String actions_navigator_atomic_delete_failed;
 }

@@ -166,6 +166,15 @@ public class NavigatorObjectsDeleter {
 
     void delete() {
         try {
+            if (deleteAtomicGaussDBSelection()) {
+                return;
+            }
+        } catch (DBException e) {
+            DBWorkbench.getPlatformUI().showError(
+                UINavigatorMessages.actions_navigator_error_dialog_delete_object_title, e.getMessage(), e);
+            return;
+        }
+        try {
             UIUtils.runInProgressService(dbrMonitor -> {
                 dbrMonitor.beginTask("Delete objects", selection.size());
                 try {
@@ -204,6 +213,77 @@ public class NavigatorObjectsDeleter {
         if (!tasksToExecute.isEmpty()) {
             TasksJob.runTasks(tasksToExecute.size() > 1 ? "Delete " + tasksToExecute.size() + " objects" : "Delete object", tasksToExecute);
         }
+    }
+
+    /** Use a connection owned by this operation, never the editor's pending transaction. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private boolean deleteAtomicGaussDBSelection() throws DBException {
+        if (selection.size() < 2) {
+            return false;
+        }
+        org.jkiss.dbeaver.model.struct.DBSInstance instance = null;
+        List<DBSObject> objects = new ArrayList<>();
+        List<DBEObjectMaker> makers = new ArrayList<>();
+        List<Map<String, Object>> options = new ArrayList<>();
+        for (Object selected : selection) {
+            if (!(selected instanceof DBNDatabaseNode node) || !(node.getParentNode() instanceof DBNContainer)) {
+                return false;
+            }
+            DBSObject object = node.getObject();
+            if (object == null || !object.isPersisted() || object.getDataSource() == null
+                || !"gaussdb".equals(object.getDataSource().getContainer().getDriver().getProviderId())) {
+                return false;
+            }
+            var target = NavigatorHandlerObjectBase.getCommandTarget(window, node.getParentNode(), null, object.getClass(), false);
+            if (target.getEditor() != null || target.getContext() == null) {
+                return false;
+            }
+            var execution = target.getContext().getExecutionContext();
+            if (execution == null || (instance != null && instance != execution.getOwnerInstance())) {
+                return false;
+            }
+            instance = execution.getOwnerInstance();
+            DBEObjectMaker maker = DBWorkbench.getPlatform().getEditorsRegistry().getObjectManager(object.getClass(), DBEObjectMaker.class);
+            if (maker == null) {
+                return false;
+            }
+            Map<String, Object> objectOptions = collectObjectMakerOptionsMap(object, maker);
+            if (!options.isEmpty() && !options.get(0).equals(objectOptions)) {
+                // Do not apply one object's cascade/options to an object whose maker did not accept them.
+                return false;
+            }
+            objects.add(object);
+            makers.add(maker);
+            options.add(objectOptions);
+        }
+        if (instance == null) {
+            return false;
+        }
+        final var owner = instance;
+        try {
+            UIUtils.runInProgressService(monitor -> {
+                try (var isolated = owner.openIsolatedContext(monitor, UINavigatorMessages.actions_navigator_atomic_delete_task, null)) {
+                    var batch = new org.jkiss.dbeaver.ui.editors.SimpleCommandContext(isolated, true);
+                    for (int i = 0; i < objects.size(); i++) {
+                        if (monitor.isCanceled()) {
+                            return;
+                        }
+                        makers.get(i).deleteObject(batch, objects.get(i), options.get(i));
+                    }
+                    Map<String, Object> saveOptions = new HashMap<>(options.get(0));
+                    saveOptions.put(DBECommandContext.OPTION_ATOMIC_TRANSACTION, true);
+                    batch.saveChanges(monitor, saveOptions);
+                } catch (DBException e) {
+                    throw new InvocationTargetException(e);
+                }
+            });
+        } catch (InvocationTargetException e) {
+            // No per-object Skip/Retry here: a failed batch is rolled back as a unit.
+            throw new DBException(UINavigatorMessages.actions_navigator_atomic_delete_failed, e.getTargetException());
+        } catch (InterruptedException ignored) {
+            // The command context rolls back when its monitor observes cancellation.
+        }
+        return true;
     }
 
     private void deleteLocalFolder(final DBNLocalFolder folder) {
