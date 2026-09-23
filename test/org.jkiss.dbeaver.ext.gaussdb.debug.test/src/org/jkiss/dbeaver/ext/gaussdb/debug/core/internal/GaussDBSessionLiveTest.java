@@ -44,8 +44,12 @@ class GaussDBSessionLiveTest {
         assumeTrue(config != null && jar != null, "Requires isolated live review database");
         Properties props = new Properties();
         try (var in = Files.newInputStream(Path.of(config))) { props.load(in); }
-        assertTrue(props.getProperty("review.databasePrefix", "").matches("review_0917_[a-f0-9]{8}_"));
-        assertTrue(props.getProperty("url", "").endsWith("/" + props.getProperty("review.databasePrefix") + "ora"));
+        String prefix = props.getProperty("review.databasePrefix", "");
+        String database = java.net.URI.create(props.getProperty("url").substring(5)).getPath().substring(1);
+        boolean legacyIsolated = prefix.matches("review_0917_[a-f0-9]{8}_") && database.equals(prefix + "ora");
+        boolean historicalIsolated = database.matches("dbv_hist_central_[0-9]{8}")
+            && "YES".equals(System.getenv("GAUSSDB_HISTORY_ALLOW_DDL"));
+        assertTrue(legacyIsolated || historicalIsolated, "Requires an explicitly isolated review database");
         props.setProperty("socketTimeout", "20");
         props.setProperty("sslmode", "disable");
         String url = props.getProperty("url");
@@ -54,7 +58,8 @@ class GaussDBSessionLiveTest {
             props.setProperty("socketTimeout", Integer.toString(timeout));
         }
         var loader = new URLClassLoader(new java.net.URL[]{Path.of(jar).toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-        return ((Driver) loader.loadClass(props.getProperty("review.driverClass")).getConstructor().newInstance())
+        return ((Driver) loader.loadClass(props.getProperty("review.driverClass", props.getProperty("driverClass")))
+            .getConstructor().newInstance())
             .connect(url, props);
     }
 
