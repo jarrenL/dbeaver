@@ -2908,6 +2908,53 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }
     }
 
+    @Test
+    void extractedEscapeStringsExecuteDistributed() throws Exception {
+        assertExtractedEscapeStrings(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void extractedEscapeStringsExecuteCentralized() throws Exception {
+        assertExtractedEscapeStrings(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertExtractedEscapeStrings(String config) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            String[][] cases = {
+                {"E'a;b'", "a;b"}, {"E'a'';b'", "a';b"}, {"E'it\\'s;still text'", "it's;still text"},
+                {"E'-- ; not comment'", "-- ; not comment"}, {"E'/* ; END; */'", "/* ; END; */"},
+                {"E'line1\\nline2;中文'", "line1\nline2;中文"}, {"E'line1\nline2;中文'", "line1\nline2;中文"}
+            };
+            var dialect = new GaussDBDialect();
+            var source = mock(org.jkiss.dbeaver.model.DBPDataSource.class);
+            var container = mock(org.jkiss.dbeaver.model.DBPDataSourceContainer.class);
+            var preferences = mock(org.jkiss.dbeaver.model.preferences.DBPPreferenceStore.class);
+            when(source.getContainer()).thenReturn(container);
+            when(source.getSQLDialect()).thenReturn(dialect);
+            when(container.getPreferenceStore()).thenReturn(preferences);
+            when(container.getActualConnectionConfiguration())
+                .thenReturn(new org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration());
+            when(preferences.getBoolean(org.jkiss.dbeaver.ModelPreferences.QUERY_REMOVE_TRAILING_DELIMITER)).thenReturn(true);
+            for (String[] test : cases) {
+                String query = "SELECT " + test[0];
+                String script = "SELECT 0;\r\n" + query + ";\nSELECT 2;";
+                var context = org.jkiss.dbeaver.model.sql.parser.SQLScriptParser
+                    .prepareSqlParserContext(source, dialect, preferences, script);
+                var queries = org.jkiss.dbeaver.model.sql.parser.SQLScriptParser
+                    .extractScriptQueries(context, 0, script.length(), false, false, false);
+                assertEquals(3, queries.size());
+                String[] expected = {"0", test[1], "2"};
+                for (int i = 0; i < queries.size(); i++) {
+                    try (var statement = connection.createStatement(); var rows = statement.executeQuery(queries.get(i).getText())) {
+                        assertTrue(rows.next());
+                        assertEquals(expected[i], rows.getString(1));
+                        assertFalse(rows.next());
+                    }
+                }
+            }
+        }, java.util.Map.of(), config);
+    }
+
     @FunctionalInterface
     private interface Scenario {
         void run(Connection connection, String schema) throws Exception;
