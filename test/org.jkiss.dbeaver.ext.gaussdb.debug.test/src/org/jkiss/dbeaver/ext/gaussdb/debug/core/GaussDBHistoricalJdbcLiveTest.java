@@ -1508,7 +1508,36 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         });
     }
 
-    private static void assertRealPlan(Connection c, String query) throws Exception {
+    @Test
+    void realRecursivePlanPreservesWorkTableAndCteNodes() throws Exception {
+        inIsolatedSchema((c, s) -> assertRealPlan(c,
+            "WITH RECURSIVE numbers(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM numbers WHERE n<5) SELECT sum(n) FROM numbers",
+            "Recursive Union", "WorkTable Scan", "CTE Scan"));
+    }
+
+    @Test
+    void realWindowPlanPreservesSortAndWindowNodes() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".window_rows(id integer, category integer)");
+            execute(c, "INSERT INTO " + s + ".window_rows VALUES(1,1),(2,1),(3,2)");
+            assertRealPlan(c, "SELECT id,row_number() OVER(PARTITION BY category ORDER BY id) FROM " + s + ".window_rows",
+                "WindowAgg", "Sort");
+        });
+    }
+
+    @Test
+    void realIndexPlanPreservesIndexScanUnderDistributedParent() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".indexed_rows(id integer PRIMARY KEY, label text)");
+            execute(c, "INSERT INTO " + s + ".indexed_rows VALUES(1,'one'),(2,'two')");
+            execute(c, "SET enable_seqscan=off");
+            execute(c, "SET enable_indexonlyscan=off");
+            execute(c, "SET enable_bitmapscan=off");
+            assertRealPlan(c, "SELECT label FROM " + s + ".indexed_rows WHERE id=1", "Index Scan");
+        });
+    }
+
+    private static void assertRealPlan(Connection c, String query, String... requiredNodeTypes) throws Exception {
         // Dedicated fixture session only: expose the operator tree instead of an opaque shipped query.
         execute(c, "SET enable_fast_query_shipping = off");
         var plan = new org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreExecutionPlan(false, false, query,
@@ -1543,6 +1572,14 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         var document = factory.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(
             xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         var expectedPlans = document.getElementsByTagName("Plan");
+        var typeElements = document.getElementsByTagName("Node-Type");
+        var actualTypes = new java.util.HashSet<String>();
+        for (int i = 0; i < typeElements.getLength(); i++) {
+            actualTypes.add(typeElements.item(i).getTextContent());
+        }
+        for (String required : requiredNodeTypes) {
+            assertTrue(actualTypes.contains(required), () -> "Missing required operator " + required + ": " + actualTypes);
+        }
         assertTrue(expectedPlans.getLength() > 1, "Fixture must exercise a real parent/child plan, not an empty Result");
         var roots = plan.getPlanNodes(java.util.Map.of());
         assertEquals(1, roots.size());
