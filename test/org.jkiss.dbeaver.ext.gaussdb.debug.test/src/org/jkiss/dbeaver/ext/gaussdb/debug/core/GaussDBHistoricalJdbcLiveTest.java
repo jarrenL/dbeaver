@@ -435,6 +435,40 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         });
     }
 
+    @Test
+    void productionRoutineSearchUsesCatalogCaseCommentsAndLimit() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE FUNCTION " + s + ".\"SearchFunction\"() RETURN integer AS BEGIN RETURN 7; END;");
+            execute(c, "CREATE PROCEDURE " + s + ".search_procedure() AS BEGIN NULL; END;");
+            execute(c, "COMMENT ON FUNCTION " + s + ".\"SearchFunction\"() IS 'routine_comment_token'");
+            var type = org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_PROCEDURE;
+            var matches = searchObjects(c, s, "search%", false, 10, false, type);
+            assertEquals(List.of("SearchFunction", "search_procedure"), matches.stream().map(r -> r.getName()).toList());
+            assertTrue(matches.stream().allMatch(r -> r.getObjectClass()
+                == org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedure.class));
+            assertEquals(List.of("search_procedure"), searchObjects(c, s, "search%", true, 10, false, type)
+                .stream().map(r -> r.getName()).toList());
+            assertEquals(1, searchObjects(c, s, "search%", false, 1, false, type).size());
+            assertTrue(searchObjects(c, s, "%routine_comment_token%", false, 10, false, type).isEmpty());
+            assertEquals(List.of("SearchFunction"), searchObjects(c, s, "%routine_comment_token%", false, 10, true, type)
+                .stream().map(r -> r.getName()).toList());
+        });
+    }
+
+    @Test
+    void productionRoutineSearchKeepsSameNamedFunctionsIsolatedAfterDrop() throws Exception {
+        inIsolatedSchema((c, s) -> inIsolatedSchema((other, otherSchema) -> {
+            execute(c, "CREATE FUNCTION " + s + ".same_routine() RETURN integer AS BEGIN RETURN 1; END;");
+            execute(other, "CREATE FUNCTION " + otherSchema + ".same_routine() RETURN integer AS BEGIN RETURN 2; END;");
+            var type = org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_PROCEDURE;
+            assertEquals(1, searchObjects(c, s, "same_routine", true, 10, false, type).size());
+            assertEquals(1, searchObjects(c, otherSchema, "same_routine", true, 10, false, type).size());
+            execute(c, "DROP FUNCTION " + s + ".same_routine()");
+            assertTrue(searchObjects(c, s, "same_routine", true, 10, false, type).isEmpty());
+            assertEquals(1, searchObjects(c, otherSchema, "same_routine", true, 10, false, type).size());
+        }));
+    }
+
     /** Production search algorithm and SQL, with a thin mock JDBC interface bridge to the real driver. */
     private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchTables(
         Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments
@@ -457,8 +491,20 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }
         var monitor = mock(DBRProgressMonitor.class);
         var source = mock(GaussDBDataSource.class);
+        var sourceContainer = mock(org.jkiss.dbeaver.model.DBPDataSourceContainer.class);
+        when(source.getContainer()).thenReturn(sourceContainer);
+        when(sourceContainer.getId()).thenReturn("historical-live-search");
         var database = mock(PostgreDatabase.class);
         var schema = mock(PostgreSchema.class);
+        var constructor = org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB.class
+            .getDeclaredConstructor(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource.class);
+        constructor.setAccessible(true);
+        when(source.getServerType()).thenReturn(
+            (org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB) constructor.newInstance(source));
+        when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+        when(database.getDataSource()).thenReturn(source);
+        when(schema.getDataSource()).thenReturn(source);
+        when(schema.getName()).thenReturn(schemaName);
         when(schema.getDatabase()).thenReturn(database);
         when(schema.getObjectId()).thenReturn(schemaId);
         when(database.getSchema(monitor, schemaId)).thenReturn(schema);
@@ -466,6 +512,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         when(context.getDataSource()).thenReturn(source);
         when(context.getDefaultCatalog()).thenReturn(database);
         var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        when(session.getDataSource()).thenReturn(source);
         when(session.getProgressMonitor()).thenReturn(monitor);
         when(context.openSession(eq(monitor), any(), anyString())).thenReturn(session);
         when(session.prepareStatement(anyString())).thenAnswer(invocation -> {
@@ -479,9 +526,13 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             when(statement.executeQuery()).thenAnswer(i -> {
                 var rows = actual.executeQuery();
                 var result = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+                when(result.getSession()).thenReturn(session);
                 when(result.next()).thenAnswer(a -> rows.next());
                 when(result.getString(anyString())).thenAnswer(a -> rows.getString(a.getArgument(0, String.class)));
                 when(result.getLong(anyString())).thenAnswer(a -> rows.getLong(a.getArgument(0, String.class)));
+                when(result.getObject(anyString())).thenAnswer(a -> rows.getObject(a.getArgument(0, String.class)));
+                when(result.getArray(anyString())).thenAnswer(a -> rows.getArray(a.getArgument(0, String.class)));
+                when(result.getBoolean(anyString())).thenAnswer(a -> rows.getBoolean(a.getArgument(0, String.class)));
                 when(result.wasNull()).thenAnswer(a -> rows.wasNull());
                 doAnswer(a -> { rows.close(); return null; }).when(result).close();
                 return result;
