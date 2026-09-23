@@ -369,6 +369,7 @@ public class PostgreServerGaussDB extends PostgreServerExtensionBase {
     public boolean isPGObject(@NotNull Object object) {
         String className = object.getClass().getName();
         return "org.postgresql.util.PGobject".equals(className) ||
+            "com.huawei.gauss200.jdbc.util.PGobject".equals(className) ||
             "com.huawei.gaussdb.jdbc.util.PGobject".equals(className);
     }
 
@@ -376,6 +377,7 @@ public class PostgreServerGaussDB extends PostgreServerExtensionBase {
     public boolean isPGArray(@NotNull Object object) {
         String className = object.getClass().getName();
         return "org.postgresql.jdbc.PgArray".equals(className) ||
+            "com.huawei.gauss200.jdbc.jdbc.PgArray".equals(className) ||
             "com.huawei.gaussdb.jdbc.jdbc.PgArray".equals(className);
     }
 

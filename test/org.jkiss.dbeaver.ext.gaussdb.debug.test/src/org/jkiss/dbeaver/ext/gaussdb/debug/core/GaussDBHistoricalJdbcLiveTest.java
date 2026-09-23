@@ -1738,6 +1738,46 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             }
         });
     }
+
+    @Test
+    void vendorCatalogVectorsAndArraysUseProductionUnwrapping() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE FUNCTION " + s
+                + ".vector_probe(x numeric, y integer) RETURN numeric AS BEGIN RETURN x + y; END;");
+            var source = mock(org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource.class);
+            var constructor = org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB.class
+                .getDeclaredConstructor(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource.class);
+            constructor.setAccessible(true);
+            var server = (org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB) constructor.newInstance(source);
+            when(source.getServerType()).thenReturn(server);
+            try (var query = c.prepareStatement("SELECT proargtypes FROM pg_proc p JOIN pg_namespace n"
+                + " ON n.oid=p.pronamespace WHERE n.nspname=? AND p.proname='vector_probe'")) {
+                query.setString(1, s);
+                try (var rows = query.executeQuery()) {
+                    assertTrue(rows.next());
+                    Object vector = rows.getObject(1);
+                    assertTrue(server.isPGObject(vector), "Vendor catalog PGobject must be recognized");
+                    assertArrayEquals(new long[]{1700, 23},
+                        org.jkiss.dbeaver.ext.postgresql.PostgreUtils.getIdVector(vector, source));
+                    assertArrayEquals(new int[]{1700, 23},
+                        org.jkiss.dbeaver.ext.postgresql.PostgreUtils.getIntVector(vector, source));
+                }
+            }
+            try (var query = c.createStatement(); var rows = query.executeQuery("SELECT ARRAY[23,1700]::bigint[]")) {
+                assertTrue(rows.next());
+                var array = rows.getArray(1);
+                try {
+                    assertTrue(server.isPGArray(array), "Vendor PgArray must be recognized");
+                    assertArrayEquals(new long[]{23, 1700},
+                        org.jkiss.dbeaver.ext.postgresql.PostgreUtils.getIdVector(array, source));
+                } finally {
+                    array.free();
+                }
+            }
+            assertFalse(server.isPGObject(new Object()));
+            assertFalse(server.isPGArray(new Object()));
+        });
+    }
     @FunctionalInterface
     private interface Scenario {
         void run(Connection connection, String schema) throws Exception;
