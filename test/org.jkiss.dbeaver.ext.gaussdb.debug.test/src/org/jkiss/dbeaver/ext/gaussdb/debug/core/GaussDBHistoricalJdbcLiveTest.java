@@ -2351,12 +2351,18 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private static void withIndependentConnection(ConnectionScenario scenario, String database) throws Exception {
+        withIndependentConnection(scenario, database, java.util.Map.of());
+    }
+
+    private static void withIndependentConnection(ConnectionScenario scenario, String database,
+        java.util.Map<String, String> overrides) throws Exception {
         var p = new Properties();
         try (var input = Files.newInputStream(Path.of(System.getenv("GAUSSDB_HISTORY_CONNECTION")))) {
             p.load(input);
         }
         p.setProperty("socketTimeout", "20");
         p.setProperty("connectTimeout", "10");
+        p.putAll(overrides);
         String url = p.getProperty("url");
         if (database != null) {
             assertTrue(database.matches("[a-z0-9_]+"), "Dedicated test database name required");
@@ -2372,6 +2378,26 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                 scenario.run(observer);
             }
         }
+    }
+
+    @Test
+    void requiredSslDoesNotSilentlyDowngradeWhenServerSslIsDisabled() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            try (var statement = c.createStatement(); var rows = statement.executeQuery("SHOW ssl")) {
+                assertTrue(rows.next());
+                assumeTrue("off".equalsIgnoreCase(rows.getString(1)), "Requires the SSL-disabled test endpoint");
+            }
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(connection -> fail("Required SSL must not connect without TLS"),
+                    null, java.util.Map.of("sslmode", "require")));
+            assertEquals("08004", failure.getSQLState());
+            // 'prefer' explicitly permits plaintext fallback; it is not proof of encryption.
+            withIndependentConnection(connection -> {
+                assertTrue(connection.isValid(5));
+                assertRows(connection, "SELECT 1", List.of(List.of("1")));
+            }, null, java.util.Map.of("sslmode", "prefer"));
+            assertRows(c, "SELECT 1", List.of(List.of("1")));
+        });
     }
 
     @Test

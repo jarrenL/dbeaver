@@ -66,6 +66,61 @@ class PostgreRoleMetadataTest {
     }
 
     @Test
+    void roleDdlKeepsSupportedPrivilegeFlagsIndependent() throws Exception {
+        String[] options = {"SUPERUSER", "CREATEDB", "CREATEROLE", "LOGIN", "REPLICATION", "BYPASSRLS"};
+        for (int mask = 0; mask < 64; mask++) {
+            var role = exportRole(7);
+            var extension = role.getDataSource().getServerType();
+            when(extension.supportsSuperusers()).thenReturn(true);
+            when(extension.supportsRolesWithCreateDBAbility()).thenReturn(true);
+            when(extension.supportsInheritance()).thenReturn(true);
+            when(extension.supportsRoleReplication()).thenReturn(true);
+            when(extension.supportsRoleBypassRLS()).thenReturn(true);
+            role.setSuperUser((mask & 1) != 0);
+            role.setCreateDatabase((mask & 2) != 0);
+            role.setCreateRole((mask & 4) != 0);
+            role.setCanLogin((mask & 8) != 0);
+            role.setReplication((mask & 16) != 0);
+            role.setBypassRls((mask & 32) != 0);
+            var ddl = role.getObjectDefinitionText(new VoidProgressMonitor(), Map.of());
+            var lines = ddl.lines().map(String::trim).toList();
+            for (int index = 0; index < options.length; index++) {
+                boolean enabled = (mask & (1 << index)) != 0;
+                assertTrue(lines.contains((enabled ? "" : "NO") + options[index]), ddl);
+                assertFalse(lines.contains((enabled ? "NO" : "") + options[index]), ddl);
+            }
+            assertTrue(lines.contains("NOINHERIT"), ddl);
+        }
+    }
+
+    @Test
+    void roleDdlQuotesEmbeddedQuotesAndCommentAndPreservesExpiry() throws Exception {
+        var role = exportRole(7);
+        role.setName("Role \"中文\"");
+        role.setDescription("研发's role; --说明");
+        role.setValidUntil(LocalDateTime.of(2030, 1, 2, 3, 4, 5));
+        var ddl = role.getObjectDefinitionText(new VoidProgressMonitor(), Map.of());
+        assertTrue(ddl.contains("CREATE ROLE \"Role \"\"中文\"\"\" WITH"), ddl);
+        assertTrue(ddl.contains("VALID UNTIL '2030-01-02T03:04:05'"), ddl);
+        assertTrue(ddl.contains("COMMENT ON ROLE \"Role \"\"中文\"\"\" IS '研发''s role; --说明';"), ddl);
+    }
+
+    @Test
+    void unsupportedPrivilegeOptionsAreOmittedEvenWhenModelFlagsAreTrue() throws Exception {
+        var role = exportRole(7);
+        role.setSuperUser(true);
+        role.setCreateDatabase(true);
+        role.setReplication(true);
+        role.setBypassRls(true);
+        var ddl = role.getObjectDefinitionText(new VoidProgressMonitor(), Map.of());
+        for (String option : new String[] {"SUPERUSER", "CREATEDB", "INHERIT", "REPLICATION", "BYPASSRLS"}) {
+            assertFalse(ddl.contains(option), ddl);
+        }
+        assertFalse(ddl.contains("VALID UNTIL"), ddl);
+        assertFalse(ddl.contains("COMMENT ON ROLE"), ddl);
+    }
+
+    @Test
     void catalogFieldsRemainIndependentAndPreserveUnlimitedConnections() throws Exception {
         var database = mock(PostgreDatabase.class);
         var rows = mock(ResultSet.class);
