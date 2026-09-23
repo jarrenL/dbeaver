@@ -694,24 +694,28 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
                     }
                 }
             }
-            int itemCount = logTable.getItemCount();
-            if (itemCount > entriesPerPage) {
-                int[] indexes = new int[itemCount - entriesPerPage];
-                for (int i = 0; i < itemCount - entriesPerPage; i++) {
-                    indexes[i] = entriesPerPage + i;
-                    TableItem tableItem = logTable.getItem(entriesPerPage + i);
-                    if (tableItem != null && tableItem.getData() instanceof QMMObject) {
-                        objectToItemMap.remove(((QMMObject) tableItem.getData()).getObjectId());
-                    }
-                }
-                logTable.remove(indexes);
-            }
+            trimToPageSize();
         } catch (Exception e) {
             log.error("Error updating Query Log", e); //$NON-NLS-1$
         } finally {
             if (!logTable.isDisposed()) {
                 logTable.setRedraw(true);
             }
+        }
+    }
+
+    private void trimToPageSize() {
+        int itemCount = logTable.getItemCount();
+        if (itemCount > entriesPerPage) {
+            int[] indexes = new int[itemCount - entriesPerPage];
+            for (int i = 0; i < itemCount - entriesPerPage; i++) {
+                indexes[i] = entriesPerPage + i;
+                TableItem tableItem = logTable.getItem(entriesPerPage + i);
+                if (tableItem.getData() instanceof QMEvent event) {
+                    objectToItemMap.remove(event.getObject().getObjectId());
+                }
+            }
+            logTable.remove(indexes);
         }
     }
 
