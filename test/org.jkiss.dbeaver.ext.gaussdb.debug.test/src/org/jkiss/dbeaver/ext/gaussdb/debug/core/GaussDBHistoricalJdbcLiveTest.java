@@ -61,12 +61,15 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             assertTrue(ddl.toUpperCase(java.util.Locale.ROOT).contains("INTERVAL"));
             execute(c, "DROP TABLE " + table);
             execute(c, ddl);
-            assertRows(c, partitions, List.of(List.of("3")));
-            execute(c, "INSERT INTO " + table + " VALUES(4,'2024-04-01')");
+            // pg_get_tabledef exports the declared initial partition and interval policy,
+            // not the data-dependent partitions generated while populating the old table.
+            assertRows(c, partitions, List.of(List.of("1")));
+            execute(c, "INSERT INTO " + table + " VALUES(2,'2024-02-29'),(3,'2024-03-01'),(4,'2024-04-01')");
             assertRows(c, partitions, List.of(List.of("4")));
-            assertRows(c, "SELECT id,to_char(event_date,'YYYY-MM-DD') FROM " + table,
-                List.of(List.of("4", "2024-04-01")));
-        });
+            assertRows(c, "SELECT id,to_char(event_date,'YYYY-MM-DD') FROM " + table + " ORDER BY id",
+                List.of(List.of("2", "2024-02-29"), List.of("3", "2024-03-01"), List.of("4", "2024-04-01")));
+        }, java.util.Map.of(), System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION") != null
+            ? System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION") : System.getenv("GAUSSDB_HISTORY_CONNECTION"));
     }
 
     @Test
@@ -1688,18 +1691,32 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
 
     @Test
     void compositeForeignKeyMetadataAndCascadeWhenServerSupportsForeignKeys() throws Exception {
+        assertCompositeForeignKey(System.getenv("GAUSSDB_HISTORY_CONNECTION"), " DISTRIBUTE BY REPLICATION");
+    }
+
+    @Test
+    void centralizedCompositeForeignKeyMetadataAndCascade() throws Exception {
+        assertCompositeForeignKey(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"), "");
+    }
+
+    private void assertCompositeForeignKey(String config, String distribution) throws Exception {
         inIsolatedSchema((c, s) -> {
-            execute(c, "CREATE TABLE " + s + ".fk_parent(a integer,b integer,PRIMARY KEY(a,b)) DISTRIBUTE BY REPLICATION");
+            execute(c, "CREATE TABLE " + s + ".fk_parent(a integer,b integer,PRIMARY KEY(a,b))" + distribution);
             try {
                 execute(c, "CREATE TABLE " + s + ".fk_child(id integer,a integer,b integer,CONSTRAINT fk_pair "
                     + "FOREIGN KEY(a,b) REFERENCES " + s + ".fk_parent(a,b) ON UPDATE CASCADE ON DELETE CASCADE) "
-                    + "DISTRIBUTE BY REPLICATION");
+                    + distribution);
             } catch (java.sql.SQLException e) {
                 if ("0A000".equals(e.getSQLState())) {
                     assumeTrue(false, "Server rejects foreign keys with SQLSTATE 0A000; positive FK path not verified");
                 }
                 throw e;
             }
+            String childDdl = readProductionTableDdl(c, s + ".fk_child");
+            assertNotNull(childDdl);
+            assertTrue(childDdl.toUpperCase(java.util.Locale.ROOT).contains("FOREIGN KEY"));
+            execute(c, "DROP TABLE " + s + ".fk_child");
+            execute(c, childDdl);
             var columns = new java.util.ArrayList<String>();
             try (var keys = c.getMetaData().getImportedKeys(null, s, "fk_child")) {
                 while (keys.next()) {
@@ -1722,7 +1739,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             assertRows(c, "SELECT a,b FROM " + s + ".fk_child", List.of(List.of("3", "2")));
             execute(c, "DELETE FROM " + s + ".fk_parent WHERE a=3");
             assertEquals(0, count(c, s + ".fk_child"));
-        });
+        }, java.util.Map.of(), config);
     }
 
     @Test
@@ -1790,6 +1807,15 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
 
     @Test
     void sequenceRestartRequiresServerSupport() throws Exception {
+        assertSequenceRestart(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void centralizedSequenceRestartRequiresServerSupport() throws Exception {
+        assertSequenceRestart(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertSequenceRestart(String config) throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE SEQUENCE " + s + ".seq START WITH 10");
             try {
@@ -1806,7 +1832,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                     assertEquals(100, result.getLong(1));
                 }
             }
-        });
+        }, java.util.Map.of(), config);
     }
 
     @Test
@@ -2505,7 +2531,10 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private void inIsolatedSchema(Scenario scenario, java.util.Map<String, String> driverOptions) throws Exception {
-        String config = System.getenv("GAUSSDB_HISTORY_CONNECTION");
+        inIsolatedSchema(scenario, driverOptions, System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    private void inIsolatedSchema(Scenario scenario, java.util.Map<String, String> driverOptions, String config) throws Exception {
         assumeTrue(config != null, "Live connection not configured; not a passing database test");
         assertEquals("YES", System.getenv("GAUSSDB_HISTORY_ALLOW_DDL"), "Explicit isolated test database consent required");
         String jar = System.getenv("GAUSSDB_HISTORY_JDBC");
@@ -2540,7 +2569,8 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                 } finally {
                     try {
                         if (connection.isClosed()) {
-                            withIndependentConnection(cleanup -> execute(cleanup, "DROP SCHEMA " + schema + " CASCADE"));
+                            withIndependentConnection(cleanup -> execute(cleanup, "DROP SCHEMA " + schema + " CASCADE"),
+                                null, java.util.Map.of(), config);
                         } else {
                             if (!connection.getAutoCommit()) {
                                 connection.rollback();
@@ -2682,8 +2712,13 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
 
     private static void withIndependentConnection(ConnectionScenario scenario, String database,
         java.util.Map<String, String> overrides) throws Exception {
+        withIndependentConnection(scenario, database, overrides, System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    private static void withIndependentConnection(ConnectionScenario scenario, String database,
+        java.util.Map<String, String> overrides, String config) throws Exception {
         var p = new Properties();
-        try (var input = Files.newInputStream(Path.of(System.getenv("GAUSSDB_HISTORY_CONNECTION")))) {
+        try (var input = Files.newInputStream(Path.of(config))) {
             p.load(input);
         }
         p.setProperty("socketTimeout", "20");
