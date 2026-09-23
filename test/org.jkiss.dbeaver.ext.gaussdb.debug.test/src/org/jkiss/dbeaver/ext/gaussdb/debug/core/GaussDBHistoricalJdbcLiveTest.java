@@ -2709,6 +2709,20 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private void assertGeneratedInsertRoundTrip(String config, boolean verifyDelete) throws Exception {
+        assertGeneratedInsertRoundTrip(config, verifyDelete, false);
+    }
+
+    @Test
+    void generatedUpdateExecutesAndRollsBackDistributed() throws Exception {
+        assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CONNECTION"), false, true);
+    }
+
+    @Test
+    void generatedUpdateExecutesAndRollsBackCentralized() throws Exception {
+        assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"), false, true);
+    }
+
+    private void assertGeneratedInsertRoundTrip(String config, boolean verifyDelete, boolean verifyUpdate) throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "SET search_path TO " + s);
             execute(c, "CREATE TABLE \"订单 表\" (\"first col\" text, \"second col\" text)");
@@ -2780,6 +2794,55 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             }
             assertEquals(values.length, count(c, "\"订单 表\""));
             assertEquals(values.length, count(c, "reference_rows"));
+            if (verifyUpdate) {
+                var updateClass = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model.sql")
+                    .loadClass("org.jkiss.dbeaver.model.sql.generator.resultset.SQLGeneratorUpdateFromData");
+                var updateGenerator = updateClass.getConstructor().newInstance();
+                updateClass.getMethod("initGenerator", List.class).invoke(updateGenerator, List.of(provider));
+                updateClass.getMethod("setFullyQualifiedNames", boolean.class).invoke(updateGenerator, false);
+                updateClass.getMethod("setCompactSQL", boolean.class).invoke(updateGenerator, true);
+                var generateUpdate = updateClass.getDeclaredMethod("generateSQL", DBRProgressMonitor.class,
+                    StringBuilder.class, org.jkiss.dbeaver.model.data.DBDResultSetDataProvider.class);
+                generateUpdate.setAccessible(true);
+                var identifier = mock(org.jkiss.dbeaver.model.data.DBDRowIdentifier.class);
+                when(identifier.getAttributes()).thenReturn(List.of(bindings[0]));
+                when(provider.getDefaultRowIdentifier()).thenReturn(identifier);
+                String[] expected = new String[values.length];
+                // Capture the server's empty-string normalization, already compared to bound JDBC above.
+                try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                    "SELECT value FROM reference_rows ORDER BY id")) {
+                    for (int i = 0; i < expected.length; i++) {
+                        assertTrue(rows.next());
+                        expected[i] = rows.getString(1);
+                    }
+                    assertFalse(rows.next());
+                }
+                for (String value : new String[] {null, "NULL", "O'Reilly", "中文\n第二行", "x'); DROP TABLE reference_rows; --"}) {
+                    var row = mock(org.jkiss.dbeaver.model.data.DBDValueRow.class);
+                    doReturn(List.of(row)).when(provider).getSelectedRows();
+                    when(provider.getCellValue(bindings[0], row)).thenReturn("4");
+                    when(provider.getCellValue(bindings[1], row)).thenReturn(value);
+                    var sql = new StringBuilder();
+                    generateUpdate.invoke(updateGenerator, new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), sql, provider);
+                    c.setAutoCommit(false);
+                    try (var statement = c.createStatement()) {
+                        assertEquals(1, statement.executeUpdate(sql.toString()));
+                    }
+                    var changed = expected.clone();
+                    changed[4] = value;
+                    assertGeneratedTextRows(c, changed);
+                    c.rollback();
+                    assertGeneratedTextRows(c, expected);
+                    try (var statement = c.createStatement()) {
+                        assertEquals(1, statement.executeUpdate(sql.toString()));
+                    }
+                    c.commit();
+                    c.setAutoCommit(true);
+                    expected = changed;
+                    assertGeneratedTextRows(c, expected);
+                    assertEquals(values.length, count(c, "reference_rows"));
+                }
+            }
             if (verifyDelete) {
                 var deleteClass = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model.sql")
                     .loadClass("org.jkiss.dbeaver.model.sql.generator.resultset.SQLGeneratorDeleteFromData");
@@ -2831,6 +2894,18 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                 }
             }
         }, java.util.Map.of(), config);
+    }
+
+    private void assertGeneratedTextRows(Connection connection, String[] expected) throws Exception {
+        try (var statement = connection.createStatement(); var rows = statement.executeQuery(
+            "SELECT \"first col\", \"second col\" FROM \"订单 表\" ORDER BY \"first col\"")) {
+            for (int i = 0; i < expected.length; i++) {
+                assertTrue(rows.next());
+                assertEquals(Integer.toString(i), rows.getString(1));
+                assertEquals(expected[i], rows.getString(2), "Unexpected value at row " + i);
+            }
+            assertFalse(rows.next());
+        }
     }
 
     @FunctionalInterface
