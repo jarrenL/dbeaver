@@ -229,6 +229,8 @@ CSVImporterTest 12 项全部通过，完整回归 **800 项：787 通过、13 �
 
 ### 连接生命周期与事务边界
 
+后续分布式批次见本页末节；本节860项为当时快照。
+
 在后续权限、搜索回归基础上追加 3 项厂商 JDBC / GaussDB 507 真库测试：
 
 - `closingConnectionRollsBackUncommittedRowsAndRejectsFurtherStatements`：独立写连接未提交行仅自身可见；close 后 isClosed=true，创建语句失败，重复 close 安全；另两连接确认没有残留行。
@@ -236,3 +238,11 @@ CSVImporterTest 12 项全部通过，完整回归 **800 项：787 通过、13 �
 - `readOnlyTransactionRejectsWritesAndNormalConnectionRemainsWritable`：只读事务可查询，但 INSERT 返回 SQLSTATE 25006；回滚并解除只读后写入、提交成功，独立连接确认只有恢复后的行。
 
 完整回归 **860 项：847 通过、13 跳过、零失败/错误**，见 [连接生命周期逐项结果](test-results-20260923-connection-lifecycle.json)。数字包含已有测试，不能解释为历史原始方法覆盖率。此批验证驱动/服务端契约，不替代 DBeaver 连接池、界面只读开关、异常认证、SSL 或网络故障后的自动重连。
+
+### 分布策略和 EXECUTE DIRECT
+
+新增5个真库方法：复合 HASH 键包含 NULL/中文/引号的40行及聚合、复制维表 JOIN 100行不放大、ROUNDROBIN 的101行验证、普通账号 EXECUTE DIRECT 权限拒绝、监控管理员逐 DN 查询合并精确匹配 CN 的100行。
+
+当前507拒绝 ROUNDROBIN 创建（0A000），该方法跳过，不算通过。普通账号与监控权限是相反前提，分别执行完整回归，各 **865项：850通过、15跳过、零失败/错误**。普通配置的权限拒绝通过、授权配置的 DN 结果通过；两次计数不可相加。参见 [普通账号结果](test-results-20260923-distribution-ordinary.json) 和 [监控权限结果](test-results-20260923-distribution-monitor.json)。测试后恢复普通账号权限并删除临时授权对象。
+
+此批是客户端 JDBC SQL/结果契约，不代表分布列图形化编辑、DDL 导出往返或其他版本全部支持；服务端不支持项仍列为未完成验证。

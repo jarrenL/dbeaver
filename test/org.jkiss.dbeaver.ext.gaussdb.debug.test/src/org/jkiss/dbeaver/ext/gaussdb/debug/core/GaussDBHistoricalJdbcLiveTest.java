@@ -37,6 +37,134 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void compositeHashKeysIncludingNullPreserveRowsAndAggregation() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".hash_rows";
+            execute(c, "CREATE TABLE " + table
+                + "(id integer, tenant varchar(30), amount numeric(12,2)) DISTRIBUTE BY HASH(id,tenant)");
+            try (var insert = c.prepareStatement("INSERT INTO " + table + " VALUES(?,?,?)")) {
+                for (int i = 0; i < 40; i++) {
+                    if (i % 5 == 0) {
+                        insert.setNull(1, java.sql.Types.INTEGER);
+                    } else {
+                        insert.setInt(1, i);
+                    }
+                    insert.setString(2, i % 2 == 0 ? "中文租户" : "tenant-'B");
+                    insert.setBigDecimal(3, new java.math.BigDecimal("1.25"));
+                    assertEquals(1, insert.executeUpdate());
+                }
+            }
+            assertRows(c, "SELECT count(*),count(id),sum(amount) FROM " + table,
+                List.of(List.of("40", "32", "50.00")));
+            assertRows(c, "SELECT tenant,count(*) FROM " + table + " GROUP BY tenant ORDER BY count(*),tenant COLLATE \"C\"",
+                List.of(List.of("tenant-'B", "20"), List.of("中文租户", "20")));
+            assertRows(c, "SELECT pclocatortype FROM pgxc_class WHERE pcrelid='" + table + "'::regclass",
+                List.of(List.of("H")));
+            c.setAutoCommit(false);
+            execute(c, "DELETE FROM " + table + " WHERE id IS NULL");
+            assertEquals(32, count(c, table));
+            c.rollback();
+            assertObserverCount(table, 40);
+        });
+    }
+
+    @Test
+    void replicatedLookupJoinDoesNotMultiplyRowsAcrossDataNodes() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".lookup(id integer PRIMARY KEY,label varchar(20)) DISTRIBUTE BY REPLICATION");
+            execute(c, "CREATE TABLE " + s + ".facts(id integer,lookup_id integer) DISTRIBUTE BY HASH(id)");
+            execute(c, "INSERT INTO " + s + ".lookup VALUES(1,'one'),(2,'two')");
+            execute(c, "INSERT INTO " + s + ".facts SELECT i,1+i%2 FROM generate_series(1,100) i");
+            assertRows(c, "SELECT l.label,count(*) FROM " + s + ".facts f JOIN " + s
+                + ".lookup l ON f.lookup_id=l.id GROUP BY l.label ORDER BY l.label",
+                List.of(List.of("one", "50"), List.of("two", "50")));
+            assertRows(c, "SELECT pclocatortype FROM pgxc_class WHERE pcrelid='" + s + ".lookup'::regclass",
+                List.of(List.of("R")));
+            assertObserverCount(s + ".lookup", 2);
+        });
+    }
+
+    @Test
+    void roundRobinDistributionReturnsEveryRowExactlyOnce() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".round_rows";
+            try {
+                execute(c, "CREATE TABLE " + table + "(id integer,label varchar(20)) DISTRIBUTE BY ROUNDROBIN");
+            } catch (java.sql.SQLException error) {
+                if ("0A000".equals(error.getSQLState())) {
+                    assumeTrue(false, "Server rejects ROUNDROBIN distribution (0A000); not a passing scenario");
+                }
+                throw error;
+            }
+            execute(c, "INSERT INTO " + table + " SELECT i,'row-'||i FROM generate_series(1,101) i");
+            assertRows(c, "SELECT count(*),count(DISTINCT id),min(id),max(id),sum(id) FROM " + table,
+                List.of(List.of("101", "101", "1", "101", "5151")));
+            assertRows(c, "SELECT pclocatortype FROM pgxc_class WHERE pcrelid='" + table + "'::regclass",
+                List.of(List.of("N")));
+        });
+    }
+
+    @Test
+    void executeDirectOnActualTableNodesReconstructsTheCoordinatorRows() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            assumeTrue(canExecuteDirect(c), "EXECUTE DIRECT requires a separately authorized monitor/system admin run");
+            String table = s + ".direct_rows";
+            execute(c, "CREATE TABLE " + table + "(id integer) DISTRIBUTE BY HASH(id)");
+            execute(c, "INSERT INTO " + table + " SELECT i FROM generate_series(1,100) i");
+            var nodes = new java.util.ArrayList<String>();
+            try (var query = c.createStatement(); var rows = query.executeQuery(
+                "SELECT n.node_name FROM pgxc_node n JOIN pgxc_class x ON n.oid=ANY(x.nodeoids) "
+                    + "WHERE x.pcrelid='" + table + "'::regclass AND n.node_type='D' ORDER BY n.node_name")) {
+                while (rows.next()) {
+                    nodes.add(rows.getString(1));
+                }
+            }
+            assertFalse(nodes.isEmpty(), "No data nodes found for the test table");
+            var actual = new java.util.ArrayList<Integer>();
+            for (String node : nodes) {
+                String command = "EXECUTE DIRECT ON (\"" + node.replace("\"", "\"\"")
+                    + "\") 'SELECT id FROM " + table + "'";
+                try (var query = c.createStatement()) {
+                    query.setQueryTimeout(15);
+                    try (var rows = query.executeQuery(command)) {
+                        while (rows.next()) {
+                            actual.add(rows.getInt(1));
+                        }
+                    }
+                }
+            }
+            actual.sort(Integer::compareTo);
+            assertEquals(java.util.stream.IntStream.rangeClosed(1, 100).boxed().toList(), actual);
+            assertEquals(100, count(c, table));
+        });
+    }
+
+    @Test
+    void ordinaryAccountCannotBypassCoordinatorWithExecuteDirect() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            assumeTrue(!canExecuteDirect(c), "Permission rejection requires an ordinary account run");
+            String node;
+            try (var query = c.createStatement(); var rows = query.executeQuery(
+                "SELECT node_name FROM pgxc_node WHERE node_type='D' ORDER BY node_name LIMIT 1")) {
+                assertTrue(rows.next());
+                node = rows.getString(1);
+            }
+            var error = assertThrows(java.sql.SQLException.class, () -> execute(c,
+                "EXECUTE DIRECT ON (\"" + node.replace("\"", "\"\"") + "\") 'SELECT 1'"));
+            assertEquals("42501", error.getSQLState());
+            assertConnectionUsable(c);
+        });
+    }
+
+    private static boolean canExecuteDirect(Connection c) throws Exception {
+        try (var query = c.createStatement(); var rows = query.executeQuery(
+            "SELECT rolsystemadmin OR rolmonitoradmin FROM pg_roles WHERE rolname=current_user")) {
+            assertTrue(rows.next());
+            return rows.getBoolean(1);
+        }
+    }
+
+    @Test
     void productionSchemaSearchExecutesNamespaceIdBinding() throws Exception {
         inIsolatedSchema((c, s) -> {
             var rows = searchObjects(c, s, s, true, 10, false,
