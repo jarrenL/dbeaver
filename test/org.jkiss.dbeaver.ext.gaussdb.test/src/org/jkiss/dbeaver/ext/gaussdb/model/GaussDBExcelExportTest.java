@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.jkiss.dbeaver.data.office.export.DataExporterXLSX;
 import org.jkiss.dbeaver.model.DBPDataKind;
@@ -39,6 +40,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -250,6 +252,63 @@ public class GaussDBExcelExportTest {
             assertEquals(2, sheet.getPhysicalNumberOfRows());
             assertEquals("金额 中文", sheet.getRow(0).getCell(0).getStringCellValue());
             assertEquals("首行", sheet.getRow(1).getCell(0).getStringCellValue());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"1900-01-01 00:00:00", "2000-02-29 12:34:56", "2026-09-24 23:59:59.123"})
+    public void dateCellsPreserveLocalDateTimeAndRequestedFormat(String value) throws Exception {
+        Timestamp timestamp = Timestamp.valueOf(value);
+        String format = "yyyy-mm-dd hh:mm:ss.000";
+        try (XSSFWorkbook workbook = export(DBPDataKind.DATETIME, Map.of("dateFormat", format),
+            new Object[]{timestamp})) {
+            var cell = workbook.getSheetAt(0).getRow(1).getCell(0);
+            assertEquals(CellType.NUMERIC, cell.getCellType());
+            assertEquals(format, cell.getCellStyle().getDataFormatString());
+            assertEquals(timestamp.toLocalDateTime(), cell.getLocalDateTimeCellValue());
+        }
+    }
+
+    @Test
+    public void dateBeforeSpreadsheetEpochUsesFormattedText() throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.DATETIME, Map.of("dateFormat", "yyyy-MM-dd HH:mm:ss"),
+            new Object[]{Timestamp.valueOf("1899-12-31 12:34:56")})) {
+            var cell = workbook.getSheetAt(0).getRow(1).getCell(0);
+            assertEquals(CellType.STRING, cell.getCellType());
+            assertEquals("1899-12-31 12:34:56", cell.getStringCellValue());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"NUMERIC", "BOOLEAN"})
+    public void typedNullExportsAsEmptyTextRatherThanZeroOrFalse(String kind) throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.valueOf(kind), Map.of(), new Object[]{null})) {
+            var cell = workbook.getSheetAt(0).getRow(1).getCell(0);
+            assertEquals(CellType.STRING, cell.getCellType());
+            assertEquals("", cell.getStringCellValue());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"label", "none"})
+    public void rowNumberOptionShiftsDataWithoutOverwritingIt(String header) throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("header", header, "rownumber", true),
+            new Object[]{"第一条"}, new Object[]{"第二条"})) {
+            var sheet = workbook.getSheetAt(0);
+            int start = "label".equals(header) ? 1 : 0;
+            assertEquals(start + 2, sheet.getPhysicalNumberOfRows());
+            DataFormatter formatter = new DataFormatter();
+            for (int i = 0; i < 2; i++) {
+                var row = sheet.getRow(start + i);
+                assertEquals(2, row.getPhysicalNumberOfCells());
+                // Existing option uses the sheet row index (zero when the header is disabled).
+                assertEquals(Integer.toString(start + i), formatter.formatCellValue(row.getCell(0)));
+                assertEquals(i == 0 ? "第一条" : "第二条", row.getCell(1).getStringCellValue());
+            }
+            if (start == 1) {
+                assertEquals("金额 中文", sheet.getRow(0).getCell(1).getStringCellValue());
+                assertNull(sheet.getRow(0).getCell(0));
+            }
         }
     }
 
