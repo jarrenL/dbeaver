@@ -48,6 +48,7 @@ public abstract class AbstractCommandContext implements DBECommandContext {
     private final List<DBECommandListener> listeners = new ArrayList<>();
 
     private final boolean atomic;
+    private boolean atomicSaveUnsafe;
 
     /**
      * Creates new context
@@ -83,6 +84,9 @@ public abstract class AbstractCommandContext implements DBECommandContext {
 
     @Override
     public void saveChanges(@NotNull DBRProgressMonitor monitor, @NotNull Map<String, Object> options) throws DBException {
+        if (atomicSaveUnsafe) {
+            throw new DBException(ModelMessages.model_edit_atomic_uncertain);
+        }
         if (CommonUtils.getOption(options, OPTION_ATOMIC_TRANSACTION)) {
             saveAtomicChanges(monitor, options);
             return;
@@ -194,6 +198,8 @@ public abstract class AbstractCommandContext implements DBECommandContext {
         }
         boolean transactionFinished = false;
         boolean committed = false;
+        boolean commitAttempted = false;
+        Throwable primaryFailure = null;
         try (DBCSession session = executionContext.openSession(monitor, DBCExecutionPurpose.META_DDL,
             ModelMessages.model_edit_atomic_task)) {
             transaction.setAutoCommit(monitor, false);
@@ -221,15 +227,23 @@ public abstract class AbstractCommandContext implements DBECommandContext {
                 if (monitor.isCanceled()) {
                     throw new DBException(ModelMessages.model_edit_atomic_canceled);
                 }
+                commitAttempted = true;
+                atomicSaveUnsafe = true;
                 transaction.commit(session);
                 committed = true;
                 transactionFinished = true;
             } catch (Throwable failure) {
+                primaryFailure = failure;
                 try {
                     transaction.rollback(session, null);
                     transactionFinished = true;
                 } catch (Throwable rollbackFailure) {
+                    atomicSaveUnsafe = true;
                     failure.addSuppressed(rollbackFailure);
+                }
+                if (commitAttempted) {
+                    // A successful rollback cannot establish whether an earlier COMMIT reached the server.
+                    throw new DBException(ModelMessages.model_edit_atomic_uncertain, failure);
                 }
                 throw failure;
             } finally {
@@ -253,10 +267,20 @@ public abstract class AbstractCommandContext implements DBECommandContext {
                 }
                 // Restoring autocommit after a failed rollback could commit partial work.
                 if (transactionFinished) {
-                    transaction.setAutoCommit(monitor, true);
+                    try {
+                        transaction.setAutoCommit(monitor, true);
+                    } catch (Throwable restoreFailure) {
+                        atomicSaveUnsafe = true;
+                        if (primaryFailure != null) {
+                            primaryFailure.addSuppressed(restoreFailure);
+                        } else {
+                            throw restoreFailure;
+                        }
+                    }
                 }
             }
         }
+        atomicSaveUnsafe = false;
         for (DBECommandListener listener : getListeners()) {
             listener.onSave();
         }

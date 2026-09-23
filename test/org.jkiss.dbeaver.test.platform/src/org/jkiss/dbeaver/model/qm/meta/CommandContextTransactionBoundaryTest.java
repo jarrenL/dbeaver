@@ -19,6 +19,44 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CommandContextTransactionBoundaryTest {
+    @Test
+    void commitFailurePreventsAtomicAndLegacyReplayEvenAfterSuccessfulRollback() throws Exception {
+        var f = new AtomicFixture();
+        var lostReply = new DBCException("commit response lost");
+        doThrow(lostReply).when(f.transaction).commit(f.session);
+        assertSame(lostReply, assertThrows(DBException.class, f::save).getCause());
+        assertThrows(DBException.class, f::save);
+        assertThrows(DBException.class, () -> f.context.saveChanges(f.monitor, Map.of()));
+        verify(f.transaction, times(1)).commit(f.session);
+        verify(f.manager, times(1)).executePersistAction(f.session, f.first, f.action);
+        verify(f.first, never()).updateModel();
+    }
+
+    @Test
+    void restoreFailurePreservesStatementErrorAndPreventsReplay() throws Exception {
+        var f = new AtomicFixture();
+        var statementError = new DBException("statement failed");
+        var restoreError = new DBCException("restore failed");
+        doThrow(statementError).when(f.manager).executePersistAction(f.session, f.second, f.action);
+        doThrow(restoreError).when(f.transaction).setAutoCommit(any(), eq(true));
+        assertSame(statementError, assertThrows(DBException.class, f::save));
+        assertArrayEquals(new Throwable[]{restoreError}, statementError.getSuppressed());
+        assertThrows(DBException.class, f::save);
+        verify(f.manager, times(1)).executePersistAction(f.session, f.first, f.action);
+    }
+
+    @Test
+    void committedCommandsCannotReplayWhenAutoCommitRestorationFails() throws Exception {
+        var f = new AtomicFixture();
+        var restoreError = new DBCException("restore failed");
+        doThrow(restoreError).when(f.transaction).setAutoCommit(any(), eq(true));
+        assertSame(restoreError, assertThrows(DBException.class, f::save));
+        assertFalse(f.context.isDirty());
+        assertThrows(DBException.class, f::save);
+        verify(f.transaction, times(1)).commit(f.session);
+        verify(f.first).updateModel();
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     void sensitiveCommandSuppressesLoggingAndRestoresItEvenWhenActionFails(boolean fail) throws Exception {

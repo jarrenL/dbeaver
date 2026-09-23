@@ -38,7 +38,7 @@ import static org.mockito.Mockito.*;
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     /** Real transaction bridge: production saveChanges executes; only the model/session adapters are mocked. */
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"commit", "dependencyFailure", "cancel"})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"commit", "dependencyFailure", "cancel", "commitReplyLost"})
     @SuppressWarnings({"rawtypes", "unchecked"})
     void atomicCommandSaveControlsRealDatabaseTransaction(String outcome) throws Exception {
         inIsolatedSchema((connection, schema) -> {
@@ -62,7 +62,13 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             when(transaction.isAutoCommit()).thenAnswer(i -> connection.getAutoCommit());
             doAnswer(i -> { connection.setAutoCommit(i.getArgument(1)); return null; })
                 .when(transaction).setAutoCommit(any(), anyBoolean());
-            doAnswer(i -> { connection.commit(); return null; }).when(transaction).commit(session);
+            doAnswer(i -> {
+                connection.commit();
+                if (outcome.equals("commitReplyLost")) {
+                    throw new org.jkiss.dbeaver.model.exec.DBCException("Synthetic lost reply after real commit");
+                }
+                return null;
+            }).when(transaction).commit(session);
             doAnswer(i -> { connection.rollback(); return null; }).when(transaction).rollback(session, null);
             var manager = mock(org.jkiss.dbeaver.model.edit.DBEObjectManager.class);
             var monitor = spy(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor());
@@ -113,14 +119,22 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                     assertEquals("2BP01", ((java.sql.SQLException) failure.getCause()).getSQLState());
                 }
                 verify(transaction).rollback(session, null);
-                verify(transaction, never()).commit(any());
+                if (outcome.equals("commitReplyLost")) {
+                    assertInstanceOf(org.jkiss.dbeaver.model.exec.DBCException.class, failure.getCause());
+                    assertThrows(org.jkiss.dbeaver.DBException.class, save);
+                    assertThrows(org.jkiss.dbeaver.DBException.class, () -> context.saveChanges(monitor, java.util.Map.of()));
+                    verify(transaction, times(1)).commit(session);
+                    verify(manager, times(2)).executePersistAction(eq(session), any(), any());
+                } else {
+                    verify(transaction, never()).commit(any());
+                }
                 for (var command : commands) {
                     verify(command, never()).updateModel();
                 }
             }
             assertTrue(connection.getAutoCommit());
             withIndependentConnection(observer -> {
-                if (outcome.equals("commit")) {
+                if (outcome.equals("commit") || outcome.equals("commitReplyLost")) {
                     assertRows(observer, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace"
                         + " WHERE n.nspname='" + schema + "' AND c.relname IN ('first_target','second_target')", List.of(List.of("0")));
                 } else {

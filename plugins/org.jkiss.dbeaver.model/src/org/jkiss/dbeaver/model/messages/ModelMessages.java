@@ -22,6 +22,7 @@ public class ModelMessages extends NLS {
     public static String model_edit_atomic_unavailable;
     public static String model_edit_atomic_task;
     public static String model_edit_atomic_canceled;
+    public static String model_edit_atomic_uncertain;
     static final String BUNDLE_NAME = "org.jkiss.dbeaver.model.messages.ModelResources"; //$NON-NLS-1$
 
     public static String error_not_connected_to_database;
