@@ -207,4 +207,44 @@ class QueryHistoryFileTest extends DBeaverUnitTest {
             assertTrue(Files.exists(retained), retained.getFileName().toString());
         }
     }
+
+    @Test
+    void retentionDoesNotDeleteDirectoriesOrSymbolicLinksNamedLikeLogs() throws Exception {
+        var format = DateTimeFormatter.ofPattern("'dbeaver_sql_'yyyyMMdd'.log'");
+        Path folder = Files.createDirectory(directory.resolve(format.format(LocalDate.now().minusDays(9))));
+        Path target = Files.writeString(directory.resolve("customer.sql"), "SELECT 'keep';");
+        Path link = Files.createSymbolicLink(directory.resolve(format.format(LocalDate.now().minusDays(10))), target);
+        var purge = QMLogFileWriter.class.getDeclaredMethod("purgeOldLogs", Path.class, int.class);
+        purge.setAccessible(true);
+        purge.invoke(null, directory, 7);
+        assertTrue(Files.isDirectory(folder), "Log retention must not delete directories");
+        assertTrue(Files.isSymbolicLink(link), "Log retention must not remove symbolic links");
+        assertEquals("SELECT 'keep';", Files.readString(target));
+    }
+
+    @Test
+    void flushFailureClosesOutputAndDoesNotRetryLaterEvents() throws Exception {
+        var output = mock(Writer.class);
+        doThrow(new IOException("synthetic flush failure")).when(output).flush();
+        var writer = writer(output);
+        writer.metaInfoChanged(new VoidProgressMonitor(), List.of(event("SELECT 1", false)));
+        writer.metaInfoChanged(new VoidProgressMonitor(), List.of(event("SELECT 2", false)));
+        verify(output, times(1)).write(anyString());
+        verify(output, times(1)).flush();
+        verify(output, times(1)).close();
+        writer.dispose();
+        verify(output, times(1)).close();
+    }
+
+    @Test
+    void closeFailureStillDisablesWriterAndDoesNotRetryDispose() throws Exception {
+        var output = mock(Writer.class);
+        doThrow(new IOException("synthetic close failure")).when(output).close();
+        var writer = writer(output);
+        assertDoesNotThrow(writer::dispose);
+        assertDoesNotThrow(writer::dispose);
+        writer.metaInfoChanged(new VoidProgressMonitor(), List.of(event("SELECT 1", false)));
+        verify(output, times(1)).close();
+        verify(output, never()).write(anyString());
+    }
 }

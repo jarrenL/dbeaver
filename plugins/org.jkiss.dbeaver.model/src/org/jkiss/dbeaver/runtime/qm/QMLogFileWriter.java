@@ -35,6 +35,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -117,6 +118,7 @@ public class QMLogFileWriter implements QMMetaListener, DBPPreferenceListener {
 
         try (Stream<Path> list = Files.list(logDirectory)) {
             list
+                .filter(file -> Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
                 .filter(file -> {
                     try {
                         final LocalDate date = LOG_FILENAME_FORMATTER.parse(file.getFileName().toString(), LocalDate::from);
