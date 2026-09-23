@@ -66,7 +66,7 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
         position = new FieldPosition(0);
         // DateTimeFormatter pattern for nanoseconds is "n" but old "f" (ExtendedDateFormat)
         String java8DatePattern = pattern.replaceAll("f+", "n");
-        dateTimeFormatter = DateTimeFormatter.ofPattern(java8DatePattern);
+        dateTimeFormatter = DateTimeFormatter.ofPattern(java8DatePattern, locale);
         hasZone = java8DatePattern.contains("Z");
     }
 
