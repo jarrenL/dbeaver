@@ -144,6 +144,11 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
                         nsList.add(schema);
                     }
                 }
+                // An enabled filter with no matches means no searchable schemas,
+                // not an unrestricted namespace list.
+                if (nsList.isEmpty()) {
+                    return Collections.emptyList();
+                }
             }
         }
 
