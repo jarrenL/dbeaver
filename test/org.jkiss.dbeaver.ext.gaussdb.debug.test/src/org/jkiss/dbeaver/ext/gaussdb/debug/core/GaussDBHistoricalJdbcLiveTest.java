@@ -37,6 +37,30 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void nonexistentDatabaseIsRejectedAndValidConnectionsRemainUsable() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String missing = "dbv_missing_" + UUID.randomUUID().toString().replace("-", "");
+            try (var check = c.prepareStatement("SELECT count(*) FROM pg_database WHERE datname=?")) {
+                check.setString(1, missing);
+                try (var rows = check.executeQuery()) {
+                    assertTrue(rows.next());
+                    assertEquals(0, rows.getInt(1));
+                }
+            }
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(connection -> fail("Nonexistent database must not connect"), missing));
+            assertRows(c, "SELECT 11", List.of(List.of("11")));
+            withIndependentConnection(connection -> assertRows(connection, "SELECT 12", List.of(List.of("12"))));
+            if ("28000".equals(failure.getSQLState())) {
+                String message = failure.getMessage().toLowerCase(java.util.Locale.ROOT);
+                assertTrue(message.contains("hba"), "Expected database-specific HBA rejection: " + failure.getMessage());
+                assumeTrue(false, "HBA rejects the unknown database before database lookup; 3D000 path not tested");
+            }
+            assertEquals("3D000", failure.getSQLState());
+        });
+    }
+
+    @Test
     void enumValuesUseDeclarationOrderAndPreserveUnicodeLabels() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TYPE " + s + ".status_value AS ENUM ('等待','处理中','完成')");
