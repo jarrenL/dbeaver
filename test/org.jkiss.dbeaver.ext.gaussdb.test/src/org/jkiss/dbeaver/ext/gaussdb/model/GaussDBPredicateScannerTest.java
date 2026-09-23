@@ -106,4 +106,39 @@ class GaussDBPredicateScannerTest {
             assertEquals(text.isEmpty() ? TPCharacterScanner.EOF : text.charAt(0), input.read());
         }
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SELECT ", "x=", "( ", "SELECT\n", "SELECT\r\n"})
+    void escapeRuleRecognizesLiteralsAfterSqlPrefixes(String prefix) throws Exception {
+        String literal = "E'a''b\\n中文'";
+        String text = prefix + literal + ";";
+        var fragment = scanner(text);
+        var document = new org.jkiss.dbeaver.model.text.parser.TPRuleBasedScanner();
+        document.setRange(new org.eclipse.jface.text.Document(text), 0, text.length());
+        for (var input : new TPCharacterScanner[] {fragment, document}) {
+            for (int i = 0; i < prefix.length(); i++) {
+                input.read();
+            }
+            assertFalse(escapeRule().evaluate(input).isUndefined());
+            assertEquals(prefix.length() + literal.length(), input.getOffset());
+            assertEquals(';', input.read());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"name", "_", "1", "中文", "SELECT ", "SELECT\n", "x="})
+    void rejectedEscapeAtNonzeroOffsetDoesNotConsumePrefix(String prefix) throws Exception {
+        String text = prefix + "E'not closed";
+        var fragment = scanner(text);
+        var document = new org.jkiss.dbeaver.model.text.parser.TPRuleBasedScanner();
+        document.setRange(new org.eclipse.jface.text.Document(text), 0, text.length());
+        for (var input : new TPCharacterScanner[] {fragment, document}) {
+            for (int i = 0; i < prefix.length(); i++) {
+                input.read();
+            }
+            assertTrue(escapeRule().evaluate(input).isUndefined());
+            assertEquals(prefix.length(), input.getOffset());
+            assertEquals('E', input.read());
+        }
+    }
 }
