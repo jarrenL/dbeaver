@@ -335,8 +335,9 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
                         continue;
                     }
                     objects.add(new AbstractObjectReference<>(tableName, tableSchema, null,
-                        tableType == PostgreClass.RelKind.r ? PostgreTable.class :
-                            (tableType == PostgreClass.RelKind.v ? PostgreView.class : PostgreMaterializedView.class),
+                        tableType == PostgreClass.RelKind.v ? PostgreView.class :
+                            tableType == PostgreClass.RelKind.m ? PostgreMaterializedView.class :
+                                tableType == PostgreClass.RelKind.f ? PostgreTableForeign.class : PostgreTable.class,
                         RelationalObjectType.TYPE_TABLE) {
                         @NotNull
                         @Override

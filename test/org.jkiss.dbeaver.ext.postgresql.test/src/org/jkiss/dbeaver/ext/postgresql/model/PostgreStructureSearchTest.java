@@ -23,6 +23,8 @@ import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -122,6 +124,38 @@ class PostgreStructureSearchTest {
         verify(statement).setString(2, params.getMask());
         verify(statement).setLong(3, 42L);
         verify(statement, never()).setLong(anyInt(), eq(99L));
+    }
+
+    @Test
+    void missingSchemaIsSkippedWithoutPublishingAnUnresolvableReference() throws Exception {
+        when(result.next()).thenReturn(true, false);
+        when(result.getString("relkind")).thenReturn("r");
+        when(result.getString("relname")).thenReturn("orphan");
+        when(result.getLong("relnamespace")).thenReturn(42L);
+        assertTrue(assistant.findObjectsByMask(monitor, context, params()).isEmpty());
+        verify(result).close();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"r,PostgreTable", "p,PostgreTable", "f,PostgreTableForeign", "v,PostgreView", "m,PostgreMaterializedView"})
+    void relationKindsKeepTheirTypeAndResolveTheCorrectObject(String kind, String expectedClass) throws Exception {
+        var schema = mock(PostgreSchema.class);
+        var target = mock(PostgreTableBase.class);
+        when(result.next()).thenReturn(true, false);
+        when(result.getString("relkind")).thenReturn(kind);
+        when(result.getString("relname")).thenReturn("target");
+        when(result.getLong("relnamespace")).thenReturn(42L);
+        when(result.getLong("oid")).thenReturn(123L);
+        when(database.getSchema(monitor, 42L)).thenReturn(schema);
+        when(schema.getTable(monitor, 123L)).thenReturn(target);
+        var references = assistant.findObjectsByMask(monitor, context, params());
+        assertEquals(1, references.size());
+        var reference = references.get(0);
+        assertEquals(expectedClass, reference.getObjectClass().getSimpleName());
+        assertEquals("target", reference.getName());
+        assertSame(target, reference.resolveObject(monitor));
+        when(schema.getTable(monitor, 123L)).thenReturn(null);
+        assertThrows(org.jkiss.dbeaver.DBException.class, () -> reference.resolveObject(monitor));
     }
 
     @Test
