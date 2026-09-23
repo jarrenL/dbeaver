@@ -188,6 +188,71 @@ public class GaussDBExcelExportTest {
         assertArrayEquals(original, Files.readAllBytes(existing));
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {5, 100})
+    public void sparseWorkbookAppendsAfterLastRowWithoutFillingGaps(int lastRow) throws Exception {
+        Path existing = temporaryDirectory.resolve("sparse.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            var sheet = seed.createSheet("稀疏行");
+            sheet.createRow(0).createCell(0).setCellValue("旧表头");
+            sheet.createRow(lastRow).createCell(0).setCellValue("旧尾行");
+            seed.write(output);
+        }
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("appendStrategy", "use existing sheets"),
+            existing, new Object[]{"追加"})) {
+            var sheet = workbook.getSheetAt(0);
+            assertEquals(3, sheet.getPhysicalNumberOfRows());
+            assertEquals("旧表头", sheet.getRow(0).getCell(0).getStringCellValue());
+            assertEquals("旧尾行", sheet.getRow(lastRow).getCell(0).getStringCellValue());
+            assertEquals("追加", sheet.getRow(lastRow + 1).getCell(0).getStringCellValue());
+            for (int i = 1; i < lastRow; i++) {
+                assertNull(sheet.getRow(i), "Existing gaps must remain unchanged");
+            }
+        }
+    }
+
+    @Test
+    public void rowLimitCanAppendAcrossMultipleExistingSheets() throws Exception {
+        Path existing = temporaryDirectory.resolve("multiple.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            for (int i = 0; i < 2; i++) {
+                var sheet = seed.createSheet("历史" + i);
+                sheet.createRow(0).createCell(0).setCellValue("旧表头" + i);
+                sheet.createRow(1).createCell(0).setCellValue("旧数据" + i);
+            }
+            seed.write(output);
+        }
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING,
+            Map.of("appendStrategy", "use existing sheets", "splitByRowCount", 3), existing,
+            new Object[]{"追加0"}, new Object[]{"追加1"})) {
+            assertEquals(2, workbook.getNumberOfSheets());
+            for (int i = 0; i < 2; i++) {
+                var sheet = workbook.getSheetAt(i);
+                assertEquals(3, sheet.getPhysicalNumberOfRows());
+                assertEquals("旧表头" + i, sheet.getRow(0).getCell(0).getStringCellValue());
+                assertEquals("旧数据" + i, sheet.getRow(1).getCell(0).getStringCellValue());
+                assertEquals("追加" + i, sheet.getRow(2).getCell(0).getStringCellValue());
+            }
+        }
+    }
+
+    @Test
+    public void emptyImportedSheetStartsWithHeaderAtZero() throws Exception {
+        Path existing = temporaryDirectory.resolve("empty.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            seed.createSheet("空白");
+            seed.write(output);
+        }
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("appendStrategy", "use existing sheets"),
+            existing, new Object[]{"首行"})) {
+            assertEquals(1, workbook.getNumberOfSheets());
+            var sheet = workbook.getSheetAt(0);
+            assertEquals(2, sheet.getPhysicalNumberOfRows());
+            assertEquals("金额 中文", sheet.getRow(0).getCell(0).getStringCellValue());
+            assertEquals("首行", sheet.getRow(1).getCell(0).getStringCellValue());
+        }
+    }
+
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {
         return export(kind, overrides, null, rows);
     }

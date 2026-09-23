@@ -394,7 +394,10 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
         final Worksheet worksheet;
         if (appendStrategy == AppendStrategy.USE_EXISTING_SHEETS && sheetIndex < wb.getNumberOfSheets()) {
             sheet = wb.getSheetAt(sheetIndex++);
-            worksheet = new Worksheet(sheet, colValue, getPhysicalNumberOfRows(sheet));
+            Sheet originalSheet = wb.getXSSFWorkbook().getSheetAt(wb.getSheetIndex(sheet));
+            // Physical row count excludes gaps. SXSSF can only append after the last imported row.
+            int nextRow = originalSheet.getPhysicalNumberOfRows() == 0 ? 0 : originalSheet.getLastRowNum() + 1;
+            worksheet = new Worksheet(sheet, colValue, nextRow);
         } else {
             if (CommonUtils.toBoolean(getSite().getProperties().get(PROP_USE_DEFAULT_SPREADSHEET_NAMES), true)) {
                 sheet = wb.createSheet();
