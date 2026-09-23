@@ -591,6 +591,16 @@ public class DatabaseTransferConsumer implements IDataTransferConsumer<DatabaseC
     }
 
     private void closeExporter() {
+        // An importer may fail before fetchEnd closes its pending statements.
+        if (executeBatch != null) {
+            DBSDataManipulator.ExecuteBatch pendingBatch = executeBatch;
+            executeBatch = null;
+            try {
+                pendingBatch.close();
+            } catch (Exception e) {
+                log.debug("Error closing transfer batch", e);
+            }
+        }
         if (!isPreview && targetSession != null && oldAutoCommit != null) {
             try {
                 DBCTransactionManager txnManager = DBUtils.getTransactionManager(targetSession.getExecutionContext());

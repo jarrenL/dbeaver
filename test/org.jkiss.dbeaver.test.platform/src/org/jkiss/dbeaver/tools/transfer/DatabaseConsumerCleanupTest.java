@@ -110,6 +110,32 @@ class DatabaseConsumerCleanupTest extends DBeaverUnitTest {
     }
 
     @Test
+    void closeWithoutFetchEndReleasesPendingBatchBeforeSession() throws Exception {
+        var batch = Mockito.mock(DBSDataManipulator.ExecuteBatch.class);
+        set("executeBatch", batch);
+        consumer.close();
+        var order = Mockito.inOrder(batch, session);
+        order.verify(batch).close();
+        order.verify(session).close();
+        consumer.close();
+        Mockito.verify(batch, Mockito.times(1)).close();
+    }
+
+    @Test
+    void failedBatchCloseDoesNotPreventRollbackAndOwnedConnectionCleanup() throws Exception {
+        var batch = Mockito.mock(DBSDataManipulator.ExecuteBatch.class);
+        Mockito.doThrow(new RuntimeException("batch close failed")).when(batch).close();
+        set("executeBatch", batch);
+        consumer.close();
+        Mockito.verify(transactions).rollback(session, null);
+        Mockito.verify(session).close();
+        Mockito.verify(context).close();
+        consumer.close();
+        Mockito.verify(batch, Mockito.times(1)).close();
+        Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
+    }
+
+    @Test
     void sourceCancellationDiscardsPendingBatchWithoutCommit() throws Exception {
         DBCSession source = Mockito.mock(DBCSession.class);
         DBRProgressMonitor sourceMonitor = Mockito.mock(DBRProgressMonitor.class);
