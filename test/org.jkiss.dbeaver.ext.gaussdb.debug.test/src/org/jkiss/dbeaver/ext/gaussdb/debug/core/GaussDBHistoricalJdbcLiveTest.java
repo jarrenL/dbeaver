@@ -3682,6 +3682,59 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }, java.util.Map.of("allowEncodingChanges", "true", "preferQueryMode", "simple"));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"0", "1", "5"})
+    void extendedUtf8ParametersSurvivePrepareThresholdOnDistributed(String threshold) throws Exception {
+        extendedUtf8Parameters(threshold, System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"0", "1", "5"})
+    void extendedUtf8ParametersSurvivePrepareThresholdOnCentralized(String threshold) throws Exception {
+        extendedUtf8Parameters(threshold, System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void extendedUtf8Parameters(String threshold, String config) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            String table = schema + ".utf8_parameters";
+            execute(connection, "CREATE TABLE " + table + "(id integer, value text)");
+            String[] values = {"中文银行", "扩展汉字𠀀", "单引号'分号;反斜杠\\", null};
+            try (var insert = connection.prepareStatement("INSERT INTO " + table + " VALUES(?,?)")) {
+                for (int i = 0; i < 8; i++) {
+                    insert.setInt(1, i);
+                    insert.setString(2, values[i % values.length]);
+                    assertEquals(1, insert.executeUpdate());
+                }
+            }
+            try (var query = connection.prepareStatement("SELECT value FROM " + table + " WHERE id=?")) {
+                for (int i = 0; i < 8; i++) {
+                    query.setInt(1, i);
+                    try (var result = query.executeQuery()) {
+                        assertTrue(result.next());
+                        assertEquals(values[i % values.length], result.getString(1));
+                        assertEquals(values[i % values.length] == null, result.wasNull());
+                        assertFalse(result.next());
+                    }
+                }
+            }
+            try (var query = connection.createStatement(); var result = query.executeQuery("SHOW client_encoding")) {
+                assertTrue(result.next());
+                assertEquals("UTF8", result.getString(1));
+            }
+            withIndependentConnection(observer -> {
+                try (var query = observer.createStatement();
+                    var result = query.executeQuery("SELECT id,value FROM " + table + " ORDER BY id")) {
+                    for (int i = 0; i < 8; i++) {
+                        assertTrue(result.next());
+                        assertEquals(i, result.getInt(1));
+                        assertEquals(values[i % values.length], result.getString(2));
+                    }
+                    assertFalse(result.next());
+                }
+            }, null, java.util.Map.of(), config);
+        }, java.util.Map.of("preferQueryMode", "extended", "prepareThreshold", threshold), config);
+    }
+
     @Test
     void driverRejectsEncodingChangeWhenExplicitlyDisallowed() throws Exception {
         inIsolatedSchema((connection, schema) -> {
