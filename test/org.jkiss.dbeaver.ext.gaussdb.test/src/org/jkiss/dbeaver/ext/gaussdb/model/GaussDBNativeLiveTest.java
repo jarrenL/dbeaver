@@ -180,6 +180,26 @@ class GaussDBNativeLiveTest {
                         () -> exec(c, "INSERT INTO review_native.payload(id) VALUES(NULL)"));
                     assertEquals("23502", notNull.getSQLState());
                     verifyPayload(c);
+                    // A corrupt archive must not be accepted as a successful restore.
+                    Files.writeString(dump, "not-a-valid-native-archive\n");
+                    run(new ProcessBuilder("docker", "cp", dump.toString(), "gaussdb-507-ha-lab:" + remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "chown", "gausscore:dbgrp", remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    var corrupt = new ProcessBuilder(tool("gs_restore", database, user, remote));
+                    AssertionError corruptFailure = assertThrows(AssertionError.class, () -> run(corrupt, errors, settings));
+                    assertFalse(corruptFailure.getMessage().contains("Native tool timed out"));
+                    // Some vendor versions return nonzero without writing stderr for invalid headers.
+                    assertFalse(Files.readString(errors).contains(props.getProperty("password")));
+                    verifyPayload(c);
+                    // Restore the valid data archive after the rejected archive, into empty fixture tables.
+                    exec(c, "TRUNCATE review_native.payload, review_native.rows_to_restore");
+                    run(new ProcessBuilder("docker", "cp", dataArchive.toString(), "gaussdb-507-ha-lab:" + remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "chown", "gausscore:dbgrp", remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder(tool("gs_restore", database, user, remote)), errors, settings);
+                    verifyPayload(c);
                     // A failed script must report failure and stop before the following destructive statement.
                     Files.writeString(dump, "SELECT 1/0;\nDELETE FROM review_native.rows_to_restore;\n");
                     run(new ProcessBuilder("docker", "cp", dump.toString(), "gaussdb-507-ha-lab:" + remote)
