@@ -309,6 +309,7 @@ public class QMUtils {
             if (position < 0 || position >= events.size()) {
                 throw new DBException("Position is out of range (" + getTotalSize() + ")");
             }
+            this.position = position;
         }
 
         @Override
