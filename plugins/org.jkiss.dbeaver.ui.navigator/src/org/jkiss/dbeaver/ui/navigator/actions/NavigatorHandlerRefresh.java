@@ -134,9 +134,8 @@ public class NavigatorHandlerRefresh extends AbstractHandler {
                             if (((IRefreshablePart) editorPart).refreshPart(navigatorView, true) == IRefreshablePart.RefreshResult.CANCELED) {
                                 return true;
                             }
-                            if (nextNode == editorNode) {
-                                iter.remove();
-                            }
+                            // Keep the node queued: accepting the confirmation only
+                            // discards local edits. It does not reload database metadata.
                         }
                     }
                 }
