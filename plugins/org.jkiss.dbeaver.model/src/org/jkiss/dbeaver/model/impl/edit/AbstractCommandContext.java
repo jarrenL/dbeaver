@@ -204,7 +204,17 @@ public abstract class AbstractCommandContext implements DBECommandContext {
                             throw new DBException(ModelMessages.model_edit_atomic_canceled);
                         }
                         if (action.getType() != DBEPersistAction.ActionType.COMMENT) {
-                            managers.get(command).executePersistAction(session, command.command, action);
+                            boolean disableLogging = session.isLoggingEnabled() && command.command.isDisableSessionLogging();
+                            if (disableLogging) {
+                                session.enableLogging(false);
+                            }
+                            try {
+                                managers.get(command).executePersistAction(session, command.command, action);
+                            } finally {
+                                if (disableLogging) {
+                                    session.enableLogging(true);
+                                }
+                            }
                         }
                     }
                 }

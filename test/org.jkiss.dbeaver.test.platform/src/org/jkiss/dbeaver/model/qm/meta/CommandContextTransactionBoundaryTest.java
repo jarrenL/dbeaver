@@ -19,6 +19,36 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CommandContextTransactionBoundaryTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void sensitiveCommandSuppressesLoggingAndRestoresItEvenWhenActionFails(boolean fail) throws Exception {
+        var f = new AtomicFixture();
+        when(f.session.isLoggingEnabled()).thenReturn(true);
+        when(f.first.isDisableSessionLogging()).thenReturn(true);
+        if (fail) {
+            doThrow(new DBException("sensitive action failed")).when(f.manager)
+                .executePersistAction(f.session, f.first, f.action);
+            assertThrows(DBException.class, f::save);
+        } else {
+            f.save();
+        }
+        var order = inOrder(f.session, f.manager);
+        order.verify(f.session).enableLogging(false);
+        order.verify(f.manager).executePersistAction(f.session, f.first, f.action);
+        order.verify(f.session).enableLogging(true);
+        verify(f.session, times(1)).enableLogging(false);
+        verify(f.session, times(1)).enableLogging(true);
+    }
+
+    @Test
+    void disabledSessionLoggingIsNeverEnabledByAtomicSave() throws Exception {
+        var f = new AtomicFixture();
+        when(f.session.isLoggingEnabled()).thenReturn(false);
+        when(f.first.isDisableSessionLogging()).thenReturn(true);
+        f.save();
+        verify(f.session, never()).enableLogging(anyBoolean());
+    }
+
     @Test
     void successfulAtomicSaveCommitsOnceBeforeModelUpdates() throws Exception {
         var f = new AtomicFixture();

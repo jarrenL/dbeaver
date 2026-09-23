@@ -36,6 +36,101 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    /** Real transaction bridge: production saveChanges executes; only the model/session adapters are mocked. */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"commit", "dependencyFailure", "cancel"})
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void atomicCommandSaveControlsRealDatabaseTransaction(String outcome) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            execute(connection, "CREATE TABLE " + schema + ".first_target(id int)");
+            execute(connection, "CREATE TABLE " + schema + ".second_target(id int)");
+            execute(connection, "INSERT INTO " + schema + ".first_target VALUES (11)");
+            execute(connection, "INSERT INTO " + schema + ".second_target VALUES (22)");
+            if (outcome.equals("dependencyFailure")) {
+                execute(connection, "CREATE VIEW " + schema + ".dependent_view AS SELECT id FROM " + schema + ".second_target");
+            }
+            var execution = mock(DBCExecutionContext.class,
+                withSettings().extraInterfaces(org.jkiss.dbeaver.model.exec.DBCTransactionManager.class));
+            var transaction = (org.jkiss.dbeaver.model.exec.DBCTransactionManager) execution;
+            var session = mock(org.jkiss.dbeaver.model.exec.DBCSession.class);
+            var source = mock(org.jkiss.dbeaver.model.DBPDataSource.class, RETURNS_DEEP_STUBS);
+            when(execution.isConnected()).thenReturn(true);
+            when(execution.getDataSource()).thenReturn(source);
+            when(source.getInfo().supportsTransactionsForDDL()).thenReturn(true);
+            when(execution.openSession(any(), any(), anyString())).thenReturn(session);
+            when(transaction.isSupportsTransactions()).thenReturn(true);
+            when(transaction.isAutoCommit()).thenAnswer(i -> connection.getAutoCommit());
+            doAnswer(i -> { connection.setAutoCommit(i.getArgument(1)); return null; })
+                .when(transaction).setAutoCommit(any(), anyBoolean());
+            doAnswer(i -> { connection.commit(); return null; }).when(transaction).commit(session);
+            doAnswer(i -> { connection.rollback(); return null; }).when(transaction).rollback(session, null);
+            var manager = mock(org.jkiss.dbeaver.model.edit.DBEObjectManager.class);
+            var monitor = spy(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor());
+            var commands = new java.util.ArrayList<org.jkiss.dbeaver.model.edit.DBECommand>();
+            for (String name : List.of("first_target", "second_target")) {
+                var command = mock(org.jkiss.dbeaver.model.edit.DBECommand.class);
+                var action = mock(org.jkiss.dbeaver.model.edit.DBEPersistAction.class);
+                when(action.getType()).thenReturn(org.jkiss.dbeaver.model.edit.DBEPersistAction.ActionType.NORMAL);
+                when(action.getScript()).thenReturn("DROP TABLE " + schema + "." + name);
+                when(command.getPersistActions(any(), any(), any())).thenReturn(
+                    new org.jkiss.dbeaver.model.edit.DBEPersistAction[]{action});
+                commands.add(command);
+            }
+            doAnswer(i -> {
+                var action = (org.jkiss.dbeaver.model.edit.DBEPersistAction) i.getArgument(2);
+                try {
+                    execute(connection, action.getScript());
+                } catch (java.sql.SQLException failure) {
+                    throw new org.jkiss.dbeaver.DBException("Atomic test action failed", failure);
+                }
+                if (outcome.equals("cancel")) {
+                    when(monitor.isCanceled()).thenReturn(true);
+                }
+                return null;
+            }).when(manager).executePersistAction(eq(session), any(), any());
+            var context = new org.jkiss.dbeaver.model.impl.edit.AbstractCommandContext(execution, true) {};
+            var type = Class.forName(org.jkiss.dbeaver.model.impl.edit.AbstractCommandContext.class.getName() + "$CommandQueue");
+            var constructor = type.getDeclaredConstructor(org.jkiss.dbeaver.model.edit.DBEObjectManager.class,
+                type, org.jkiss.dbeaver.model.DBPObject.class);
+            constructor.setAccessible(true);
+            var queue = (java.util.Collection) constructor.newInstance(manager, null, mock(org.jkiss.dbeaver.model.DBPObject.class));
+            queue.addAll(commands);
+            var field = org.jkiss.dbeaver.model.impl.edit.AbstractCommandContext.class.getDeclaredField("commandQueues");
+            field.setAccessible(true);
+            field.set(context, List.of(queue));
+            org.junit.jupiter.api.function.Executable save = () -> context.saveChanges(monitor,
+                java.util.Map.of(org.jkiss.dbeaver.model.edit.DBECommandContext.OPTION_ATOMIC_TRANSACTION, true));
+            if (outcome.equals("commit")) {
+                assertDoesNotThrow(save);
+                verify(transaction, times(1)).commit(session);
+                verify(transaction, never()).rollback(any(), any());
+                for (var command : commands) {
+                    verify(command).updateModel();
+                }
+            } else {
+                var failure = assertThrows(org.jkiss.dbeaver.DBException.class, save);
+                if (outcome.equals("dependencyFailure")) {
+                    assertEquals("2BP01", ((java.sql.SQLException) failure.getCause()).getSQLState());
+                }
+                verify(transaction).rollback(session, null);
+                verify(transaction, never()).commit(any());
+                for (var command : commands) {
+                    verify(command, never()).updateModel();
+                }
+            }
+            assertTrue(connection.getAutoCommit());
+            withIndependentConnection(observer -> {
+                if (outcome.equals("commit")) {
+                    assertRows(observer, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace"
+                        + " WHERE n.nspname='" + schema + "' AND c.relname IN ('first_target','second_target')", List.of(List.of("0")));
+                } else {
+                    assertRows(observer, "SELECT id FROM " + schema + ".first_target", List.of(List.of("11")));
+                    assertRows(observer, "SELECT id FROM " + schema + ".second_target", List.of(List.of("22")));
+                }
+            });
+        });
+    }
+
     private static class SequenceActions extends org.jkiss.dbeaver.ext.postgresql.edit.PostgreSequenceManager {
         private org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence model(String schemaName, String name, String description) {
             var source = mock(GaussDBDataSource.class);
