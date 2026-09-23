@@ -93,4 +93,17 @@ class GaussDBPredicateScannerTest {
         assertFalse(escapeRule().evaluate(scanner).isUndefined());
         assertEquals(text.charAt(text.length() - 1), scanner.read());
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "E", "e", "E'", "E'abc", "E'abc\\", "E'a''", "select", "E123"})
+    void failedEscapeMatchRestoresBothScannerOffsets(String text) throws Exception {
+        var fragment = scanner(text);
+        var document = new org.jkiss.dbeaver.model.text.parser.TPRuleBasedScanner();
+        document.setRange(new org.eclipse.jface.text.Document(text), 0, text.length());
+        for (var input : new TPCharacterScanner[] {fragment, document}) {
+            assertTrue(escapeRule().evaluate(input).isUndefined());
+            assertEquals(0, input.getOffset(), "Failed rule must leave input for the next rule");
+            assertEquals(text.isEmpty() ? TPCharacterScanner.EOF : text.charAt(0), input.read());
+        }
+    }
 }

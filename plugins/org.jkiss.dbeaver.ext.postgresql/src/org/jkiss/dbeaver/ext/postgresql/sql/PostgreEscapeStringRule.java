@@ -36,7 +36,7 @@ public class PostgreEscapeStringRule implements TPPredicateRule {
     @Override
     public TPToken evaluate(TPCharacterScanner scanner, boolean resume) {
         int ch;
-        int chRead = 2;
+        int startOffset = scanner.getOffset();
 
         if (scanner.getColumn() > 0) {
             scanner.unread();
@@ -48,27 +48,23 @@ public class PostgreEscapeStringRule implements TPPredicateRule {
         }
 
         if ((ch = scanner.read()) != 'e' && ch != 'E') {
-            scanner.unread();
+            restoreOffset(scanner, startOffset);
             return TPTokenAbstract.UNDEFINED;
         }
 
         if (scanner.read() != '\'') {
-            scanner.unread();
-            scanner.unread();
+            restoreOffset(scanner, startOffset);
             return TPTokenAbstract.UNDEFINED;
         }
 
         do {
             ch = scanner.read();
-            chRead++;
 
             if (ch == '\\') {
                 ch = scanner.read();
-                chRead++;
             } else if (ch == '\'') {
                 int literalEnd = scanner.getOffset();
                 ch = scanner.read();
-                chRead++;
                 if (ch != '\'') {
                     // Scanners differ on whether reading EOF advances their offset.
                     if (scanner.getOffset() > literalEnd) {
@@ -79,11 +75,15 @@ public class PostgreEscapeStringRule implements TPPredicateRule {
             }
         } while (ch != TPCharacterScanner.EOF);
 
-        while (chRead-- > 0) {
-            scanner.unread();
-        }
+        restoreOffset(scanner, startOffset);
 
         return TPTokenAbstract.UNDEFINED;
+    }
+
+    private void restoreOffset(TPCharacterScanner scanner, int offset) {
+        while (scanner.getOffset() > offset) {
+            scanner.unread();
+        }
     }
 
     @Override
