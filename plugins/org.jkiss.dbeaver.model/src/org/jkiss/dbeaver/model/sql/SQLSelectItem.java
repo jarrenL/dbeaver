@@ -70,6 +70,11 @@ public class SQLSelectItem {
         return plainColumn;
     }
 
+    public boolean isAsterisk() {
+        Expression expression = source.getExpression();
+        return expression instanceof AllColumns || expression instanceof AllTableColumns;
+    }
+
     public DBCEntityMetaData getEntityMetaData() {
         if (table == null) {
             return null;

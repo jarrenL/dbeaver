@@ -321,7 +321,7 @@ public class SQLQuery implements SQLScriptElement {
         if (selectItems != null) {
             for (int i = 0; i < selectItems.size(); i++) {
                 SQLSelectItem item = selectItems.get(i);
-                if (item.getName().contains("*")) {
+                if (item.isAsterisk()) {
                     return i;
                 }
             }
