@@ -37,6 +37,30 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionTableDdlRebuildsRangePartitionBoundariesAndNames() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".range_roundtrip";
+            execute(c, "CREATE TABLE " + table + "(id int, label varchar(40)) DISTRIBUTE BY HASH(id) "
+                + "PARTITION BY RANGE(id)(PARTITION p_negative VALUES LESS THAN(0),"
+                + "PARTITION p_positive VALUES LESS THAN(100),PARTITION p_rest VALUES LESS THAN(MAXVALUE))");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            assertTrue(ddl.toUpperCase(java.util.Locale.ROOT).contains("PARTITION BY RANGE"));
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            execute(c, "INSERT INTO " + table + " VALUES(-1,'negative'),(0,'zero'),(99,'edge'),(100,'rest'),(2147483647,'max')");
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_negative)", List.of(List.of("-1")));
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_positive) ORDER BY id",
+                List.of(List.of("0"), List.of("99")));
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_rest) ORDER BY id",
+                List.of(List.of("100"), List.of("2147483647")));
+            assertRows(c, "SELECT relname FROM pg_partition WHERE parentid='" + table
+                + "'::regclass AND parttype='p' ORDER BY relname",
+                List.of(List.of("p_negative"), List.of("p_positive"), List.of("p_rest")));
+        });
+    }
+
+    @Test
     void rangePartitionAddAndDropUpdateRoutingCatalogAndSurvivingRows() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".partition_rows";
