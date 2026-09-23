@@ -37,6 +37,31 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void listPartitionDdlRoundtripPreservesUnicodeRoutingAndMutation() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".list_roundtrip";
+            execute(c, "CREATE TABLE " + table + "(id int, region varchar(20)) DISTRIBUTE BY HASH(id) "
+                + "PARTITION BY LIST(region)(PARTITION p_cn VALUES('华北','华南'),PARTITION p_other VALUES('海外'))");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            assertTrue(ddl.toUpperCase(java.util.Locale.ROOT).contains("PARTITION BY LIST"));
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            execute(c, "INSERT INTO " + table + " VALUES(1,'华北'),(2,'华南'),(3,'海外')");
+            assertRows(c, "SELECT id,region FROM " + table + " PARTITION(p_cn) ORDER BY id",
+                List.of(List.of("1", "华北"), List.of("2", "华南")));
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_other)", List.of(List.of("3")));
+            execute(c, "ALTER TABLE " + table + " ADD PARTITION p_west VALUES('西部')");
+            execute(c, "INSERT INTO " + table + " VALUES(4,'西部')");
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_west)", List.of(List.of("4")));
+            execute(c, "ALTER TABLE " + table + " DROP PARTITION p_other");
+            assertRows(c, "SELECT id FROM " + table + " ORDER BY id", List.of(List.of("1"), List.of("2"), List.of("4")));
+            assertRows(c, "SELECT relname FROM pg_partition WHERE parentid='" + table
+                + "'::regclass AND parttype='p' ORDER BY relname", List.of(List.of("p_cn"), List.of("p_west")));
+        });
+    }
+
+    @Test
     void productionTableDdlRebuildsRangePartitionBoundariesAndNames() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".range_roundtrip";
