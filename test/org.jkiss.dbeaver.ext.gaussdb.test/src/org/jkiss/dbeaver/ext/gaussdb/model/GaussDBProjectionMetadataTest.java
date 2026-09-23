@@ -20,11 +20,34 @@ import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.sql.SQLQueryType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.jkiss.dbeaver.model.DBPDataSource;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class GaussDBProjectionMetadataTest {
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "Q|q|true", "q|Q|true", "\"q\"|q|true", "q|\"q\"|true",
+        "\"Q\"|q|false", "q|\"Q\"|false", "\"Q\"|\"Q\"|true",
+        "q|public.q|false"
+    })
+    void cteIdentifierMatchingUsesGaussDBCaseAndQualification(String cte, String reference, boolean virtual) {
+        DBPDataSource source = mock(DBPDataSource.class);
+        when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+        SQLQuery query = new SQLQuery(source, "WITH " + cte + " AS (SELECT 1 AS id) SELECT x.id FROM " + reference + " x");
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        if (virtual) {
+            assertNull(query.getEntityMetadata(false));
+            assertNull(query.getSelectItem(0).getEntityMetaData());
+        } else {
+            assertNotNull(query.getEntityMetadata(false));
+            assertNotNull(query.getSelectItem(0).getEntityMetaData());
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "WITH q AS (SELECT id FROM public.accounts) SELECT q.id FROM q",

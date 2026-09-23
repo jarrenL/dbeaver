@@ -265,12 +265,25 @@ public class SQLQuery implements SQLScriptElement {
         }
         if (statement instanceof Select select) {
             for (WithItem<?> item : CommonUtils.safeList(select.getWithItemsList())) {
-                if (CommonUtils.equalObjects(item.getAliasName(), table.getName())) {
+                if (item.getAliasName() != null && normalizeRelationIdentifier(item.getAliasName())
+                    .equals(normalizeRelationIdentifier(table.getName()))) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    @NotNull
+    private String normalizeRelationIdentifier(@NotNull String identifier) {
+        String unquoted = unquoteIdentifier(identifier);
+        if (!identifier.equals(unquoted)) {
+            // Quoted names retain case: "Q" and unquoted q need not name the same relation.
+            return unquoted;
+        }
+        SQLDialect dialect = dataSource == null ? null : dataSource.getSQLDialect();
+        return dialect == null || dialect.storesUnquotedCase() == null
+            ? identifier : dialect.storesUnquotedCase().transform(identifier);
     }
 
     private SingleTableMeta createOriginalSourceTableMetaData(Table fromItem) {
