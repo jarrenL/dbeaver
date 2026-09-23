@@ -40,7 +40,7 @@ import java.util.Map;
 /**
  * PostgreQueryPlaner
  */
-public class PostgreQueryPlaner extends AbstractExecutionPlanSerializer implements DBCQueryPlanner 
+public class PostgreQueryPlaner extends AbstractExecutionPlanSerializer implements DBCQueryPlanner
 {
     public static final String PARAM_ANALYSE = "ANALYZE";
     public static final String PARAM_VERBOSE = "VERBOSE";
@@ -113,7 +113,10 @@ public class PostgreQueryPlaner extends AbstractExecutionPlanSerializer implemen
     public DBCPlan deserialize(@NotNull Reader planData) throws IOException, InvocationTargetException {
         try {
             JsonObject jo = new JsonParser().parse(planData).getAsJsonObject();
-            
+            if (!FORMAT_VERSION.equals(getVersion(jo))) {
+                throw new IOException("Unsupported execution plan format version");
+            }
+
             String query = getQuery(jo);
 
             ExecutionPlanDeserializer<PostgrePlanNodeExternal> loader = new ExecutionPlanDeserializer<>();
