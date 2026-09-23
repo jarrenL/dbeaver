@@ -23,7 +23,102 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
-class GaussDBHistoricalJdbcLiveTest {
+class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    @Test
+    void csvImporterValuesSurviveVendorJdbcInsertionAndCommit() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, value text)");
+            c.setAutoCommit(false);
+            importCsvToJdbc(c, s + ".t", "id,value\n1,\"中文,引号\"\"值\"\n2,\"line1\nline2\"\n3\n");
+            assertObserverCount(s + ".t", 0);
+            c.commit();
+            assertObserverCount(s + ".t", 3);
+            assertRows(c, "SELECT id,value FROM " + s + ".t ORDER BY id",
+                java.util.Arrays.asList(List.of("1", "中文,引号\"值"), List.of("2", "line1\nline2"),
+                    java.util.Arrays.asList("3", null)));
+        });
+    }
+
+    @Test
+    void malformedCsvAllowsExplicitRollbackOfAlreadyInsertedRows() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, value text)");
+            c.setAutoCommit(false);
+            var error = assertThrows(org.jkiss.dbeaver.DBException.class,
+                () -> importCsvToJdbc(c, s + ".t", "id,value\n1,valid\n2,\"unfinished\n"));
+            assertInstanceOf(java.io.IOException.class, error.getCause());
+            assertEquals(1, count(c, s + ".t"));
+            assertObserverCount(s + ".t", 0);
+            c.rollback();
+            assertObserverCount(s + ".t", 0);
+        });
+    }
+
+    @Test
+    void duplicateCsvKeyPropagatesSqlstateAndAllowsExplicitRollback() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, value text)");
+            c.setAutoCommit(false);
+            var error = assertThrows(org.jkiss.dbeaver.model.exec.DBCException.class,
+                () -> importCsvToJdbc(c, s + ".t", "id,value\n1,first\n1,duplicate\n"));
+            var sqlError = assertInstanceOf(java.sql.SQLException.class, error.getCause());
+            assertEquals("23505", sqlError.getSQLState());
+            c.rollback();
+            assertObserverCount(s + ".t", 0);
+            assertEquals(0, count(c, s + ".t"));
+        });
+    }
+
+    /** Real importer + JDBC fixture sink, not the production database-transfer consumer or wizard. */
+    private static void importCsvToJdbc(Connection connection, String table, String csv) throws Exception {
+        // The headless platform lazily initializes its query manager on first access.
+        assertNotNull(org.jkiss.dbeaver.runtime.DBWorkbench.getPlatform());
+        var source = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamEntityMapping.class);
+        when(source.getStreamColumns()).thenReturn(List.of(
+            new org.jkiss.dbeaver.tools.transfer.stream.StreamDataImporterColumnInfo(
+                source, 0, "id", "VARCHAR", 100, org.jkiss.dbeaver.model.DBPDataKind.STRING),
+            new org.jkiss.dbeaver.tools.transfer.stream.StreamDataImporterColumnInfo(
+                source, 1, "value", "VARCHAR", 1000, org.jkiss.dbeaver.model.DBPDataKind.STRING)));
+        var site = mock(org.jkiss.dbeaver.tools.transfer.stream.IStreamDataImporterSite.class);
+        when(site.getSourceObject()).thenReturn(source);
+        when(site.getSettings()).thenReturn(mock(org.jkiss.dbeaver.tools.transfer.stream.StreamProducerSettings.class));
+        when(site.getProcessorProperties()).thenReturn(java.util.Map.of(
+            "header", "top", "delimiter", ",", "quoteChar", "\"", "encoding", "UTF-8", "trimWhitespaces", true));
+        var importer = new org.jkiss.dbeaver.tools.transfer.stream.importer.DataImporterCSV();
+        importer.init(site);
+        var monitor = mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        var dataSource = mock(org.jkiss.dbeaver.model.DBPDataSource.class, RETURNS_DEEP_STUBS);
+        var sink = mock(org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.class);
+        try (var insert = connection.prepareStatement("INSERT INTO " + table + " VALUES(?::integer,?)")) {
+            insert.setQueryTimeout(15);
+            doAnswer(invocation -> {
+                org.jkiss.dbeaver.model.exec.DBCResultSet result = invocation.getArgument(1);
+                try {
+                    insert.setString(1, (String) result.getAttributeValue(0));
+                    insert.setString(2, (String) result.getAttributeValue(1));
+                    insert.executeUpdate();
+                } catch (java.sql.SQLException error) {
+                    throw new org.jkiss.dbeaver.model.exec.DBCException("JDBC fixture sink failed", error);
+                }
+                return null;
+            }).when(sink).fetchRow(any(), any());
+            try (var input = new java.io.ByteArrayInputStream(csv.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                importer.runImport(monitor, dataSource, input, sink);
+            } catch (Exception | Error error) {
+                try {
+                    verify(sink).fetchEnd(any(), any());
+                    verify(sink).close();
+                } catch (AssertionError cleanupFailure) {
+                    cleanupFailure.addSuppressed(error);
+                    throw cleanupFailure;
+                }
+                throw error;
+            }
+            verify(sink).fetchEnd(any(), any());
+            verify(sink).close();
+        }
+    }
+
     @Test
     void serverWarningIsAvailableAndCanBeClearedWithoutClosingConnection() throws Exception {
         inIsolatedSchema((c, s) -> {
