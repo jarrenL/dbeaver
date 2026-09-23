@@ -40,7 +40,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     void productionDefaultPrivilegesApplyOnlyToFutureObjectsAndRevocationIsNotRetroactive() throws Exception {
         String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
         assumeTrue(grantee != null, "Dedicated NOLOGIN grantee role not configured; default privilege test not executed");
-        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_]+"), "Only a dedicated test role is allowed");
+        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_=\" ]+"), "Only a dedicated test role is allowed");
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".before_grant(id integer)");
             var source = mock(GaussDBDataSource.class);
@@ -91,7 +91,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     void productionGrantCommandsPreservePerPrivilegeGrantabilityInDatabase() throws Exception {
         String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
         assumeTrue(grantee != null, "Dedicated NOLOGIN grantee role not configured; permission test not executed");
-        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_]+"), "Only a dedicated test role is allowed");
+        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_=\" ]+"), "Only a dedicated test role is allowed");
         inIsolatedSchema((c, s) -> {
             // GaussDB filters pg_roles for ordinary users. The administrator must provision
             // the NOLOGIN fixture; a missing role will fail the actual GRANT below.
@@ -106,6 +106,17 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             when(role.getDataSource()).thenReturn(source);
             when(role.getName()).thenReturn(grantee);
             var table = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreTable.class);
+            var database = mock(PostgreDatabase.class);
+            var server = new org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB(source) {};
+            when(source.getServerType()).thenReturn(server);
+            when(database.getDataSource()).thenReturn(source);
+            when(database.getName()).thenReturn(c.getCatalog());
+            var schema = mock(PostgreSchema.class);
+            when(schema.getName()).thenReturn(s);
+            when(table.getDatabase()).thenReturn(database);
+            when(table.getDataSource()).thenReturn(source);
+            when(table.getSchema()).thenReturn(schema);
+            when(table.getName()).thenReturn("t");
             when(table.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn(s + ".t");
             var privilege = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreRolePrivilege.class);
             when(privilege.getFullObjectName()).thenReturn(s + ".t");
@@ -119,6 +130,29 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                     mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), java.util.Map.of());
                 for (var action : actions) {
                     execute(c, action.getScript());
+                }
+                try (var aclStatement = c.prepareStatement("SELECT relacl FROM pg_class WHERE oid=?::regclass")) {
+                    aclStatement.setString(1, s + ".t");
+                    try (var result = aclStatement.executeQuery()) {
+                        assertTrue(result.next());
+                        var acl = result.getArray(1);
+                        assertNotNull(acl);
+                        try {
+                            var parsed = org.jkiss.dbeaver.ext.postgresql.PostgreUtils.extractPermissionsFromACL(
+                                mock(DBRProgressMonitor.class), table, acl, false);
+                            var matches = parsed.stream()
+                                .map(p -> (org.jkiss.dbeaver.ext.postgresql.model.PostgreObjectPrivilege) p)
+                                .filter(p -> p.getGrantee().getRoleName().equals(grantee)).toList();
+                            assertEquals(grant ? 1 : 0, matches.size(), "ACL grantee after grant=" + grant);
+                            if (grant) {
+                                assertEquals(3, matches.get(0).getPermission(PostgrePrivilegeType.SELECT));
+                                assertEquals(1, matches.get(0).getPermission(PostgrePrivilegeType.INSERT));
+                                assertEquals(0, matches.get(0).getPermission(PostgrePrivilegeType.UPDATE));
+                            }
+                        } finally {
+                            acl.free();
+                        }
+                    }
                 }
                 try (var statement = c.prepareStatement("SELECT has_table_privilege(?,?,?)")) {
                     for (String permission : List.of("SELECT", "INSERT", "SELECT WITH GRANT OPTION", "INSERT WITH GRANT OPTION", "UPDATE")) {
