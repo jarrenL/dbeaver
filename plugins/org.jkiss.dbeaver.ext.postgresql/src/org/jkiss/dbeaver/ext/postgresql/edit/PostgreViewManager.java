@@ -37,7 +37,6 @@ import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -145,7 +144,7 @@ public class PostgreViewManager extends PostgreTableManagerBase implements DBEOb
     ) throws DBException {
         // Source may be empty if it wasn't yet read. Then it definitely wasn't changed
         String sql = view.getObjectDefinitionText(monitor, Map.of());
-        if (!sql.toLowerCase(Locale.ENGLISH).contains("create")) {
+        if (!"CREATE".equalsIgnoreCase(SQLUtils.getFirstKeyword(view.getDataSource().getSQLDialect(), sql))) {
             StringBuilder sqlBuf = new StringBuilder();
             sqlBuf.append("CREATE ");
             if (!(view instanceof PostgreMaterializedView)) {
@@ -207,4 +206,3 @@ public class PostgreViewManager extends PostgreTableManagerBase implements DBEOb
     }
 
 }
-

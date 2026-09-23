@@ -1924,6 +1924,92 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }
     }
 
+    @Test
+    void viewRenamePreservesDefinitionDataAndProductionSearchIdentity() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".base_rows(id integer, label text)");
+            execute(c, "INSERT INTO " + s + ".base_rows VALUES(1,'中文'),(2,'second')");
+            execute(c, "CREATE VIEW " + s + ".old_view AS SELECT id,label FROM " + s + ".base_rows WHERE id=1");
+            execute(c, "ALTER VIEW " + s + ".old_view RENAME TO \"Renamed View\"");
+            assertTrue(searchTables(c, s, "old_view", true, 10, false).isEmpty());
+            var found = searchTables(c, s, "Renamed View", true, 10, false);
+            assertEquals(1, found.size());
+            assertEquals("PostgreView", found.get(0).getObjectClass().getSimpleName());
+            try (var query = c.createStatement(); var rows = query.executeQuery("SELECT id,label FROM " + s + ".\"Renamed View\"")) {
+                assertTrue(rows.next());
+                assertEquals(1, rows.getInt(1));
+                assertEquals("中文", rows.getString(2));
+                assertFalse(rows.next());
+            }
+            assertEquals(2, count(c, s + ".base_rows"));
+        });
+    }
+
+    @Test
+    void productionViewManagerWrapsCreateLiteralAndExecutesItsGeneratedDdl() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            var source = mock(GaussDBDataSource.class);
+            when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+            var view = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreView.class);
+            when(view.getDataSource()).thenReturn(source);
+            when(view.getTableTypeName()).thenReturn("VIEW");
+            when(view.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn(s + ".created_view");
+            when(view.getObjectDefinitionText(any(), anyMap())).thenReturn("/* create marker */ SELECT 'create'::text AS label");
+            var actions = new java.util.ArrayList<org.jkiss.dbeaver.model.edit.DBEPersistAction>();
+            var manager = new org.jkiss.dbeaver.ext.postgresql.edit.PostgreViewManager() {
+                void build() throws Exception {
+                    createOrReplaceViewQuery(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), actions, view, java.util.Map.of());
+                }
+            };
+            manager.build();
+            assertEquals(1, actions.size());
+            execute(c, actions.get(0).getScript());
+            try (var query = c.createStatement(); var rows = query.executeQuery("SELECT label FROM " + s + ".created_view")) {
+                assertTrue(rows.next());
+                assertEquals("create", rows.getString(1));
+                assertFalse(rows.next());
+            }
+            assertEquals(1, searchTables(c, s, "created_view", true, 10, false).size());
+        });
+    }
+
+    @Test
+    void viewDependencyRejectsRestrictAndCascadeRemovesOnlyDependentViews() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".base_rows(id integer)");
+            execute(c, "INSERT INTO " + s + ".base_rows VALUES(7)");
+            execute(c, "CREATE VIEW " + s + ".first_view AS SELECT id FROM " + s + ".base_rows");
+            execute(c, "CREATE VIEW " + s + ".dependent_view AS SELECT id FROM " + s + ".first_view");
+            execute(c, "CREATE VIEW " + s + ".independent_view AS SELECT id FROM " + s + ".base_rows");
+            var error = assertThrows(java.sql.SQLException.class, () -> execute(c, "DROP VIEW " + s + ".first_view RESTRICT"));
+            assertEquals("2BP01", error.getSQLState());
+            assertEquals(1, count(c, s + ".dependent_view"));
+            execute(c, "DROP VIEW " + s + ".first_view CASCADE");
+            assertTrue(searchTables(c, s, "first_view", true, 10, false).isEmpty());
+            assertTrue(searchTables(c, s, "dependent_view", true, 10, false).isEmpty());
+            assertEquals(1, count(c, s + ".independent_view"));
+            assertEquals(1, count(c, s + ".base_rows"));
+        });
+    }
+
+    @Test
+    void invalidViewReplacementCanRollbackToSavepointWithoutLosingOriginalDefinition() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".base_rows(id integer)");
+            execute(c, "CREATE VIEW " + s + ".stable_view AS SELECT id FROM " + s + ".base_rows");
+            c.setAutoCommit(false);
+            execute(c, "INSERT INTO " + s + ".base_rows VALUES(8)");
+            var checkpoint = c.setSavepoint("before_view_change");
+            var error = assertThrows(java.sql.SQLException.class, () -> execute(c,
+                "CREATE OR REPLACE VIEW " + s + ".stable_view AS SELECT missing_column FROM " + s + ".base_rows"));
+            assertEquals("42703", error.getSQLState());
+            c.rollback(checkpoint);
+            assertEquals(1, count(c, s + ".stable_view"));
+            c.commit();
+            assertObserverCount(s + ".stable_view", 1);
+        });
+    }
+
     private static void execute(Connection connection, String sql) throws Exception {
         try (var statement = connection.createStatement()) {
             statement.setQueryTimeout(15);
