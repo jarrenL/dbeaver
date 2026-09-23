@@ -37,6 +37,31 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void rangePartitionAddAndDropUpdateRoutingCatalogAndSurvivingRows() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".partition_rows";
+            execute(c, "CREATE TABLE " + table + "(id int, label text) DISTRIBUTE BY HASH(id) "
+                + "PARTITION BY RANGE(id)(PARTITION p_low VALUES LESS THAN(10),PARTITION p_mid VALUES LESS THAN(20))");
+            execute(c, "INSERT INTO " + table + " VALUES(1,'low'),(9,'low-edge'),(10,'mid-edge'),(19,'mid')");
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_low) ORDER BY id",
+                List.of(List.of("1"), List.of("9")));
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_mid) ORDER BY id",
+                List.of(List.of("10"), List.of("19")));
+            execute(c, "ALTER TABLE " + table + " ADD PARTITION p_high VALUES LESS THAN(30)");
+            execute(c, "INSERT INTO " + table + " VALUES(20,'high-edge'),(29,'中文')");
+            assertRows(c, "SELECT id FROM " + table + " PARTITION(p_high) ORDER BY id",
+                List.of(List.of("20"), List.of("29")));
+            String catalog = "SELECT relname FROM pg_partition WHERE parentid='" + table
+                + "'::regclass AND parttype='p' ORDER BY relname";
+            assertRows(c, catalog, List.of(List.of("p_high"), List.of("p_low"), List.of("p_mid")));
+            execute(c, "ALTER TABLE " + table + " DROP PARTITION p_mid");
+            assertRows(c, catalog, List.of(List.of("p_high"), List.of("p_low")));
+            assertRows(c, "SELECT id,label FROM " + table + " ORDER BY id",
+                List.of(List.of("1", "low"), List.of("9", "low-edge"), List.of("20", "high-edge"), List.of("29", "中文")));
+        });
+    }
+
+    @Test
     void nonexistentDatabaseIsRejectedAndValidConnectionsRemainUsable() throws Exception {
         inIsolatedSchema((c, s) -> {
             String missing = "dbv_missing_" + UUID.randomUUID().toString().replace("-", "");
