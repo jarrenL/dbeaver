@@ -21,6 +21,7 @@ import org.jkiss.dbeaver.model.app.DBPProject;
 import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
 import org.jkiss.dbeaver.model.app.DBPPlatform;
 import org.jkiss.dbeaver.model.app.DBPApplicationWorkbench;
+import org.jkiss.dbeaver.model.access.DBAAuthProfile;
 import org.jkiss.dbeaver.model.impl.app.DefaultValueEncryptor;
 import org.jkiss.dbeaver.registry.DataSourceConfigurationManager;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
@@ -39,6 +40,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -47,12 +50,12 @@ class ConfigurationReadFailureTest {
     private final DataSourceSerializerModern<?> serializer = mock(DataSourceSerializerModern.class);
     private final DataSourceConfigurationManager manager = mock(DataSourceConfigurationManager.class);
     private final DBPDataSourceConfigurationStorage storage = mock(DBPDataSourceConfigurationStorage.class);
+    private final DataSourceRegistry<?> registry = mock(DataSourceRegistry.class);
     private final DefaultValueEncryptor encryptor = spy(new DefaultValueEncryptor(
         DefaultValueEncryptor.makeSecretKeyFromPassword("synthetic-key-02")));
 
     private byte[] configure(boolean encrypted) throws Exception {
         var project = mock(DBPProject.class);
-        var registry = mock(DataSourceRegistry.class);
         when(registry.getProject()).thenReturn(project);
         when(project.isEncryptedProject()).thenReturn(encrypted);
         when(project.getValueEncryptor()).thenReturn(encryptor);
@@ -161,6 +164,77 @@ class ConfigurationReadFailureTest {
         assertEquals("Project secure credentials can not be read", error.getMessage());
         assertTrue(stream.closed);
         assertEmptyResults(results);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void readableConfigurationLoadsFoldersAndAuthProfileWithEncryptedCredentials(boolean encrypted) throws Exception {
+        configure(encrypted);
+        byte[] config = fixtureConfiguration();
+        var configStream = new FixtureStream(encrypted ? encryptor.encryptValue(config) : config, false, false, false);
+        when(manager.readConfiguration("fixture.json", null)).thenReturn(configStream);
+        when(storage.getStorageSubId()).thenReturn("");
+        byte[] credentials = encryptor.encryptValue(
+            "{\"profile:fixture-profile\":{\"#connection\":{\"user\":\"中文用户\",\"password\":\"synthetic-password\"}}}"
+                .getBytes(StandardCharsets.UTF_8));
+        var credentialStream = new FixtureStream(credentials, false, false, false);
+        when(manager.readConfiguration(DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_PREFIX
+            + DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_EXT, null)).thenReturn(credentialStream);
+        var captured = captureProfiles();
+        var results = new DataSourceParseResults();
+        parse(results);
+        assertEquals("fixture-folder", results.addedFolders.iterator().next().getName());
+        assertEquals(1, results.addedFolders.size());
+        assertEquals(1, captured.get().size());
+        assertEquals("中文用户", captured.get().getFirst().getUserName());
+        assertEquals("synthetic-password", captured.get().getFirst().getUserPassword());
+        assertEquals("fixture-profile", captured.get().getFirst().getProfileId());
+        assertEquals(1, configStream.closeCount);
+        assertEquals(1, credentialStream.closeCount);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void missingCredentialFileStillAllowsConfigurationWithoutSavedPassword(boolean encrypted) throws Exception {
+        configure(encrypted);
+        byte[] config = fixtureConfiguration();
+        byte[] contents = encrypted ? encryptor.encryptValue(config) : config;
+        when(manager.readConfiguration("fixture.json", null)).thenReturn(new ByteArrayInputStream(contents));
+        var captured = captureProfiles();
+        var results = new DataSourceParseResults();
+        parse(results);
+        assertEquals(1, results.addedFolders.size());
+        assertEquals(1, captured.get().size());
+        assertNull(captured.get().getFirst().getUserPassword());
+    }
+
+    @Test
+    void failedConfigurationCanBeRetriedWithReadableContent() throws Exception {
+        configure(false);
+        when(manager.readConfiguration("fixture.json", null)).thenReturn(
+            new FixtureStream(new byte[0], true, false, false),
+            new ByteArrayInputStream(fixtureConfiguration()));
+        var results = new DataSourceParseResults();
+        assertThrows(DBException.class, () -> parse(results));
+        assertEmptyResults(results);
+        parse(results);
+        assertEquals(1, results.addedFolders.size());
+        assertEquals("fixture-folder", results.addedFolders.iterator().next().getName());
+    }
+
+    private byte[] fixtureConfiguration() {
+        return ("{\"folders\":{\"fixture-folder\":{}},\"connections\":{},"
+            + "\"auth-profiles\":{\"fixture-profile\":{\"name\":\"测试配置\",\"save-password\":true}}}")
+            .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private AtomicReference<List<DBAAuthProfile>> captureProfiles() {
+        var captured = new AtomicReference<List<DBAAuthProfile>>();
+        doAnswer(call -> {
+            captured.set(call.getArgument(0));
+            return null;
+        }).when(registry).setAuthProfiles(anyList());
+        return captured;
     }
 
     private void parse(DataSourceParseResults results) throws Exception {
