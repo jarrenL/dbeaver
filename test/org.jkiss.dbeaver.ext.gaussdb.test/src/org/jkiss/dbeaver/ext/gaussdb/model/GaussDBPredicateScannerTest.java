@@ -73,4 +73,24 @@ class GaussDBPredicateScannerTest {
         assertTrue(escapeRule().evaluate(scanner).isUndefined());
         assertEquals(4, scanner.getOffset());
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"E''", "e'abc'", "E'a''b'", "E'line\\nnext'", "E'中文'"})
+    void escapeLiteralAtEndOfInputIsRecognized(String text) throws Exception {
+        var scanner = scanner(text);
+        assertFalse(escapeRule().evaluate(scanner).isUndefined());
+        assertEquals(text.length(), scanner.getOffset());
+        var documentScanner = new org.jkiss.dbeaver.model.text.parser.TPRuleBasedScanner();
+        documentScanner.setRange(new org.eclipse.jface.text.Document(text), 0, text.length());
+        assertFalse(escapeRule().evaluate(documentScanner).isUndefined());
+        assertEquals(text.length(), documentScanner.getOffset());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"E'abc';", "E'a''b',", "e'' "})
+    void escapeLiteralLeavesFollowingDelimiterUnread(String text) throws Exception {
+        var scanner = scanner(text);
+        assertFalse(escapeRule().evaluate(scanner).isUndefined());
+        assertEquals(text.charAt(text.length() - 1), scanner.read());
+    }
 }

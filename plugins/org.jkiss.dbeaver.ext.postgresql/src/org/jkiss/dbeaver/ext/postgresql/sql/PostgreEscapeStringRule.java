@@ -66,10 +66,14 @@ public class PostgreEscapeStringRule implements TPPredicateRule {
                 ch = scanner.read();
                 chRead++;
             } else if (ch == '\'') {
+                int literalEnd = scanner.getOffset();
                 ch = scanner.read();
                 chRead++;
-                if (ch != '\'' && ch != TPCharacterScanner.EOF) {
-                    scanner.unread();
+                if (ch != '\'') {
+                    // Scanners differ on whether reading EOF advances their offset.
+                    if (scanner.getOffset() > literalEnd) {
+                        scanner.unread();
+                    }
                     return stringToken;
                 }
             }

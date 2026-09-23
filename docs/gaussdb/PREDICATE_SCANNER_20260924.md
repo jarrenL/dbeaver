@@ -1,5 +1,13 @@
 # SQL 片段扫描器列位置回归
 
+## 转义字符串 EOF 边界
+
+最终run-rz3aa8全1234项、1210通过、24跳过、零失败/错误，新增八项通过。[EOF脱敏报告](test-results-20260924-escape-eof.json)。临时权限测试角色已清理。修复共享PostgreSQL规则，GaussDB沿用；未替代实际编辑器高亮/执行回归。
+
+追加八项：五种合法E/e前缀字符串恰在EOF结束（空串、普通字符、双单引号、反斜杠转义、中文）；三种结尾分隔符保留（分号、逗号、空格）。run-X1oQz7中五项EOF断言全部失败，三项分隔符通过。原因是规则遇到闭合引号后继续向前读，将EOF排除在成功终止条件之外。
+
+修复闭合引号后的判断：非另一个单引号即完成字符串；记录引号结束位置，仅当向前读取推进位置时unread。五项EOF同时使用实际片段扫描器和文档TPRuleBasedScanner，均检查识别结果及最终偏移等于字符串长度，兼容两种EOF推进语义。未改变未闭合字符串失败回退分支，不声称该分支全部验证。
+
 最终run-ia05QF：1226项、1202通过、24跳过、零失败/错误；新增五项通过。[脱敏报告](test-results-20260924-predicate-scanner.json)。完整日志中StringScanner.getColumn异常栈行从首轮435处降为0处，此计数仅针对该路径，不代表全部日志无异常。临时权限测试角色已清理。
 
 历史清单6.1/6.2涉及字符串与词法边界。检查此前完整回归日志发现：SQLTokenPredicateFactory内部StringScanner的getColumn固定抛出UnsupportedOperationException，PostgreSQL转义字符串规则需要该接口，异常被分类循环捕获并打印，绿色汇总不能证明该路径正常。
