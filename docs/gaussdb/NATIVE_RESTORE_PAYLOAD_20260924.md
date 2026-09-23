@@ -26,8 +26,16 @@ GaussDB 507集中式隔离测试库，厂商gs_dump/gsql/gs_restore实际进程�
 
 这些断言扩充既有测试方法，不以一个方法计数代表仅一条数据场景，也不虚增JUnit数量。
 
-## 范围边界
+## 仅结构与仅数据组合恢复增补
 
-执行结果：原用例复跑run-ad66iM通过；增加多类型断言后run-NcWcIl通过。完整测试1517项，1494通过、23跳过、0失败/错误。结果见`test-results-native-payload-20260924.json`。独立gsql确认测试结束schema数量0。未执行Checkstyle/格式检查。
+在同一隔离schema完整恢复后，分别执行实际`gs_dump --data-only -F c`和`gs_dump --schema-only`。保留数据归档到测试临时目录，删除schema，先用gsql恢复仅结构文件，确认两张表均0行；随后用gs_restore导入数据归档，复核全部多类型值。
+
+再次插入重复主键得到23505，插入NULL主键得到23502；失败后原有两行数据不变，验证恢复的不只是列名，还保留主键和非空约束。没有使用`--clean`或全库删除选项；所有删除仅限本次新建的review_native测试schema。
+
+## 执行记录与范围边界
+
+本轮仅结构/仅数据组合及约束验证run-IYKCYa通过，1517项/1494通过/23跳过/0失败；方法数不变。结果见`test-results-native-sections-20260924.json`，独立确认测试schema数量0。本轮未更改生产代码。
+
+前轮执行结果：原用例复跑run-ad66iM通过；增加多类型断言后run-NcWcIl通过。完整测试1517项，1494通过、23跳过、0失败/错误。结果见`test-results-native-payload-20260924.json`。独立gsql确认测试结束schema数量0。未执行Checkstyle/格式检查。
 
 未覆盖分布式原生工具、Windows、备份向导、加密归档、所有对象类型和大规模容量。全实例gs_dumpall需要独立空集群；当前专用55462端口不可连接，本轮未启用，仍跳过，未指向现有实例替代。

@@ -97,6 +97,7 @@ class GaussDBNativeLiveTest {
         String remote = "/tmp/review-native-" + UUID.randomUUID() + ".sql";
         Path directory = Files.createTempDirectory("gaussdb-native-live-");
         Path dump = directory.resolve("dump.sql"), errors = directory.resolve("stderr.log");
+        Path dataArchive = directory.resolve("data-only.backup");
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(jar).toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
             Driver driver = (Driver) loader.loadClass(props.getProperty("review.driverClass", props.getProperty("driverClass")))
                 .getConstructor().newInstance();
@@ -151,6 +152,34 @@ class GaussDBNativeLiveTest {
                     try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("SELECT count(*),sum(n) FROM review_native.rows_to_restore")) {
                         assertTrue(rs.next()); assertEquals(3, rs.getInt(1)); assertEquals(6, rs.getInt(2));
                     }
+                    // Independently backed up structure and data must reconstruct the same schema.
+                    run(new ProcessBuilder(tool("gs_dump", database, user, "-F", "c", "--data-only",
+                        "-n", "review_native", "-f", remote)), errors, settings);
+                    run(new ProcessBuilder("docker", "cp", "gaussdb-507-ha-lab:" + remote, dataArchive.toString())
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder(tool("gs_dump", database, user, "--schema-only",
+                        "-n", "review_native", "-f", remote)), errors, settings);
+                    exec(c, "DROP SCHEMA review_native CASCADE");
+                    run(new ProcessBuilder(tool("gsql", database, user, "-v", "ON_ERROR_STOP=1", "-f", remote)), errors, settings);
+                    try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery(
+                        "SELECT (SELECT count(*) FROM review_native.payload), (SELECT count(*) FROM review_native.rows_to_restore)")) {
+                        assertTrue(rs.next());
+                        assertEquals(0, rs.getInt(1));
+                        assertEquals(0, rs.getInt(2));
+                    }
+                    run(new ProcessBuilder("docker", "cp", dataArchive.toString(), "gaussdb-507-ha-lab:" + remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "chown", "gausscore:dbgrp", remote)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
+                    run(new ProcessBuilder(tool("gs_restore", database, user, remote)), errors, settings);
+                    verifyPayload(c);
+                    SQLException duplicate = assertThrows(SQLException.class,
+                        () -> exec(c, "INSERT INTO review_native.payload(id) VALUES(1)"));
+                    assertEquals("23505", duplicate.getSQLState(), "Schema-only backup must preserve the primary key");
+                    SQLException notNull = assertThrows(SQLException.class,
+                        () -> exec(c, "INSERT INTO review_native.payload(id) VALUES(NULL)"));
+                    assertEquals("23502", notNull.getSQLState());
+                    verifyPayload(c);
                     // A failed script must report failure and stop before the following destructive statement.
                     Files.writeString(dump, "SELECT 1/0;\nDELETE FROM review_native.rows_to_restore;\n");
                     run(new ProcessBuilder("docker", "cp", dump.toString(), "gaussdb-507-ha-lab:" + remote)
@@ -180,7 +209,7 @@ class GaussDBNativeLiveTest {
             // Exact randomly generated test artifact; never delete a user backup.
             run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "rm", "-f", remote)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
-            Files.deleteIfExists(dump); Files.deleteIfExists(errors); Files.delete(directory);
+            Files.deleteIfExists(dump); Files.deleteIfExists(dataArchive); Files.deleteIfExists(errors); Files.delete(directory);
         }
     }
 
