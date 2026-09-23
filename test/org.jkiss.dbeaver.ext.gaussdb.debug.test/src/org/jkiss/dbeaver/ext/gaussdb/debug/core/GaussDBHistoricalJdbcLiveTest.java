@@ -37,6 +37,39 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void intervalPartitionDdlRetainsAutomaticMonthlyExpansion() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".interval_roundtrip";
+            try {
+                execute(c, "CREATE TABLE " + table + "(id int, event_date timestamp) "
+                    + "PARTITION BY RANGE(event_date) INTERVAL('1 month') "
+                    + "(PARTITION p_initial VALUES LESS THAN('2024-02-01'))");
+            } catch (java.sql.SQLException failure) {
+                if (failure.getMessage() != null && failure.getMessage().contains(
+                    "Interval partitioned table is only supported in single-node mode")) {
+                    assumeTrue(false, "Server restricts interval partitions to single-node mode (SQLSTATE "
+                        + failure.getSQLState() + "); positive path not verified");
+                }
+                throw failure;
+            }
+            String partitions = "SELECT count(*) FROM pg_partition WHERE parentid='" + table + "'::regclass AND parttype='p'";
+            assertRows(c, partitions, List.of(List.of("1")));
+            execute(c, "INSERT INTO " + table + " VALUES(1,'2024-01-31'),(2,'2024-02-29'),(3,'2024-03-01')");
+            assertRows(c, partitions, List.of(List.of("3")));
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            assertTrue(ddl.toUpperCase(java.util.Locale.ROOT).contains("INTERVAL"));
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            assertRows(c, partitions, List.of(List.of("3")));
+            execute(c, "INSERT INTO " + table + " VALUES(4,'2024-04-01')");
+            assertRows(c, partitions, List.of(List.of("4")));
+            assertRows(c, "SELECT id,to_char(event_date,'YYYY-MM-DD') FROM " + table,
+                List.of(List.of("4", "2024-04-01")));
+        });
+    }
+
+    @Test
     void hashPartitionDdlRoundtripPreservesCompleteDisjointRouting() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".hash_roundtrip";
