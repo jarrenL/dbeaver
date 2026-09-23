@@ -166,6 +166,91 @@ class GaussDBInsertFromDataTest {
             generate("SQLGeneratorDeleteFromData", false, true));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"empty-immutable-key", "empty-mutable-key", "two-rows", "hidden", "pseudo", "empty-selection"})
+    void keylessDeletePreservesIdentifiersAndSelectedRows(String scenario) throws Exception {
+        var identifier = mock(org.jkiss.dbeaver.model.data.DBDRowIdentifier.class);
+        List<DBDAttributeBinding> originalKeys = scenario.equals("empty-mutable-key")
+            ? new java.util.ArrayList<>() : List.of();
+        when(identifier.getAttributes()).thenReturn(originalKeys);
+        when(provider.getDefaultRowIdentifier()).thenReturn(identifier);
+        when(provider.getCellValue(second, row)).thenReturn("a");
+        String expected = "DELETE FROM \"订单 表\" WHERE \"second col\"='a' AND \"first col\"='001';\n";
+        switch (scenario) {
+            case "empty-immutable-key", "empty-mutable-key" -> { }
+            case "two-rows" -> {
+                var another = mock(DBDValueRow.class);
+                when(provider.getCellValue(first, another)).thenReturn("002");
+                when(provider.getCellValue(second, another)).thenReturn(null);
+                doReturn(List.of(another, row)).when(provider).getSelectedRows();
+                expected = "DELETE FROM \"订单 表\" WHERE \"second col\" IS NULL AND \"first col\"='002';\n" + expected;
+            }
+            case "hidden", "pseudo" -> {
+                if (scenario.equals("hidden")) {
+                    when(((org.jkiss.dbeaver.model.DBPHiddenObject) second).isHidden()).thenReturn(true);
+                } else {
+                    when(second.isPseudoAttribute()).thenReturn(true);
+                }
+                expected = "DELETE FROM \"订单 表\" WHERE \"first col\"='001';\n";
+            }
+            case "empty-selection" -> {
+                doReturn(List.of()).when(provider).getSelectedRows();
+                expected = "";
+            }
+            default -> fail("Unexpected scenario");
+        }
+        assertEquals(expected, generate("SQLGeneratorDeleteFromData", false, true));
+        assertTrue(originalKeys.isEmpty(), "Generating SQL must not modify the row identifier");
+        if (scenario.equals("hidden") || scenario.equals("pseudo")) {
+            verify(provider, never()).getCellValue(second, row);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"quoted-value", "null-value", "null-key", "two-rows", "empty-selection", "hidden-value", "pseudo-value"})
+    void generatesUpdateWithSeparatedKeysAndValues(String scenario) throws Exception {
+        var identifier = mock(org.jkiss.dbeaver.model.data.DBDRowIdentifier.class);
+        when(identifier.getAttributes()).thenReturn(List.of(first));
+        when(provider.getDefaultRowIdentifier()).thenReturn(identifier);
+        when(provider.getCellValue(second, row)).thenReturn("O'Reilly");
+        String expected = "UPDATE \"订单 表\" SET \"second col\"='O''Reilly' WHERE \"first col\"='001';\n";
+        switch (scenario) {
+            case "quoted-value" -> { }
+            case "null-value" -> {
+                when(provider.getCellValue(second, row)).thenReturn(null);
+                expected = "UPDATE \"订单 表\" SET \"second col\"=NULL WHERE \"first col\"='001';\n";
+            }
+            case "null-key" -> {
+                when(provider.getCellValue(first, row)).thenReturn(null);
+                expected = "UPDATE \"订单 表\" SET \"second col\"='O''Reilly' WHERE \"first col\" IS NULL;\n";
+            }
+            case "two-rows" -> {
+                var another = mock(DBDValueRow.class);
+                when(provider.getCellValue(first, another)).thenReturn("002");
+                when(provider.getCellValue(second, another)).thenReturn("中文");
+                doReturn(List.of(another, row)).when(provider).getSelectedRows();
+                expected = "UPDATE \"订单 表\" SET \"second col\"='中文' WHERE \"first col\"='002';\n" + expected;
+            }
+            case "empty-selection" -> {
+                doReturn(List.of()).when(provider).getSelectedRows();
+                expected = "";
+            }
+            case "hidden-value", "pseudo-value" -> {
+                var excluded = column(first.getDataSource(), "excluded col");
+                if (scenario.equals("hidden-value")) {
+                    when(((org.jkiss.dbeaver.model.DBPHiddenObject) excluded).isHidden()).thenReturn(true);
+                } else {
+                    when(excluded.isPseudoAttribute()).thenReturn(true);
+                }
+                when(provider.getVisibleAttributes()).thenReturn(List.of(excluded, second, first));
+                when(provider.getAttributes()).thenReturn(new DBDAttributeBinding[] {first, second, excluded});
+            }
+            default -> fail("Unexpected scenario");
+        }
+        assertEquals(expected, generate("SQLGeneratorUpdateFromData", false, true));
+        assertEquals(List.of(first), identifier.getAttributes());
+    }
+
     private String generate(String generatorClass, boolean excludeGenerated, boolean compact) throws Exception {
         // This implementation package is intentionally not exported by its OSGi bundle.
         // Load through the owning bundle instead of widening production exports for a test.
