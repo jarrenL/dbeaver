@@ -27,6 +27,37 @@ import static org.junit.jupiter.api.Assertions.*;
 class GaussDBProjectionMetadataTest {
     @ParameterizedTest
     @ValueSource(strings = {
+        "WITH q AS (SELECT id FROM public.accounts) SELECT q.id FROM q",
+        "WITH q AS (SELECT id FROM public.accounts) SELECT x.id FROM q x",
+        "WITH \"中文\" AS (SELECT id FROM public.accounts) SELECT x.id FROM \"中文\" x",
+        "SELECT q.id FROM (SELECT id FROM public.accounts) q",
+        "SELECT q.id FROM (SELECT id FROM public.accounts UNION ALL SELECT id FROM audit.other_table) q"
+    })
+    void virtualRelationsAreNotReportedAsPhysicalTables(String sql) {
+        SQLQuery query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getEntityMetadata(false), "A virtual relation name is not a physical update target");
+        assertNull(query.getSelectItem(0).getEntityMetaData(), "Do not invent a table from the derived alias");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "WITH q AS (SELECT 1) SELECT a.id FROM public.accounts a",
+        "SELECT a.id FROM public.accounts a WHERE EXISTS (SELECT 1 FROM audit.other_table a WHERE a.id=1)",
+        "SELECT a.id FROM public.accounts a ORDER BY a.id",
+        "SELECT a.id FROM public.accounts a WHERE a.id IN (SELECT b.id FROM audit.other_table b)"
+    })
+    void nestedOrUnrelatedAliasesDoNotHideOuterPhysicalSource(String sql) {
+        SQLQuery query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        var metadata = query.getSelectItem(0).getEntityMetaData();
+        assertNotNull(metadata);
+        assertEquals("accounts", metadata.getEntityName());
+        assertEquals("public", metadata.getSchemaName());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
         "amount+1", "amount*2", "coalesce(amount,0)", "count(*)", "sum(amount)",
         "CASE WHEN amount>0 THEN 1 ELSE 0 END", "CAST(amount AS numeric(10,2))",
         "row_number() OVER (ORDER BY id)", "(SELECT max(amount) FROM public.other_table)",

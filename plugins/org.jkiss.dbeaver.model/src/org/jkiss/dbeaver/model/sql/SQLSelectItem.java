@@ -85,8 +85,10 @@ public class SQLSelectItem {
             if (query.getStatement() instanceof Select) {
                 Table refTable = SQLSemanticProcessor.findTableByNameOrAlias((Select) query.getStatement(), table.getName());
                 if (refTable != null) {
-                    return query.createTableMetaData(refTable);
+                    return query.isVirtualTable(refTable) ? null : query.createTableMetaData(refTable);
                 }
+                // A derived-table alias (or an unresolved qualifier) is not a physical table.
+                return null;
             }
         }
         return query.createTableMetaData(table);

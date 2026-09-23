@@ -156,7 +156,7 @@ public class SQLQuery implements SQLScriptElement {
                 // Detect single source table (no joins, no group by, no sub-selects)
                 {
                     FromItem fromItem = plainSelect.getFromItem();
-                    if (fromItem instanceof Table fromTable && isPotentiallySingleSourceSelect(plainSelect)) {
+                    if (fromItem instanceof Table fromTable && !isVirtualTable(fromTable) && isPotentiallySingleSourceSelect(plainSelect)) {
                         boolean hasSubSelects = false;
                         boolean hasDirectSelects = false;
                         for (SelectItem<?> si : plainSelect.getSelectItems()) {
@@ -255,6 +255,22 @@ public class SQLQuery implements SQLScriptElement {
 
     SingleTableMeta createTableMetaData(Table fromItem) {
         return createUnquotedTableMetaData(createOriginalSourceTableMetaData(fromItem));
+    }
+
+    boolean isVirtualTable(Table table) {
+        // Schema-qualified references cannot name a CTE in the current query scope.
+        if (table.getSchemaName() != null || (table.getDatabase() != null
+            && CommonUtils.isNotEmpty(table.getDatabase().getDatabaseName()))) {
+            return false;
+        }
+        if (statement instanceof Select select) {
+            for (WithItem<?> item : CommonUtils.safeList(select.getWithItemsList())) {
+                if (CommonUtils.equalObjects(item.getAliasName(), table.getName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private SingleTableMeta createOriginalSourceTableMetaData(Table fromItem) {
