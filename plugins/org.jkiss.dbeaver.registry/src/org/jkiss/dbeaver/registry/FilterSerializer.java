@@ -36,6 +36,8 @@ import java.util.Map;
 
 public class FilterSerializer<T extends DataSourceDescriptor> {
 
+    private static final String ATTR_CASE_SENSITIVE = "case-sensitive";
+
     protected static final Gson CONFIG_GSON = DataSourceSerializerModern.CONFIG_GSON;
 
     @NotNull
@@ -60,6 +62,7 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
         filter.setName(JSONUtils.getString(map, RegistryConstants.ATTR_NAME));
         filter.setDescription(JSONUtils.getString(map, RegistryConstants.ATTR_DESCRIPTION));
         filter.setEnabled(JSONUtils.getBoolean(map, RegistryConstants.ATTR_ENABLED));
+        filter.setCaseSensitive(JSONUtils.getBoolean(map, ATTR_CASE_SENSITIVE));
         filter.setInclude(JSONUtils.deserializeStringList(map, RegistryConstants.TAG_INCLUDE));
         filter.setExclude(JSONUtils.deserializeStringList(map, RegistryConstants.TAG_EXCLUDE));
         return filter;
@@ -74,7 +77,7 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
                 jsonWriter.setIndent("");
                 saveObjectFilters(jsonWriter, null, dataSourceDescriptor, true);
                 jsonWriter.flush();
-                return dsConfigBuffer.toString();
+                return dsConfigBuffer.toString(StandardCharsets.UTF_8);
             }
         }
     }
@@ -104,6 +107,10 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
                 }
             }
             json.endArray();
+        } else if (arrayName == null) {
+            // Standalone user-filter documents must remain valid JSON even without mappings.
+            json.beginArray();
+            json.endArray();
         }
     }
 
@@ -129,6 +136,7 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
         JSONUtils.fieldNE(json, RegistryConstants.ATTR_NAME, filter.getName());
         JSONUtils.fieldNE(json, RegistryConstants.ATTR_DESCRIPTION, filter.getDescription());
         JSONUtils.field(json, RegistryConstants.ATTR_ENABLED, filter.isEnabled());
+        JSONUtils.field(json, ATTR_CASE_SENSITIVE, filter.isCaseSensitive());
         JSONUtils.serializeStringList(json, RegistryConstants.TAG_INCLUDE, filter.getInclude());
         JSONUtils.serializeStringList(json, RegistryConstants.TAG_EXCLUDE, filter.getExclude());
         json.endObject();
