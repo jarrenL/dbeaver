@@ -21,6 +21,9 @@ import org.jkiss.dbeaver.model.qm.QMEventFilter;
 import org.jkiss.dbeaver.model.qm.QMMetaEvent;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.runtime.qm.QMLogFileWriter;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
+import org.jkiss.dbeaver.model.qm.QMConstants;
+import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
 import org.jkiss.junit.DBeaverUnitTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -59,6 +62,9 @@ class QueryHistoryFileTest extends DBeaverUnitTest {
 
     private QMMetaEvent event(String sql, boolean error) {
         var execution = mock(QMMStatementExecuteInfo.class);
+        var statement = mock(QMMStatementInfo.class);
+        when(statement.getPurpose()).thenReturn(DBCExecutionPurpose.USER);
+        when(execution.getStatement()).thenReturn(statement);
         when(execution.getQueryString()).thenReturn(sql);
         when(execution.getOpenTime()).thenReturn(1000L);
         when(execution.getCloseTime()).thenReturn(2000L);
@@ -66,6 +72,81 @@ class QueryHistoryFileTest extends DBeaverUnitTest {
         when(execution.hasError()).thenReturn(error);
         when(execution.getErrorMessage()).thenReturn("fixture error");
         return new QMMetaEvent(execution, QMEventAction.END, 2000L, "fixture");
+    }
+
+    @Test
+    void changingLogDirectoryClosesOldOutputAndWritesToNewFile() throws Exception {
+        var oldOutput = mock(Writer.class);
+        reconfigure(oldOutput, directory, true, writer -> {
+            verify(oldOutput, times(1)).close();
+            writer.metaInfoChanged(new VoidProgressMonitor(), List.of(event("SELECT 'new directory 中文'", false)));
+            try (var files = Files.list(directory)) {
+                var log = files.filter(path -> path.getFileName().toString().startsWith("dbeaver_sql_")).findFirst().orElseThrow();
+                assertTrue(Files.readString(log).contains("SELECT 'new directory 中文'"));
+            }
+            verify(oldOutput, never()).write(anyString());
+        });
+    }
+
+    @Test
+    void failedDirectoryChangeDoesNotContinueWritingToOldDestination() throws Exception {
+        Path notDirectory = Files.createFile(directory.resolve("not-directory"));
+        var oldOutput = mock(Writer.class);
+        reconfigure(oldOutput, notDirectory, true, writer -> {
+            verify(oldOutput, times(1)).close();
+            writer.metaInfoChanged(new VoidProgressMonitor(), List.of(event("SELECT 1", false)));
+            verify(oldOutput, never()).write(anyString());
+        });
+    }
+
+    @Test
+    void disablingLogPreferenceClosesOutputAndDropsLaterEvents() throws Exception {
+        var oldOutput = mock(Writer.class);
+        reconfigure(oldOutput, directory, false, writer -> {
+            verify(oldOutput, times(1)).close();
+            writer.metaInfoChanged(new VoidProgressMonitor(), List.of(event("SELECT 1", false)));
+            verify(oldOutput, never()).write(anyString());
+        });
+    }
+
+    @FunctionalInterface
+    private interface WriterAssertion {
+        void verifyWriter(QMLogFileWriter writer) throws Exception;
+    }
+
+    private void reconfigure(Writer oldOutput, Path target, boolean enabled, WriterAssertion assertion) throws Exception {
+        var preferences = DBWorkbench.getPlatform().getPreferenceStore();
+        var settings = java.util.Map.of(
+            QMConstants.PROP_STORE_LOG_FILE, Boolean.toString(enabled),
+            QMConstants.PROP_HISTORY_DAYS, "7",
+            QMConstants.PROP_LOG_DIRECTORY, target.toString(),
+            QMConstants.PROP_OBJECT_TYPES, "query",
+            QMConstants.PROP_QUERY_TYPES, "USER");
+        var previous = new java.util.HashMap<String, String>();
+        var defaults = new java.util.HashSet<String>();
+        for (String key : settings.keySet()) {
+            previous.put(key, preferences.getString(key));
+            if (preferences.isDefault(key)) {
+                defaults.add(key);
+            }
+        }
+        try {
+            settings.forEach(preferences::setValue);
+            assertEquals(enabled, preferences.getBoolean(QMConstants.PROP_STORE_LOG_FILE));
+            assertEquals(target.toString(), preferences.getString(QMConstants.PROP_LOG_DIRECTORY));
+            var writer = writer(oldOutput);
+            try {
+                var initialize = QMLogFileWriter.class.getDeclaredMethod("initLogFile");
+                initialize.setAccessible(true);
+                initialize.invoke(writer);
+                assertion.verifyWriter(writer);
+            } finally {
+                writer.dispose();
+            }
+        } finally {
+            previous.forEach(preferences::setValue);
+            defaults.forEach(preferences::setToDefault);
+        }
     }
 
     @Test

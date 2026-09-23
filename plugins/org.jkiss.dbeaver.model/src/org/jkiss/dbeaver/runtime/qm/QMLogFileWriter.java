@@ -78,6 +78,10 @@ public class QMLogFileWriter implements QMMetaListener, DBPPreferenceListener {
 
     private synchronized void initLogFile() {
         final DBPPreferenceStore preferences = DBWorkbench.getPlatform().getPreferenceStore();
+        if (logWriter != null) {
+            ContentUtils.close(logWriter);
+            logWriter = null;
+        }
         enabled = preferences.getBoolean(QMConstants.PROP_STORE_LOG_FILE);
         if (enabled) {
             final int daysToKeepLogs = preferences.getInt(QMConstants.PROP_HISTORY_DAYS);
@@ -102,11 +106,6 @@ public class QMLogFileWriter implements QMMetaListener, DBPPreferenceListener {
                 logWriter = new FileWriter(logFile, true);
             } catch (IOException e) {
                 log.error("Can't open log writer", e);
-            }
-        } else {
-            if (logWriter != null) {
-                ContentUtils.close(logWriter);
-                logWriter = null;
             }
         }
         eventFilter = new DefaultEventFilter();
