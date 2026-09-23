@@ -120,7 +120,7 @@ public class DBAAuthProfile extends DBPConfigurationProfile {
         if (getUserName() != null) {
             props.put("user", getUserName());
         }
-        if (getUserPassword() != null) {
+        if (isSavePassword() && getUserPassword() != null) {
             props.put("password", getUserPassword());
         }
         // Additional auth props
