@@ -127,6 +127,28 @@ class GaussDBInsertFromDataTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"1E-38", "1E+38", "-1.2345678901234567890123456789012345678E-20", "99999999999999999999999999999999999999"})
+    void refreshesScientificNumberFormatWithoutChangingPrecision(String decimal) throws Exception {
+        var value = new java.math.BigDecimal(decimal);
+        when(second.getDataKind()).thenReturn(DBPDataKind.NUMERIC);
+        when(second.getTypeName()).thenReturn("numeric");
+        when(second.getTypeID()).thenReturn(java.sql.Types.NUMERIC);
+        var settings = mock(org.jkiss.dbeaver.model.data.DBDFormatSettings.class);
+        var handler = new org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCNumberValueHandler(second, settings);
+        when(((DBDValueHandlerProvider) second.getDataSource()).getValueHandler(any(), any(), eq(second))).thenReturn(handler);
+        when(provider.getCellValue(second, row)).thenReturn(value);
+        String prefix = "INSERT INTO \"订单 表\" (\"second col\", \"first col\") VALUES(";
+        String suffix = ", '001');\n";
+        assertEquals(prefix + value.toPlainString() + suffix, generate(false, true));
+        when(settings.isUseScientificNumericFormat()).thenReturn(true);
+        handler.refreshValueHandlerConfiguration(second);
+        assertEquals(prefix + decimal + suffix, generate(false, true));
+        when(settings.isUseScientificNumericFormat()).thenReturn(false);
+        handler.refreshValueHandlerConfiguration(second);
+        assertEquals(prefix + value.toPlainString() + suffix, generate(false, true));
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"empty-selection", "two-rows", "exclude-generated", "include-generated", "visible-only", "multiline",
         "hidden-column", "pseudo-column", "missing-binding"})
     void preservesSelectedRowsAndColumnOptions(String scenario) throws Exception {
