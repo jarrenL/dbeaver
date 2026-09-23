@@ -129,9 +129,29 @@ class QueryHistoryCursorTest {
     }
 
     private QMEventBrowser browser(List<QMMetaEvent> events) throws Exception {
-        var registry = mock(QMRegistryImpl.class);
         var collector = mock(QMMCollectorImpl.class);
         when(collector.getPastEvents()).thenAnswer(invocation -> new ArrayList<>(events));
+        return browser(collector);
+    }
+
+    @Test
+    void browserRoutesOnlySelectedHistoryObjectsToCollector() throws Exception {
+        var collector = mock(QMMCollectorImpl.class);
+        var first = event("selected", DBCExecutionPurpose.USER);
+        var second = event("also selected", DBCExecutionPurpose.USER);
+        browser(collector).deleteHistoryEvents(List.of(first, second));
+        verify(collector).deleteHistoryObjects(List.of(first.getObject(), second.getObject()));
+        verifyNoMoreInteractions(collector);
+    }
+
+    @Test
+    void unsupportedProviderRejectsDeletionInsteadOfPretendingSuccess() {
+        var browser = mock(QMEventBrowser.class, CALLS_REAL_METHODS);
+        assertThrows(DBException.class, () -> browser.deleteHistoryEvents(List.of()));
+    }
+
+    private QMEventBrowser browser(QMMCollectorImpl collector) throws Exception {
+        var registry = mock(QMRegistryImpl.class);
         var field = QMRegistryImpl.class.getDeclaredField("metaHandler");
         field.setAccessible(true);
         field.set(registry, collector);

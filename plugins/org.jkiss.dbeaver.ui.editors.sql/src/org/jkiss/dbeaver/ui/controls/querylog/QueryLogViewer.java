@@ -613,7 +613,7 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
         this.entriesPerPage = Math.max(MIN_ENTRIES_PER_PAGE, store.getInt(QMConstants.PROP_ENTRIES_PER_PAGE));
         this.defaultFilter = new DefaultEventFilter();
 
-        clearLog();
+        clearView();
 
         // Extract events
 
@@ -647,9 +647,19 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
         }
         logTable.setRedraw(false);
         try {
+            // Another viewer may have deleted an object while this update was queued.
+            for (TableItem item : logTable.getItems()) {
+                if (item.getData() instanceof QMEvent event && event.getObject().isHistoryDeleted()) {
+                    objectToItemMap.remove(event.getObject().getObjectId());
+                    item.dispose();
+                }
+            }
             // Add events in reverse order
             int itemIndex = 0;
             for (QMEvent qmEvent : events) {
+                if (qmEvent.getObject().isHistoryDeleted()) {
+                    continue;
+                }
                 if (useDefaultFilter && itemIndex >= entriesPerPage) {
                     // Do not add remaining (older) events - they don't fit page anyway
                     break;
@@ -722,6 +732,9 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
     }
 
     private int createOrUpdateItem(QMEvent event, int itemIndex) {
+        if (event.getObject().isHistoryDeleted()) {
+            return itemIndex;
+        }
         TableItem item = objectToItemMap.get(event.getObject().getObjectId());
         if (item == null) {
             item = new TableItem(logTable, SWT.NONE, itemIndex++);
@@ -945,6 +958,9 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
     }
 
     public synchronized void deleteSelectedItems() {
+        if (!deleteHistoryItems(logTable.getSelection())) {
+            return;
+        }
         for (TableItem tableItem : logTable.getSelection()) {
             objectToItemMap.remove(((QMEvent) tableItem.getData()).getObject().getObjectId());
         }
@@ -953,6 +969,29 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
     }
 
     public synchronized void clearLog() {
+        if (deleteHistoryItems(logTable.getItems())) {
+            clearView();
+        }
+    }
+
+    private boolean deleteHistoryItems(TableItem[] items) {
+        if (items.length == 0) {
+            return true;
+        }
+        QMEventBrowser browser = QMUtils.getEventBrowser(currentSessionOnly);
+        try {
+            if (browser == null) {
+                throw new DBException(SQLEditorMessages.query_history_delete_unavailable);
+            }
+            browser.deleteHistoryEvents(Arrays.stream(items).map(item -> (QMEvent) item.getData()).toList());
+            return true;
+        } catch (DBException e) {
+            DBWorkbench.getPlatformUI().showError(SQLEditorMessages.query_history_delete_error, null, e);
+            return false;
+        }
+    }
+
+    private void clearView() {
         logTable.removeAll();
         objectToItemMap.clear();
     }

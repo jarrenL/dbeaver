@@ -187,6 +187,11 @@ public class QMRegistryImpl implements QMRegistry {
     }
 
     private class DefaultEventBrowser implements QMEventBrowser {
+        @Override
+        public void deleteHistoryEvents(@NotNull java.util.Collection<? extends QMEvent> events) {
+            metaHandler.deleteHistoryObjects(events.stream().map(QMEvent::getObject).toList());
+        }
+
         @NotNull
         @Override
         public QMEventCursor getQueryHistoryCursor(@NotNull QMCursorFilter cursorFilter) {

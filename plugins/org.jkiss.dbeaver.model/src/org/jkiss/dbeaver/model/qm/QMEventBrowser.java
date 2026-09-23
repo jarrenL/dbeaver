@@ -26,6 +26,11 @@ import org.jkiss.dbeaver.model.qm.filters.QMCursorFilter;
  */
 public interface QMEventBrowser {
 
+    /** Deletes exactly the supplied history objects, not database data or audit log files. */
+    default void deleteHistoryEvents(@NotNull java.util.Collection<? extends QMEvent> events) throws DBException {
+        throw new DBException("History deletion is not supported by this history provider");
+    }
+
     @NotNull
     QMEventCursor getQueryHistoryCursor(@NotNull QMCursorFilter cursorFilter)
         throws DBException;
