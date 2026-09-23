@@ -37,6 +37,35 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void hashPartitionDdlRoundtripPreservesCompleteDisjointRouting() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".hash_roundtrip";
+            execute(c, "CREATE TABLE " + table + "(id int, bucket_key int) DISTRIBUTE BY HASH(id) "
+                + "PARTITION BY HASH(bucket_key)(PARTITION p0,PARTITION p1,PARTITION p2,PARTITION p3)");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            assertTrue(ddl.toUpperCase(java.util.Locale.ROOT).contains("PARTITION BY HASH"));
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            execute(c, "INSERT INTO " + table + " SELECT i,CASE WHEN i=0 THEN NULL ELSE i-10 END FROM generate_series(0,20) AS i");
+            var partitionIds = new java.util.ArrayList<Integer>();
+            for (String partition : List.of("p0", "p1", "p2", "p3")) {
+                try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                    "SELECT id FROM " + table + " PARTITION(" + partition + ")")) {
+                    while (rows.next()) partitionIds.add(rows.getInt(1));
+                }
+            }
+            partitionIds.sort(Integer::compareTo);
+            assertEquals(java.util.stream.IntStream.rangeClosed(0, 20).boxed().toList(), partitionIds);
+            assertEquals(21, count(c, table));
+            assertRows(c, "SELECT id FROM " + table + " WHERE bucket_key IS NULL", List.of(List.of("0")));
+            assertRows(c, "SELECT relname FROM pg_partition WHERE parentid='" + table
+                + "'::regclass AND parttype='p' ORDER BY relname",
+                List.of(List.of("p0"), List.of("p1"), List.of("p2"), List.of("p3")));
+        });
+    }
+
+    @Test
     void listPartitionDdlRoundtripPreservesUnicodeRoutingAndMutation() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".list_roundtrip";
