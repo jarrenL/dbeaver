@@ -1199,6 +1199,11 @@ public final class SQLUtils {
                 String endQuote = quotePair[1];
                 if (!CommonUtils.isEmpty(startQuote) && !CommonUtils.isEmpty(endQuote) && name.startsWith(startQuote)) {
                     int endPos = name.indexOf(endQuote, startQuote.length());
+                    if (endPos == -1) {
+                        // Completion may stop inside a quoted identifier containing a separator.
+                        nameList.add(keepQuotes ? name : name.substring(startQuote.length()));
+                        return nameList.toArray(new String[0]);
+                    }
                     if (endPos != -1) {
                         // Quoted part
                         String partName = keepQuotes ?

@@ -27,6 +27,17 @@ public class SQLUtilsTest extends DBeaverUnitTest {
     private static final OracleSQLDialect ORACLE_SQL_DIALECT = new OracleSQLDialect();
 
     @Test
+    public void splitIncompleteQuotedIdentifierPreservesInternalSeparator() {
+        for (String[] pair : new String[][] {{"\"", "\""}, {"`", "`"}, {"[", "]"}}) {
+            String input = "catalog." + pair[0] + "a.schema" + pair[1] + "." + pair[0] + "a.ta";
+            Assertions.assertArrayEquals(new String[] {"catalog", pair[0] + "a.schema" + pair[1], pair[0] + "a.ta"},
+                SQLUtils.splitFullIdentifier(input, ".", new String[][] {pair}, true));
+            Assertions.assertArrayEquals(new String[] {"catalog", "a.schema", "a.ta"},
+                SQLUtils.splitFullIdentifier(input, ".", new String[][] {pair}, false));
+        }
+    }
+
+    @Test
     public void makeRegexFromLikeTest() {
         Assertions.assertEquals("^ABC$", SQLUtils.makeRegexFromLike("ABC"));
         Assertions.assertEquals("^A.*C$", SQLUtils.makeRegexFromLike("A%C"));

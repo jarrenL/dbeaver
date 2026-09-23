@@ -25,6 +25,8 @@ import org.jkiss.junit.DBeaverUnitTest;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
@@ -423,6 +425,22 @@ public class SQLCompletionAnalyzerTest extends DBeaverUnitTest {
             Assertions.assertEquals("Col2", proposals.get(1).getReplacementString());
             Assertions.assertEquals("Col3", proposals.get(2).getReplacementString());
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "\"", "\" WHERE 1 = 1"})
+    public void testQuotedDottedTableCompletionReplacement(String suffix) throws DBException {
+        final RequestResult request = RequestBuilder.databases(x -> x.database("Database1", d ->
+            d.schema("a.schema", s -> s.table("a.table", empty())))).prepare();
+        String original = "SELECT * FROM Database1.\"a.schema\".\"a.ta" + suffix;
+        var proposals = request.request("SELECT * FROM Database1.\"a.schema\".\"a.ta|" + suffix);
+        Assertions.assertEquals(1, proposals.size());
+        var proposal = proposals.get(0);
+        Assertions.assertEquals("\"a.table\" t", proposal.getReplacementString());
+        String completed = original.substring(0, proposal.getReplacementOffset()) + proposal.getReplacementString()
+            + original.substring(proposal.getReplacementOffset() + proposal.getReplacementLength());
+        Assertions.assertEquals("SELECT * FROM Database1.\"a.schema\".\"a.table\" t"
+            + (suffix.length() > 1 ? suffix.substring(1) : ""), completed);
     }
 
     @Test

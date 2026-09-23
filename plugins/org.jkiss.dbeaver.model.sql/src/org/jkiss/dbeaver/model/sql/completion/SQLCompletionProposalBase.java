@@ -122,6 +122,43 @@ public class SQLCompletionProposalBase extends CompletionProposalBase {
         return object;
     }
 
+    @NotNull
+    private static String maskQuotedIdentifiers(@NotNull String word, @Nullable DBPDataSource dataSource) {
+        if (dataSource == null) {
+            return word;
+        }
+        StringBuilder masked = new StringBuilder(word);
+        String[][] quotes = dataSource.getSQLDialect().getIdentifierQuoteStrings();
+        if (quotes == null) {
+            return word;
+        }
+        for (int i = 0; i < word.length(); i++) {
+            for (String[] pair : quotes) {
+                if (CommonUtils.isEmpty(pair[0]) || CommonUtils.isEmpty(pair[1]) || !word.startsWith(pair[0], i)) {
+                    continue;
+                }
+                int end = i + pair[0].length();
+                while (end < word.length()) {
+                    if (word.startsWith(pair[1], end)) {
+                        end += pair[1].length();
+                        if (word.startsWith(pair[1], end)) {
+                            end += pair[1].length();
+                            continue;
+                        }
+                        break;
+                    }
+                    end++;
+                }
+                for (int j = i; j < end; j++) {
+                    masked.setCharAt(j, ' ');
+                }
+                i = end - 1;
+                break;
+            }
+        }
+        return masked.toString();
+    }
+
     protected void setPosition(SQLWordPartDetector wordDetector) {
         final String fullWord = wordDetector.getFullWord();
         final int curOffset = wordDetector.getCursorOffset() - wordDetector.getStartOffset();
@@ -137,11 +174,12 @@ public class SQLCompletionProposalBase extends CompletionProposalBase {
             || dataSource != null && containsQuotedIdentifier(dataSource, replacementString)
         ) {
             // Replace only last part
-            int startOffset = fullWord.lastIndexOf(structSeparator, curOffset - 1);
+            String separatorMask = maskQuotedIdentifiers(fullWord, dataSource);
+            int startOffset = separatorMask.lastIndexOf(structSeparator, curOffset - 1);
             if (startOffset == -1) {
                 startOffset = 0;
             } else if (startOffset > curOffset) {
-                startOffset = fullWord.lastIndexOf(structSeparator, curOffset);
+                startOffset = separatorMask.lastIndexOf(structSeparator, curOffset);
                 if (startOffset == -1) {
                     startOffset = curOffset;
                 } else {
@@ -151,7 +189,7 @@ public class SQLCompletionProposalBase extends CompletionProposalBase {
                 startOffset++;
             }
             // End offset - number of character which to the right from replacement which we don't touch (e.g. in complex identifiers like xxx.zzz.yyy)
-            int endOffset = fullWord.indexOf(structSeparator, curOffset);
+            int endOffset = separatorMask.indexOf(structSeparator, curOffset);
             if (endOffset != -1) {
                 endOffset = fullWord.length() - endOffset;
             } else {
@@ -165,9 +203,18 @@ public class SQLCompletionProposalBase extends CompletionProposalBase {
             } else {
                 replacementLength = curOffset - startOffset;
             }
-            if (dataSource != null && DBUtils.isQuotedIdentifier(dataSource, fullWord)) {
-                // Replace closing quote (#6244)
-                replacementLength++;
+            if (!replaceWord && dataSource != null) {
+                String[][] quotes = dataSource.getSQLDialect().getIdentifierQuoteStrings();
+                if (quotes != null) {
+                    for (String[] pair : quotes) {
+                        if (!CommonUtils.isEmpty(pair[0]) && !CommonUtils.isEmpty(pair[1])
+                            && fullWord.startsWith(pair[0], startOffset) && fullWord.startsWith(pair[1], curOffset)) {
+                            // Consume the closing quote of this component, not of the whole qualified name.
+                            replacementLength += pair[1].length();
+                            break;
+                        }
+                    }
+                }
             }
         } else {
             int startOffset = fullWord.indexOf(structSeparator);

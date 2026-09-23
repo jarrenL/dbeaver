@@ -1041,11 +1041,13 @@ public class SQLCompletionAnalyzer implements DBRRunnableParametrized<DBRProgres
         }
         SQLWordPartDetector wordDetector = request.getWordDetector();
         if (startPart != null) {
-            startPart = wordDetector.removeQuotes(startPart).toUpperCase(Locale.ENGLISH);
-            int divPos = startPart.lastIndexOf(request.getContext().getSyntaxManager().getStructSeparator());
-            if (divPos != -1) {
-                startPart = startPart.substring(divPos + 1);
+            if (!wordDetector.isQuoted(startPart)) {
+                int divPos = startPart.lastIndexOf(request.getContext().getSyntaxManager().getStructSeparator());
+                if (divPos != -1) {
+                    startPart = startPart.substring(divPos + 1);
+                }
             }
+            startPart = wordDetector.removeQuotes(startPart).toUpperCase(Locale.ENGLISH);
         }
 
         DBPDataSource dataSource = request.getContext().getDataSource();

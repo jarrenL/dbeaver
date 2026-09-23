@@ -66,6 +66,12 @@ public class SQLWordPartDetector extends SQLIdentifierDetector
         int topIndex = 0, documentLength = document.getLength();
         try {
             String contentType = TextUtilities.getContentType(document, SQLParserPartitions.SQL_PARTITIONING, documentOffset, true);
+            if (documentOffset == documentLength && documentOffset > 0
+                && !isQuote(document.getChar(documentOffset - 1)) && !isStringQuote(document.getChar(documentOffset - 1))) {
+                // At EOF prefer-open partition lookup may return the empty default partition.
+                // Inspect the last character when the cursor is still inside an unfinished identifier/string.
+                contentType = TextUtilities.getContentType(document, SQLParserPartitions.SQL_PARTITIONING, documentOffset - 1, false);
+            }
             boolean inQuote = SQLParserPartitions.CONTENT_TYPE_SQL_QUOTED.equals(contentType);
             boolean inString = SQLParserPartitions.CONTENT_TYPE_SQL_STRING.equals(contentType);
             while (startOffset >= topIndex && startOffset < documentLength) {
