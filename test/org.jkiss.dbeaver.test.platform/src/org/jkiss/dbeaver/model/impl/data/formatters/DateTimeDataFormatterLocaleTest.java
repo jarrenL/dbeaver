@@ -129,4 +129,32 @@ class DateTimeDataFormatterLocaleTest {
         assertEquals(expected, formatter.formatValue(value));
         assertEquals(value, formatter.parseValue(expected, LocalDateTime.class));
     }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"XXX,+08:00", "XX,+0800", "X,Z", "Z,+0800"})
+    void automaticTypeRetainsParsedOffsetAndMicroseconds(String zonePattern, String offsetText) throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd HH:mm:ss.ffffff " + zonePattern));
+        String text = "2024-02-29 12:34:56.001234 " + offsetText;
+        var expected = java.time.OffsetDateTime.of(2024, 2, 29, 12, 34, 56, 1_234_000,
+            offsetText.equals("Z") ? ZoneOffset.UTC : ZoneOffset.ofHours(8));
+        assertEquals(expected, formatter.parseValue(text, java.time.OffsetDateTime.class));
+        assertEquals(expected, formatter.parseValue(text, null));
+        assertEquals(text, formatter.formatValue(expected));
+    }
+
+    @Test
+    void quotedZoneLetterDoesNotMakeLocalTimestampOffsetAware() throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd HH:mm:ss 'Z'"));
+        assertEquals(LocalDateTime.of(2024, 2, 29, 12, 34, 56),
+            formatter.parseValue("2024-02-29 12:34:56 Z", null));
+    }
+
+    @Test
+    void lowercaseOffsetPatternIsAnExplicitLegacyFormatterLimitation() {
+        var formatter = new DateTimeDataFormatter();
+        assertThrows(IllegalArgumentException.class,
+            () -> formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd HH:mm:ss xxx")));
+    }
 }

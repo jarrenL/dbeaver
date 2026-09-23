@@ -51,7 +51,6 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
     private StringBuffer buffer;
     private FieldPosition position;
     private DateTimeFormatter dateTimeFormatter;
-    private boolean hasZone;
 
     @Override
     public void init(DBSTypedObject type, @NotNull Locale locale, @NotNull Map<String, Object> properties)
@@ -85,7 +84,6 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
             .parseDefaulting(ChronoField.ERA, 1)
             .toFormatter(locale)
             .withResolverStyle(ResolverStyle.STRICT);
-        hasZone = java8DatePattern.contains("Z");
     }
 
     @Nullable
@@ -150,11 +148,7 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
             }
         }
         try {
-            if (hasZone) {
-                return OffsetDateTime.parse(value, dateTimeFormatter);
-            } else {
-                return LocalDateTime.parse(value, dateTimeFormatter);
-            }
+            return dateTimeFormatter.parseBest(value, OffsetDateTime::from, LocalDateTime::from);
         } catch (Exception e) {
             // Date-only/time-only profiles need the legacy return type, but must
             // still reject invalid fields and unconsumed trailing input.
