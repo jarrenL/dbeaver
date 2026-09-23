@@ -17,14 +17,54 @@
 package org.jkiss.dbeaver.ext.postgresql.model;
 
 import org.junit.jupiter.api.Test;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class PostgreRoleMetadataTest {
+    private PostgreRole exportRole(int limit) throws Exception {
+        var database = mock(PostgreDatabase.class);
+        var source = mock(PostgreDataSource.class);
+        when(database.getDataSource()).thenReturn(source);
+        when(source.getSQLDialect()).thenReturn(new PostgreDialect());
+        when(source.getServerType()).thenReturn(mock(PostgreServerExtension.class));
+        var role = new PostgreRole(database, "Role 中文", "not-a-real-password", true);
+        role.setInherit(false);
+        role.setConnLimit(limit);
+        var settings = PostgreRole.class.getDeclaredField("extraSettings");
+        settings.setAccessible(true);
+        settings.set(role, List.of());
+        return role;
+    }
+
+    @Test
+    void roleDdlPreservesZeroConnectionLimit() throws Exception {
+        var ddl = exportRole(0).getObjectDefinitionText(new VoidProgressMonitor(), Map.of());
+        assertTrue(ddl.contains("CONNECTION LIMIT 0"), ddl);
+        assertFalse(ddl.contains("CONNECTION LIMIT -1"), ddl);
+    }
+
+    @Test
+    void roleDdlPreservesPositiveAndUnlimitedLimitsWithoutExportingPassword() throws Exception {
+        for (int limit : new int[] {7, -1}) {
+            var ddl = exportRole(limit).getObjectDefinitionText(new VoidProgressMonitor(), Map.of());
+            assertTrue(ddl.contains("CONNECTION LIMIT " + limit), ddl);
+            assertTrue(ddl.contains("CREATE ROLE \"Role 中文\" WITH"), ddl);
+            assertTrue(ddl.contains("\tLOGIN"), ddl);
+            assertTrue(ddl.contains("NOCREATEROLE"), ddl);
+            assertFalse(ddl.contains("not-a-real-password"), ddl);
+            assertFalse(ddl.contains("PASSWORD"), ddl);
+            assertFalse(ddl.contains("SUPERUSER"), ddl);
+            assertFalse(ddl.contains("REPLICATION"), ddl);
+        }
+    }
+
     @Test
     void catalogFieldsRemainIndependentAndPreserveUnlimitedConnections() throws Exception {
         var database = mock(PostgreDatabase.class);
