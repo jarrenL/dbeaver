@@ -105,4 +105,40 @@ class QueryHistoryCollectorTest extends DBeaverUnitTest {
         assertSame(reopened, collector.getConnectionInfo(context));
         assertTrue(closed.isEmpty());
     }
+
+    @Test
+    void failingListenerDoesNotPreventOtherListenersOrHistoryRetention() throws Exception {
+        var collector = collector();
+        var failing = mock(org.jkiss.dbeaver.model.qm.QMMetaListener.class);
+        var healthy = mock(org.jkiss.dbeaver.model.qm.QMMetaListener.class);
+        doThrow(new IllegalStateException("fixture listener failure")).when(failing).metaInfoChanged(any(), any());
+        collector.addListener(failing);
+        collector.addListener(healthy);
+        var event = new QMMetaEvent(mock(QMMStatementExecuteInfo.class), QMEventAction.END, 1234, "fixture");
+        pending.add(event);
+        dispatch(collector);
+        verify(failing).metaInfoChanged(any(), eq(List.of(event)));
+        verify(healthy).metaInfoChanged(any(), eq(List.of(event)));
+        assertEquals(List.of(event), collector.getPastEvents());
+        assertTrue(pending.isEmpty());
+        dispatch(collector);
+        verifyNoMoreInteractions(failing, healthy);
+    }
+
+    @Test
+    void removingListenerStopsFurtherDeliveryWithoutDroppingHistory() throws Exception {
+        var collector = collector();
+        var listener = mock(org.jkiss.dbeaver.model.qm.QMMetaListener.class);
+        collector.addListener(listener);
+        var first = new QMMetaEvent(mock(QMMStatementExecuteInfo.class), QMEventAction.END, 1, "fixture");
+        pending.add(first);
+        dispatch(collector);
+        verify(listener).metaInfoChanged(any(), eq(List.of(first)));
+        collector.removeListener(listener);
+        var second = new QMMetaEvent(mock(QMMStatementExecuteInfo.class), QMEventAction.END, 2, "fixture");
+        pending.add(second);
+        dispatch(collector);
+        verifyNoMoreInteractions(listener);
+        assertEquals(List.of(first, second), collector.getPastEvents());
+    }
 }
