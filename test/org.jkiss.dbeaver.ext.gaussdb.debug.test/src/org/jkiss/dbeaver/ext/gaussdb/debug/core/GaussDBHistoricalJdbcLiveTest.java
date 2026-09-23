@@ -976,6 +976,28 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         });
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"GAUSSDB_HISTORY_CONNECTION", "GAUSSDB_HISTORY_CENTRAL_CONNECTION"})
+    void productionTableSearchDistinguishesEscapedWildcardsAndQuotedNames(String configuration) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            List<String> names = List.of("literal%percent", "literal_percent", "literalXpercent",
+                "literal\\path", "研发'表", "quote\"name");
+            for (String name : names) {
+                execute(connection, "CREATE TABLE " + schema + ".\"" + name.replace("\"", "\"\"") + "\"(id integer)");
+            }
+            for (String name : names) {
+                String mask = name.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+                var matches = searchTables(connection, schema, mask, true, 20, false);
+                assertEquals(List.of(name), matches.stream().map(reference -> reference.getName()).toList());
+            }
+            assertEquals(List.of("literal%percent", "literalXpercent", "literal_percent"),
+                searchTables(connection, schema, "literal_percent", true, 20, false).stream()
+                    .map(reference -> reference.getName()).sorted().toList());
+            assertTrue(searchTables(connection, schema, "x'; DROP TABLE anything;--", true, 20, false).isEmpty());
+            assertEquals(names.size(), searchTables(connection, schema, "%", true, 20, false).size());
+        }, java.util.Map.of(), System.getenv(configuration));
+    }
+
     @Test
     void productionRoutineSearchUsesCatalogCaseCommentsAndLimit() throws Exception {
         inIsolatedSchema((c, s) -> {
