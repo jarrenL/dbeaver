@@ -54,6 +54,23 @@ class GaussDBNativeLiveTest {
         try (Statement s = connection.createStatement()) { s.setQueryTimeout(15); s.execute(sql); }
     }
 
+    private static void verifyPayload(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("SELECT id,label,amount,occurred FROM review_native.payload ORDER BY id")) {
+            assertTrue(rows.next());
+            assertEquals(1, rows.getInt(1));
+            assertEquals("中文'引号\\反斜杠\n第二行\t制表", rows.getString(2));
+            assertEquals(new java.math.BigDecimal("12345678901234567890.123456789"), rows.getBigDecimal(3));
+            assertEquals(Timestamp.valueOf("2024-02-29 12:34:56.001234"), rows.getTimestamp(4));
+            assertTrue(rows.next());
+            assertEquals(2, rows.getInt(1));
+            assertNull(rows.getString(2));
+            assertNull(rows.getBigDecimal(3));
+            assertNull(rows.getTimestamp(4));
+            assertFalse(rows.next());
+        }
+    }
+
     @Test
     void actualDumpAndLargeOutputPlainRestoreUsesProductionRedirection() throws Exception {
         String config = System.getenv("GAUSSDB_REVIEW_CONNECTION"), jar = System.getenv("GAUSSDB_REVIEW_JDBC");
@@ -97,6 +114,15 @@ class GaussDBNativeLiveTest {
                 try {
                     exec(c, "CREATE TABLE review_native.rows_to_restore(n integer)");
                     exec(c, "INSERT INTO review_native.rows_to_restore VALUES(1),(2),(3)");
+                    exec(c, "CREATE TABLE review_native.payload(id integer PRIMARY KEY,label text,amount numeric(38,9),occurred timestamp(6))");
+                    try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload VALUES(?,?,?,?)")) {
+                        insert.setInt(1, 1);
+                        insert.setString(2, "中文'引号\\反斜杠\n第二行\t制表");
+                        insert.setBigDecimal(3, new java.math.BigDecimal("12345678901234567890.123456789"));
+                        insert.setTimestamp(4, Timestamp.valueOf("2024-02-29 12:34:56.001234"));
+                        assertEquals(1, insert.executeUpdate());
+                    }
+                    exec(c, "INSERT INTO review_native.payload VALUES(2,NULL,NULL,NULL)");
                     var backup = new ProcessBuilder(tool("gs_dump", database, user, "-n", "review_native", "-f", remote))
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD);
                     run(backup, errors, settings);
@@ -114,12 +140,14 @@ class GaussDBNativeLiveTest {
                     assertFalse(builder.environment().containsKey("PGPASSWORD"));
                     assertEquals(ProcessBuilder.Redirect.DISCARD, builder.redirectOutput());
                     run(builder, errors, settings);
+                    verifyPayload(c);
                     try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("SELECT count(*),sum(n) FROM review_native.rows_to_restore")) {
                         assertTrue(rs.next()); assertEquals(3, rs.getInt(1)); assertEquals(6, rs.getInt(2));
                     }
                     run(new ProcessBuilder(tool("gs_dump", database, user, "-F", "c", "-n", "review_native", "-f", remote)), errors, settings);
                     exec(c, "DROP SCHEMA review_native CASCADE");
                     run(new ProcessBuilder(tool("gs_restore", database, user, remote)), errors, settings);
+                    verifyPayload(c);
                     try (Statement s = c.createStatement(); ResultSet rs = s.executeQuery("SELECT count(*),sum(n) FROM review_native.rows_to_restore")) {
                         assertTrue(rs.next()); assertEquals(3, rs.getInt(1)); assertEquals(6, rs.getInt(2));
                     }
