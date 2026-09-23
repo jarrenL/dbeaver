@@ -200,6 +200,15 @@ public class SQLReconcilingStrategy implements IReconcilingStrategy, IReconcilin
             return;
         }
 
+        // Parsing runs in the reconciler while the editor can replace the document.
+        // Never combine positions from one revision with line/character data from another.
+        IDocument sourceDocument = document;
+        long sourceStamp = modificationStamp(sourceDocument);
+        Document snapshot = new Document(sourceDocument.get());
+        if (!isCurrentRevision(sourceDocument, sourceStamp, snapshot)) {
+            return;
+        }
+
         SQLScriptElementImpl leftBound = cache.lower(new SQLScriptElementImpl(damagedRegionOffset, damagedRegionLength));
         if (leftBound != null) {
             leftBound = cache.lower(leftBound);
@@ -211,21 +220,21 @@ public class SQLReconcilingStrategy implements IReconcilingStrategy, IReconcilin
             damagedRegionOffset = leftBound.getOffset() + leftBound.getLength();
         }
         if (rightBound == null) {
-            damagedRegionLength = document.getLength();
+            damagedRegionLength = snapshot.getLength() - damagedRegionOffset;
         } else {
             damagedRegionLength = rightBound.getOffset() + rightBound.getLength() - damagedRegionOffset;
         }
 
         List<SQLScriptElement> parsedQueries = extractQueries(damagedRegionOffset, damagedRegionLength);
-        if (parsedQueries == null) {
+        if (!isUsableParse(parsedQueries, sourceDocument, sourceStamp, snapshot)) {
             return;
         }
 
         if (rightBound != null && !parsedQueries.isEmpty()) {
             SQLScriptElement rightmostParsedQuery = parsedQueries.get(parsedQueries.size() - 1);
-            if (!rightBound.equals(getExpandedScriptElement(rightmostParsedQuery))) {
-                parsedQueries = extractQueries(damagedRegionOffset, document.getLength());
-                if (parsedQueries == null) {
+            if (!rightBound.equals(getExpandedScriptElement(rightmostParsedQuery, snapshot))) {
+                parsedQueries = extractQueries(damagedRegionOffset, snapshot.getLength() - damagedRegionOffset);
+                if (!isUsableParse(parsedQueries, sourceDocument, sourceStamp, snapshot)) {
                     return;
                 }
                 rightBound = null;
@@ -244,8 +253,8 @@ public class SQLReconcilingStrategy implements IReconcilingStrategy, IReconcilin
         }
 
         Collection<SQLScriptElementImpl> parsedElements = parsedQueries.stream()
-            .filter(this::deservesFolding)
-            .map(this::getExpandedScriptElement)
+            .filter(element -> deservesFolding(element, snapshot))
+            .map(element -> getExpandedScriptElement(element, snapshot))
             .collect(Collectors.toSet());
         Map<Annotation, SQLScriptElementImpl> additions = new HashMap<>();
         Set<Integer> savedCollapsedAnnotationsOffsets = restoreCollapsedAnnotations ? getSavedCollapsedAnnotationsOffsets() : Collections.emptySet();
@@ -265,6 +274,9 @@ public class SQLReconcilingStrategy implements IReconcilingStrategy, IReconcilin
         Annotation[] deletions = deletedPositions.stream()
             .map(SQLScriptElementImpl::getAnnotation)
             .toArray(Annotation[]::new);
+        if (!isCurrentRevision(sourceDocument, sourceStamp, snapshot)) {
+            return;
+        }
         model.modifyAnnotations(deletions, additions, null);
         cache.removeAll(deletedPositions);
         cache.addAll(additions.values());
@@ -280,37 +292,66 @@ public class SQLReconcilingStrategy implements IReconcilingStrategy, IReconcilin
         }
     }
 
+    private static long modificationStamp(IDocument source) {
+        return source instanceof IDocumentExtension4 extension
+            ? extension.getModificationStamp() : IDocumentExtension4.UNKNOWN_MODIFICATION_STAMP;
+    }
+
+    private boolean isCurrentRevision(IDocument source, long stamp, IDocument snapshot) {
+        if (document != source) {
+            return false;
+        }
+        long currentStamp = modificationStamp(source);
+        if (stamp != IDocumentExtension4.UNKNOWN_MODIFICATION_STAMP
+            && currentStamp != IDocumentExtension4.UNKNOWN_MODIFICATION_STAMP) {
+            return stamp == currentStamp;
+        }
+        return snapshot.get().equals(source.get());
+    }
+
+    private boolean isUsableParse(List<SQLScriptElement> queries, IDocument source, long stamp, IDocument snapshot) {
+        if (queries == null || !isCurrentRevision(source, stamp, snapshot)) {
+            return false;
+        }
+        // A parser may itself return cached positions; reject the whole update rather
+        // than deleting valid annotations or publishing only part of a stale result.
+        return queries.stream().allMatch(element -> element.getOffset() >= 0 && element.getLength() >= 0
+            && (long) element.getOffset() + element.getLength() <= snapshot.getLength());
+    }
+
     @Nullable
     private List<SQLScriptElement> extractQueries(int offset, int length) {
         return editor.extractScriptQueries(offset, length, false, true, false);
     }
 
-    private boolean deservesFolding(SQLScriptElement element) {
-        int numberOfLines = getNumberOfLines(element);
+    private boolean deservesFolding(SQLScriptElement element, IDocument snapshot) {
+        int numberOfLines = getNumberOfLines(element, snapshot);
         if (numberOfLines == 1) {
             return false;
         }
-        if (element.getOffset() + element.getLength() != document.getLength() && expandQueryLength(element) == element.getLength()) {
+        if (element.getOffset() + element.getLength() != snapshot.getLength()
+            && expandQueryLength(element, snapshot) == element.getLength()) {
             return numberOfLines > 2;
         }
         return true;
     }
 
-    private int getNumberOfLines(SQLScriptElement element) {
+    private int getNumberOfLines(SQLScriptElement element, IDocument snapshot) {
         try {
-            return document.getLineOfOffset(element.getOffset() + element.getLength()) - document.getLineOfOffset(element.getOffset()) + 1;
+            return snapshot.getLineOfOffset(element.getOffset() + element.getLength())
+                - snapshot.getLineOfOffset(element.getOffset()) + 1;
         } catch (BadLocationException e) {
             throw new SQLReconcilingStrategyException(e);
         }
     }
 
     //expands query to the end of the line if there are only whitespaces after it. Returns desired length.
-    private int expandQueryLength(SQLScriptElement element) { //todo simplify
+    private int expandQueryLength(SQLScriptElement element, IDocument snapshot) { //todo simplify
         int position = element.getOffset() + element.getLength();
-        while (position < document.getLength()) {
-            char c = unsafeGetChar(position);
+        while (position < snapshot.getLength()) {
+            char c = unsafeGetChar(position, snapshot);
             if (c == '\n') {
-                if (position + 1 < document.getLength()) {
+                if (position + 1 < snapshot.getLength()) {
                     position++;
                     break;
                 }
@@ -325,13 +366,13 @@ public class SQLReconcilingStrategy implements IReconcilingStrategy, IReconcilin
     }
 
     @NotNull
-    private SQLScriptElementImpl getExpandedScriptElement(@NotNull SQLScriptElement element) {
-        return new SQLScriptElementImpl(element.getOffset(), expandQueryLength(element));
+    private SQLScriptElementImpl getExpandedScriptElement(@NotNull SQLScriptElement element, IDocument snapshot) {
+        return new SQLScriptElementImpl(element.getOffset(), expandQueryLength(element, snapshot));
     }
 
-    private char unsafeGetChar(int index) {
+    private char unsafeGetChar(int index, IDocument snapshot) {
         try {
-            return document.getChar(index);
+            return snapshot.getChar(index);
         } catch (BadLocationException e) {
             throw new SQLReconcilingStrategyException(e);
         }
