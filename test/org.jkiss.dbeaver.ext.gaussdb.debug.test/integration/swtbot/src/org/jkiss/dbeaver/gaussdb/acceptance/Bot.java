@@ -352,6 +352,7 @@ public final class Bot implements IStartup {
         if (widget instanceof Text t && (t.getStyle() & SWT.PASSWORD) != 0) text = "<redacted>";
         out.println(indent + id + " " + widget.getClass().getSimpleName() + " " + text.replace("\n", "\\n")
             + (widget instanceof Control c ? " visible=" + c.isVisible() + " enabled=" + c.isEnabled() : ""));
+        if (widget instanceof Text t) out.println(indent + " editable=" + t.getEditable());
         if (widget instanceof ToolItem t) out.println(indent + " tooltip=" + t.getToolTipText() + " enabled=" + t.isEnabled());
         if (widget instanceof StyledText t) out.println(indent + " caretLine="
             + (t.getLineAtOffset(t.getCaretOffset()) + 1) + " selection=" + t.getSelection());

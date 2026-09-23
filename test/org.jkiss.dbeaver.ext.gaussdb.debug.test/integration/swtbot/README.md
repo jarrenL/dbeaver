@@ -36,6 +36,11 @@ cell values. Password-style text controls are redacted. Widget IDs are valid onl
 until the next dump, and must be re-observed after UI changes. Do not hard-code
 indexes across runs or infer an action from an old snapshot.
 
+Text controls also report `editable`, separately from `enabled`: a read-only field
+can remain enabled for selection/copy. An unchanged value after a synthetic key
+event alone is not proof that the field is read-only; check the widget flag and an
+editable control as a positive contrast. This diagnostic does not change the widget.
+
 Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 `text ID VALUE`, `secret ID /absolute/password-file`, `focus ID`,
 `key ID F7` (or `SHIFT+F7`), `combo ID VALUE`, `cell TABLE_ID ROW COLUMN`,
