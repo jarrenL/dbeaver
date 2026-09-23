@@ -1,5 +1,11 @@
 # 结果集编辑门控测试
 
+## 保存错误提示本地化修复
+
+上述界面错误标题Data error、摘要Error synchronizing data with database，以及生成脚本错误Error generating script均在ResultSetPersister硬编码。已替换为ResultSetMessages的三个资源字段，英文回退保持原文、简体中文分别为“数据错误”“将数据保存到数据库时出错”“生成脚本时出错”。数据库SQLSTATE和原始错误详情不翻译，以保留诊断信息。
+
+新增ResultSetErrorMessagesTest三项，从实际OSGi bundle读取中英文打包资源，断言精确文本，并加载NLS类检查声明字段已解析。run-5xSIx5完整1163项/1139通过/24跳过/零失败错误，见 [回归结果](test-results-20260924-result-error-nls.json)。临时grantee已删除。尚未将新数据编辑器bundle安装到GUI验证，不将资源测试当作中文弹窗验收；原有截图仍记录修复前状态。
+
 ## Linux复制插入、重复键及删除
 
 571–590，隔离Linux客户端、507分布式ORA普通账号，自动提交；专用表初始(1,10)、(2,20)。

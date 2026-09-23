@@ -23,6 +23,9 @@ public class ResultSetMessages extends NLS {
 
     public static String confirm_modifying_query_message;
     public static String confirm_modifying_query_title;
+    public static String controls_resultset_error_title;
+    public static String controls_resultset_error_synchronizing;
+    public static String controls_resultset_error_generating_script;
 
     public static String controls_resultset_filter_button_reset;
     public static String controls_resultset_filter_saved_filter_reset_message;

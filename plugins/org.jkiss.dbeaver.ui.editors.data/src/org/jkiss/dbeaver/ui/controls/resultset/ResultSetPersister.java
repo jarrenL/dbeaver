@@ -771,7 +771,8 @@ class ResultSetPersister {
                                 ));
                         } else {
                             DBWorkbench.getPlatformUI().showError(
-                                "Data error", "Error synchronizing data with database", error);
+                                ResultSetMessages.controls_resultset_error_title,
+                                ResultSetMessages.controls_resultset_error_synchronizing, error);
                             viewer.setStatus(GeneralUtils.getFirstMessage(error), DBPMessageType.ERROR);
                         }
                     }
@@ -781,7 +782,8 @@ class ResultSetPersister {
                     this.listener.onUpdate(error == null);
                 }
             } else if (error != null) {
-                DBWorkbench.getPlatformUI().showError("Data error", "Error generating script", error);
+                DBWorkbench.getPlatformUI().showError(ResultSetMessages.controls_resultset_error_title,
+                    ResultSetMessages.controls_resultset_error_generating_script, error);
             }
 
             return Status.OK_STATUS;
