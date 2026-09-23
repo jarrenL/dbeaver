@@ -353,6 +353,7 @@ public final class Bot implements IStartup {
         out.println(indent + id + " " + widget.getClass().getSimpleName() + " " + text.replace("\n", "\\n")
             + (widget instanceof Control c ? " visible=" + c.isVisible() + " enabled=" + c.isEnabled() : ""));
         if (widget instanceof Text t) out.println(indent + " editable=" + t.getEditable());
+        if (widget instanceof MenuItem item) out.println(indent + " enabled=" + item.isEnabled());
         if (widget instanceof ToolItem t) out.println(indent + " tooltip=" + t.getToolTipText() + " enabled=" + t.isEnabled());
         if (widget instanceof StyledText t) out.println(indent + " caretLine="
             + (t.getLineAtOffset(t.getCaretOffset()) + 1) + " selection=" + t.getSelection());

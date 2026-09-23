@@ -40,6 +40,7 @@ Text controls also report `editable`, separately from `enabled`: a read-only fie
 can remain enabled for selection/copy. An unchanged value after a synthetic key
 event alone is not proof that the field is read-only; check the widget flag and an
 editable control as a positive contrast. This diagnostic does not change the widget.
+Menu items also report `enabled`; a click that has no effect is not proof that a command is disabled.
 
 Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 `text ID VALUE`, `secret ID /absolute/password-file`, `focus ID`,

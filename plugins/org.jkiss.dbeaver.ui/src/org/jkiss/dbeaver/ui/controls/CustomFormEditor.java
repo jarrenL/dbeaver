@@ -124,8 +124,13 @@ public class CustomFormEditor {
     }
 
     private boolean supportsObjectRename() {
-        return DBWorkbench.getPlatform().getEditorsRegistry().getObjectManager(
-            propertySource.getEditableValue().getClass(), DBEObjectRenamer.class) != null;
+        Object editableValue = propertySource.getEditableValue();
+        if (!(editableValue instanceof DBSObject object)) {
+            return false;
+        }
+        DBEObjectRenamer renamer = DBWorkbench.getPlatform().getEditorsRegistry().getObjectManager(
+            editableValue.getClass(), DBEObjectRenamer.class);
+        return renamer != null && renamer.canRenameObject(object);
     }
 
     public void createPropertyEditor(@NotNull Composite group, @Nullable DBPPropertyDescriptor prop) {
@@ -213,7 +218,7 @@ public class CustomFormEditor {
             if (prop.getId().equals(DBConstants.PROP_ID_NAME) && databaseObject != null && databaseObject.isPersisted()) {
                 DBEObjectRenamer renamer = DBWorkbench.getPlatform().getEditorsRegistry().getObjectManager(
                     propertySource.getEditableValue().getClass(), DBEObjectRenamer.class);
-                if (commandContext != null && renamer != null) {
+                if (commandContext != null && renamer != null && renamer.canRenameObject(databaseObject)) {
                     try {
                         Map<String, Object> options = new LinkedHashMap<>();
                         options.put(DBEObjectManager.OPTION_UI_SOURCE, this);
