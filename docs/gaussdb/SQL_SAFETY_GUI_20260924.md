@@ -40,3 +40,16 @@
 ![DROP 确认](images/sql-safety-20260924/drop-confirm.png)
 
 完成后仅删除已空的专用 schema（未使用 CASCADE），remaining_schemas=0。可重建测试表已通过实际客户端 DROP 删除；无用户数据被删除。编辑器恢复 SELECT 文本，确认偏好未改动。本轮未改变源码，不增加 JUnit 数量，不代表最新 model.sql 的 ONLY 修复已完成 GUI 验收。
+
+## 更新 SQL 模型后的 ONLY 补验（657–671）
+
+正常通过“退出”菜单关闭客户端并确认进程消失后，保留 bundles.info.before-sql1858 备份，仅将 model.sql 更新为 `1.0.175.202609231858`，再以原隔离 workspace 重启。新插件 SHA-256 为 `a4319ab1ea01a9452b67941fbe556081d15f7c9d7394512c589f87db2ed4b5cd`，宿主构建产物与容器文件一致。其他插件版本未同步，不把此次运行当作全部最新变更验收。
+
+重新创建同名独立 schema/table 两行 original，依次在真实编辑器执行：
+
+- `UPDATE ONLY dbv_safety_gui_20260924.guard_rows SET label='only_changed';`：出现危险查询确认，SQL 预览正确且只读；取消后独立连接 count=2、original_rows=2。
+- `DELETE FROM ONLY dbv_safety_gui_20260924.guard_rows;`：同样确认，取消后独立连接 rows_after_delete_only_cancel=2。
+
+![ONLY 回退确认](images/sql-safety-20260924/only-confirm.png)
+
+这两个回退路径的提示为“多行数据／SQL”，没有显示准确表名及 UPDATE/DELETE 类型，记录为展示限制；不妨碍无 WHERE 确认。未点击 ONLY 的确定执行，本轮仅证明新模型的提示与取消保护，不代替 JDBC 执行或完整 UI 正向验证。测试结束精确删除专用表/schema且目录计数0，编辑器恢复 SELECT，不再询问未勾选。
