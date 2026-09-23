@@ -2381,6 +2381,27 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void strictTlsConnectsWithTrustedCertificateAndRejectsMissingTrustFile() throws Exception {
+        String certificate = System.getenv("GAUSSDB_HISTORY_TLS_CA");
+        assumeTrue(certificate != null && Files.isRegularFile(Path.of(certificate)), "Dedicated TLS CA required");
+        inIsolatedSchema((c, s) -> {
+            try (var statement = c.createStatement(); var rows = statement.executeQuery("SHOW ssl")) {
+                assertTrue(rows.next());
+                assertEquals("on", rows.getString(1));
+            }
+            withIndependentConnection(connection -> {
+                assertTrue(connection.isValid(5));
+                assertRows(connection, "SELECT '中文 TLS', 42", List.of(List.of("中文 TLS", "42")));
+            }, null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate));
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(connection -> fail("Missing trust must not fall back to plaintext"),
+                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate + ".missing")));
+            assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
+            assertRows(c, "SELECT 1", List.of(List.of("1")));
+        });
+    }
+
+    @Test
     void requiredSslDoesNotSilentlyDowngradeWhenServerSslIsDisabled() throws Exception {
         inIsolatedSchema((c, s) -> {
             try (var statement = c.createStatement(); var rows = statement.executeQuery("SHOW ssl")) {
