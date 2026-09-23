@@ -1477,6 +1477,15 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private static void assertObserverCount(String table, int expected) throws Exception {
+        withIndependentConnection(observer -> assertEquals(expected, count(observer, table)));
+    }
+
+    @FunctionalInterface
+    private interface ConnectionScenario {
+        void run(Connection connection) throws Exception;
+    }
+
+    private static void withIndependentConnection(ConnectionScenario scenario) throws Exception {
         var p = new Properties();
         try (var input = Files.newInputStream(Path.of(System.getenv("GAUSSDB_HISTORY_CONNECTION")))) {
             p.load(input);
@@ -1488,9 +1497,74 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             var driver = (Driver) loader.loadClass(p.getProperty("driverClass")).getConstructor().newInstance();
             try (var observer = driver.connect(p.getProperty("url"), p)) {
                 assertNotNull(observer);
-                assertEquals(expected, count(observer, table));
+                scenario.run(observer);
             }
         }
+    }
+
+    @Test
+    void closingConnectionRollsBackUncommittedRowsAndRejectsFurtherStatements() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".close_audit";
+            execute(c, "CREATE TABLE " + table + "(id integer)");
+            withIndependentConnection(writer -> {
+                writer.setAutoCommit(false);
+                execute(writer, "INSERT INTO " + table + " VALUES(1)");
+                assertEquals(1, count(writer, table));
+                assertEquals(0, count(c, table));
+                writer.close();
+                assertTrue(writer.isClosed());
+                assertThrows(java.sql.SQLException.class, writer::createStatement);
+                writer.close();
+            });
+            assertEquals(0, count(c, table));
+            assertObserverCount(table, 0);
+            assertConnectionUsable(c);
+        });
+    }
+
+    @Test
+    void enablingAutocommitCommitsPendingRowsButLaterManualRollbackRemainsIsolated() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".mode_audit";
+            execute(c, "CREATE TABLE " + table + "(id integer)");
+            c.setAutoCommit(false);
+            execute(c, "INSERT INTO " + table + " VALUES(1)");
+            assertObserverCount(table, 0);
+            c.setAutoCommit(true);
+            assertTrue(c.getAutoCommit());
+            assertObserverCount(table, 1);
+            c.setAutoCommit(true);
+            assertObserverCount(table, 1);
+            c.setAutoCommit(false);
+            execute(c, "INSERT INTO " + table + " VALUES(2)");
+            assertEquals(2, count(c, table));
+            assertObserverCount(table, 1);
+            c.rollback();
+            assertRows(c, "SELECT id FROM " + table, List.of(List.of("1")));
+            assertObserverCount(table, 1);
+        });
+    }
+
+    @Test
+    void readOnlyTransactionRejectsWritesAndNormalConnectionRemainsWritable() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".readonly_audit";
+            execute(c, "CREATE TABLE " + table + "(id integer)");
+            withIndependentConnection(reader -> {
+                reader.setReadOnly(true);
+                reader.setAutoCommit(false);
+                assertEquals(0, count(reader, table));
+                var error = assertThrows(java.sql.SQLException.class,
+                    () -> execute(reader, "INSERT INTO " + table + " VALUES(1)"));
+                assertEquals("25006", error.getSQLState());
+                reader.rollback();
+                reader.setReadOnly(false);
+                execute(reader, "INSERT INTO " + table + " VALUES(2)");
+                reader.commit();
+            });
+            assertRows(c, "SELECT id FROM " + table, List.of(List.of("2")));
+        });
     }
 
     @Test

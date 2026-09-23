@@ -226,3 +226,13 @@ CSVImporterTest 12 项全部通过，完整回归 **800 项：787 通过、13 �
 ### 查询历史执行记录
 
 新增 6 项 QMMStatementExecuteInfo 生产模型测试，覆盖成功/失败、SQL 文本与上下文、取数/更新行数、元数据查询事务标记、恢复记录耗时及错误清除。初始 OSGi 包访问限制导致测试失败，改为反射调用实际包内方法后通过，未修改生产接口。完整回归 **819 项：806 通过、13 跳过、零失败/错误**，详见 [历史模型结果](test-results-20260923-history-model.json)。历史持久化、重启恢复、固定/收藏和清理仍需独立验收。
+
+### 连接生命周期与事务边界
+
+在后续权限、搜索回归基础上追加 3 项厂商 JDBC / GaussDB 507 真库测试：
+
+- `closingConnectionRollsBackUncommittedRowsAndRejectsFurtherStatements`：独立写连接未提交行仅自身可见；close 后 isClosed=true，创建语句失败，重复 close 安全；另两连接确认没有残留行。
+- `enablingAutocommitCommitsPendingRowsButLaterManualRollbackRemainsIsolated`：手动事务的行不可被观察连接看到；切回自动提交后恰有一行可见；再切手动插入及回滚不影响已提交行。
+- `readOnlyTransactionRejectsWritesAndNormalConnectionRemainsWritable`：只读事务可查询，但 INSERT 返回 SQLSTATE 25006；回滚并解除只读后写入、提交成功，独立连接确认只有恢复后的行。
+
+完整回归 **860 项：847 通过、13 跳过、零失败/错误**，见 [连接生命周期逐项结果](test-results-20260923-connection-lifecycle.json)。数字包含已有测试，不能解释为历史原始方法覆盖率。此批验证驱动/服务端契约，不替代 DBeaver 连接池、界面只读开关、异常认证、SSL 或网络故障后的自动重连。
