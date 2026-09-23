@@ -21,6 +21,47 @@ import static org.mockito.Mockito.*;
 
 class GaussDBCrossSchemaTest {
     @Test
+    void refreshesOnlyTargetRoutineCachesWhenCatalogConfirmsNewFunction() throws Exception {
+        var monitor = mock(DBRProgressMonitor.class);
+        var container = mock(DBPDataSourceContainer.class);
+        var source = mock(GaussDBDataSource.class);
+        var database = mock(GaussDBDatabase.class);
+        var schema = mock(GaussDBSchema.class, RETURNS_DEEP_STUBS);
+        var child = mock(GaussDBFunction.class);
+        when(child.getObjectId()).thenReturn(42L);
+        when(container.isConnected()).thenReturn(true);
+        when(container.getDataSource()).thenReturn(source);
+        when(source.getDatabase("test")).thenReturn(database);
+        when(database.getSchema(monitor, "test_schema")).thenReturn(schema);
+        var refreshed = new java.util.concurrent.atomic.AtomicBoolean();
+        var functions = schema.getGaussDBFunctionsCache();
+        when(functions.getAllObjects(monitor, schema))
+            .thenAnswer(i -> refreshed.get() ? List.of(child) : List.of());
+        doAnswer(i -> { refreshed.set(true); return null; }).when(functions).clearCache();
+        var context = mock(JDBCExecutionContext.class);
+        var session = mock(JDBCSession.class);
+        var statement = mock(JDBCPreparedStatement.class);
+        var rows = mock(JDBCResultSet.class);
+        when(database.isInstanceConnected()).thenReturn(true);
+        when(database.getDefaultContext(any(), eq(true))).thenReturn(context);
+        when(context.openSession(eq(monitor), any(), anyString())).thenReturn(session);
+        when(session.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(rows);
+        when(rows.next()).thenReturn(true);
+        when(rows.getString(1)).thenReturn("test_schema");
+        var configuration = Map.<String, Object>of(GaussDBDebugConstants.ATTR_DATABASE_NAME, "test",
+            GaussDBDebugConstants.ATTR_SCHEMA_NAME, "test_schema", GaussDBDebugConstants.ATTR_ROUTINE_OID, "1");
+        assertSame(child, new GaussDBDebugResolver(container).resolveObject(configuration, 42L, monitor));
+        verify(schema.getGaussDBFunctionsCache(), times(1)).clearCache();
+        verify(schema.getGaussDBProceduresCache(), times(1)).clearCache();
+        verify(statement).setObject(1, 42L);
+        verify(rows).close();
+        verify(statement).close();
+        verify(session).close();
+        assertEquals("1", configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_OID));
+    }
+
+    @Test
     void resolvesCrossSchemaOidWithoutChangingLaunchConfiguration() throws Exception {
         var monitor = mock(DBRProgressMonitor.class);
         var container = mock(DBPDataSourceContainer.class);

@@ -115,6 +115,13 @@ public final class GaussDBDebugCore {
                         + "ON n.oid=p.pronamespace WHERE p.oid=?", oid);
                 if (targetSchema != null && database.getSchema(monitor, targetSchema) instanceof GaussDBSchema other) {
                     routine = findRoutine(monitor, other, oid);
+                    if (routine == null) {
+                        // The routine can have been created by another connection after these caches were loaded.
+                        // The catalog confirmed this OID exists: reload only that namespace, once.
+                        other.getGaussDBProceduresCache().clearCache();
+                        other.getGaussDBFunctionsCache().clearCache();
+                        routine = findRoutine(monitor, other, oid);
+                    }
                 }
             } catch (java.sql.SQLException e) {
                 throw new DBException("Unable to resolve schema for routine " + oid, e);
