@@ -1036,6 +1036,34 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         });
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"GAUSSDB_HISTORY_CONNECTION", "GAUSSDB_HISTORY_CENTRAL_CONNECTION"})
+    void productionRoutineSearchKeepsSqlFunctionOverloadsDistinctAfterOneIsDropped(String configuration) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            execute(connection, "CREATE FUNCTION " + schema
+                + ".overload_probe(p numeric) RETURNS integer AS $$ SELECT 1 $$ LANGUAGE sql;");
+            execute(connection, "CREATE FUNCTION " + schema
+                + ".overload_probe(p varchar) RETURNS integer AS $$ SELECT 2 $$ LANGUAGE sql;");
+            var type = org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_PROCEDURE;
+            var matches = searchObjects(connection, schema, "overload_probe", true, 10, false, type);
+            assertEquals(2, matches.size());
+            var signatures = matches.stream().map(reference -> reference.getFullyQualifiedName(
+                org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).sorted().toList();
+            assertEquals(List.of(schema + ".overload_probe(numeric)", schema + ".overload_probe(varchar)"), signatures);
+            execute(connection, "DROP FUNCTION " + schema + ".overload_probe(numeric)");
+            matches = searchObjects(connection, schema, "overload_probe", true, 10, false, type);
+            assertEquals(1, matches.size());
+            assertEquals(schema + ".overload_probe(varchar)", matches.get(0).getFullyQualifiedName(
+                org.jkiss.dbeaver.model.DBPEvaluationContext.DDL));
+            try (var statement = connection.createStatement(); var rows = statement.executeQuery(
+                "SELECT " + schema + ".overload_probe('中文'::varchar)")) {
+                assertTrue(rows.next());
+                assertEquals(2, rows.getInt(1));
+                assertFalse(rows.next());
+            }
+        }, java.util.Map.of(), System.getenv(configuration));
+    }
+
     /** Production search algorithm and SQL, with a thin mock JDBC interface bridge to the real driver. */
     private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchTables(
         Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments
