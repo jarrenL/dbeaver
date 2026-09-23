@@ -2684,6 +2684,91 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             assertFalse(server.isPGArray(new Object()));
         });
     }
+    @Test
+    void generatedInsertRoundTripsDistributedValues() throws Exception {
+        assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void generatedInsertRoundTripsCentralizedValues() throws Exception {
+        assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertGeneratedInsertRoundTrip(String config) throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "SET search_path TO " + s);
+            execute(c, "CREATE TABLE \"订单 表\" (\"first col\" text, \"second col\" text)");
+            execute(c, "CREATE TABLE reference_rows(id text, value text)");
+            var source = mock(org.jkiss.dbeaver.model.DBPDataSource.class,
+                withSettings().extraInterfaces(org.jkiss.dbeaver.model.data.DBDValueHandlerProvider.class));
+            var container = mock(org.jkiss.dbeaver.model.DBPDataSourceContainer.class);
+            when(source.getContainer()).thenReturn(container);
+            when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+            when(container.getPreferenceStore()).thenReturn(mock(org.jkiss.dbeaver.model.preferences.DBPPreferenceStore.class));
+            when(((org.jkiss.dbeaver.model.data.DBDValueHandlerProvider) source).getValueHandler(any(), any(), any()))
+                .thenReturn(org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCStringValueHandler.INSTANCE);
+            var entity = mock(org.jkiss.dbeaver.model.struct.DBSEntity.class);
+            when(entity.getDataSource()).thenReturn(source);
+            when(entity.getName()).thenReturn("订单 表");
+            var bindings = new org.jkiss.dbeaver.model.data.DBDAttributeBinding[2];
+            for (int i = 0; i < bindings.length; i++) {
+                var binding = mock(org.jkiss.dbeaver.model.data.DBDAttributeBinding.class);
+                bindings[i] = binding;
+                when(binding.getDataSource()).thenReturn(source);
+                when(binding.getName()).thenReturn(i == 0 ? "first col" : "second col");
+                when(binding.getDataKind()).thenReturn(org.jkiss.dbeaver.model.DBPDataKind.STRING);
+                when(binding.getAttribute()).thenReturn(binding);
+                when(binding.getFullyQualifiedName(any())).thenCallRealMethod();
+                when(binding.getFullyQualifiedName(any(), any())).thenCallRealMethod();
+                when(binding.matches(binding, true)).thenReturn(true);
+            }
+            var provider = mock(org.jkiss.dbeaver.model.data.DBDResultSetDataProvider.class);
+            when(provider.getSingleSource()).thenReturn(entity);
+            when(provider.getAttributes()).thenReturn(bindings);
+            when(provider.getVisibleAttributes()).thenReturn(List.of(bindings[1], bindings[0]));
+            var implementation = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model.sql")
+                .loadClass("org.jkiss.dbeaver.model.sql.generator.resultset.SQLGeneratorInsertFromData");
+            var generator = implementation.getConstructor().newInstance();
+            implementation.getMethod("setFullyQualifiedNames", boolean.class).invoke(generator, false);
+            implementation.getMethod("setCompactSQL", boolean.class).invoke(generator, true);
+            var generate = implementation.getDeclaredMethod("generateSQL", DBRProgressMonitor.class,
+                StringBuilder.class, org.jkiss.dbeaver.model.data.DBDResultSetDataProvider.class);
+            generate.setAccessible(true);
+            String[] values = {null, "", "NULL", "O'Reilly", "中文数据", "line1\nline2", "x'); DROP TABLE reference_rows; --"};
+            for (int i = 0; i < values.length; i++) {
+                String id = Integer.toString(i);
+                var row = mock(org.jkiss.dbeaver.model.data.DBDValueRow.class);
+                doReturn(List.of(row)).when(provider).getSelectedRows();
+                when(provider.getCellValue(bindings[0], row)).thenReturn(id);
+                when(provider.getCellValue(bindings[1], row)).thenReturn(values[i]);
+                var sql = new StringBuilder();
+                generate.invoke(generator, new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), sql, provider);
+                assertTrue(sql.toString().startsWith("INSERT INTO \"订单 表\" (\"second col\", \"first col\") VALUES("));
+                execute(c, sql.toString());
+                try (var insert = c.prepareStatement("INSERT INTO reference_rows VALUES (?, ?)")) {
+                    insert.setString(1, id);
+                    insert.setString(2, values[i]);
+                    assertEquals(1, insert.executeUpdate());
+                }
+            }
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT a.\"first col\", a.\"second col\", b.value FROM \"订单 表\" a "
+                    + "JOIN reference_rows b ON a.\"first col\"=b.id ORDER BY a.\"first col\"")) {
+                for (int i = 0; i < values.length; i++) {
+                    assertTrue(rows.next());
+                    assertEquals(Integer.toString(i), rows.getString(1));
+                    assertEquals(rows.getString(3), rows.getString(2), "Generated literal must match bound JDBC value");
+                    if (!"".equals(values[i])) {
+                        assertEquals(values[i], rows.getString(2));
+                    }
+                }
+                assertFalse(rows.next());
+            }
+            assertEquals(values.length, count(c, "\"订单 表\""));
+            assertEquals(values.length, count(c, "reference_rows"));
+        }, java.util.Map.of(), config);
+    }
+
     @FunctionalInterface
     private interface Scenario {
         void run(Connection connection, String schema) throws Exception;
