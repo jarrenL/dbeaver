@@ -113,8 +113,9 @@ public abstract class PostgrePlanNodeBase<NODE extends PostgrePlanNodeBase<?>> e
             cost = startCost + " - " + totalCost;
         }
         String parallelAware = attributes.get(ATTR_PARALLEL_AWARE);
-        if ("true".equals(parallelAware)) {
+        if ("true".equals(parallelAware) && !CommonUtils.notEmpty(nodeType).startsWith("Parallel ")) {
             // PG adds the "Parallel" word to the scan type in the TEXT format but not in XML format. In XML format, there is a special Parallel-Aware tag.
+            // Saved plans already contain the display prefix; keep repeated save/load cycles idempotent.
             nodeType = "Parallel " + nodeType;
         }
     }

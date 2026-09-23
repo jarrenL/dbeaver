@@ -95,4 +95,50 @@ class PostgreSavedPlanTest {
         assertThrows(InvocationTargetException.class,
             () -> planner.deserialize(new StringReader(DOCUMENT.replace("fixture-driver", "different-driver"))));
     }
+
+    @Test
+    void parallelNodeTypeDoesNotAccumulatePrefixesAcrossSaves() throws Exception {
+        var planner = planner();
+        var plan = planner.deserialize(new StringReader(DOCUMENT.replace("\"Plan-Rows\":\"1000\"",
+            "\"Parallel-Aware\":\"true\"")));
+        assertEquals("Parallel Sort", plan.getPlanNodes(Map.of()).iterator().next().getNodeType());
+        for (int round = 0; round < 3; round++) {
+            var writer = new StringWriter();
+            planner.serialize(writer, plan);
+            plan = planner.deserialize(new StringReader(writer.toString()));
+            assertEquals("Parallel Sort", plan.getPlanNodes(Map.of()).iterator().next().getNodeType());
+        }
+    }
+
+    @Test
+    void multipleRootsAndUnknownNodeAttributesSurviveRoundTrip() throws Exception {
+        var planner = planner();
+        String input = """
+            {"version":"1","signature":"fixture-driver","sql":"SELECT 1","root":[
+             {"type":"Custom Stream","attributes":[{"Vendor-Detail":"中文扩展"}]},
+             {"type":"Seq Scan","attributes":[{"Plan-Rows":"7"}]}]}
+            """;
+        var plan = planner.deserialize(new StringReader(input));
+        var writer = new StringWriter();
+        planner.serialize(writer, plan);
+        var roots = new java.util.ArrayList<>(planner.deserialize(new StringReader(writer.toString())).getPlanNodes(Map.of()));
+        assertEquals(2, roots.size());
+        assertEquals("Custom Stream", roots.get(0).getNodeType());
+        assertEquals("中文扩展", ((PostgrePlanNodeExternal) roots.get(0)).attributes.get("Vendor-Detail"));
+        assertNull(roots.get(0).getParent());
+        assertNull(roots.get(1).getParent());
+        assertEquals(7, ((PostgrePlanNodeExternal) roots.get(1)).getNodeRowCount().longValue());
+        assertNull(((PostgrePlanNodeExternal) roots.get(1)).getNodeDuration());
+    }
+
+    @Test
+    void emptyPlanIsValidAndDoesNotInventNodes() throws Exception {
+        var planner = planner();
+        var plan = planner.deserialize(new StringReader(
+            "{\"version\":\"1\",\"signature\":\"fixture-driver\",\"sql\":\"SELECT 1\",\"root\":[]}"));
+        assertTrue(plan.getPlanNodes(Map.of()).isEmpty());
+        var writer = new StringWriter();
+        planner.serialize(writer, plan);
+        assertTrue(planner.deserialize(new StringReader(writer.toString())).getPlanNodes(Map.of()).isEmpty());
+    }
 }

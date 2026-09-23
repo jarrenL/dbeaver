@@ -23,6 +23,12 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PostgreXmlPlanHierarchyTest {
+    @Test
+    void parallelXmlNodeStillGetsItsDisplayPrefix() throws Exception {
+        var node = parse("<Plan><Node-Type>Seq Scan</Node-Type><Parallel-Aware>true</Parallel-Aware></Plan>");
+        assertEquals("Parallel Seq Scan", node.getNodeType());
+    }
+
     private PostgrePlanNodeXML parse(String xml) throws Exception {
         var factory = DocumentBuilderFactory.newInstance();
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
