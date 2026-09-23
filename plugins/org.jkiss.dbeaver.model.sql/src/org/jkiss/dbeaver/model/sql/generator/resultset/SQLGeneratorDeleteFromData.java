@@ -29,6 +29,7 @@ import org.jkiss.dbeaver.model.struct.DBSEntity;
 import org.jkiss.utils.CommonUtils;
 
 import java.util.Collection;
+import java.util.ArrayList;
 
 public class SQLGeneratorDeleteFromData extends SQLGeneratorResultSet {
 
@@ -50,6 +51,8 @@ public class SQLGeneratorDeleteFromData extends SQLGeneratorResultSet {
             sql.append(getLineSeparator()).append("WHERE ");
             if (CommonUtils.isEmpty(keyAttributes)) {
                 // For tables without keys including virtual
+                // The identifier's collection may be immutable and must not be modified.
+                keyAttributes = new ArrayList<>();
                 Collection<? extends DBSAttributeBase> allAttributes = getAllAttributes(monitor, dataProvider);
                 for (DBSAttributeBase attr : allAttributes) {
                     if (DBUtils.isPseudoAttribute(attr) || DBUtils.isHiddenObject(attr)) {
