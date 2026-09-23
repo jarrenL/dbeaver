@@ -2695,6 +2695,20 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private void assertGeneratedInsertRoundTrip(String config) throws Exception {
+        assertGeneratedInsertRoundTrip(config, false);
+    }
+
+    @Test
+    void generatedKeylessDeleteExecutesAndRollsBackDistributed() throws Exception {
+        assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CONNECTION"), true);
+    }
+
+    @Test
+    void generatedKeylessDeleteExecutesAndRollsBackCentralized() throws Exception {
+        assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"), true);
+    }
+
+    private void assertGeneratedInsertRoundTrip(String config, boolean verifyDelete) throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "SET search_path TO " + s);
             execute(c, "CREATE TABLE \"订单 表\" (\"first col\" text, \"second col\" text)");
@@ -2766,6 +2780,56 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             }
             assertEquals(values.length, count(c, "\"订单 表\""));
             assertEquals(values.length, count(c, "reference_rows"));
+            if (verifyDelete) {
+                var deleteClass = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model.sql")
+                    .loadClass("org.jkiss.dbeaver.model.sql.generator.resultset.SQLGeneratorDeleteFromData");
+                var deleteGenerator = deleteClass.getConstructor().newInstance();
+                deleteClass.getMethod("initGenerator", List.class).invoke(deleteGenerator, List.of(provider));
+                deleteClass.getMethod("setFullyQualifiedNames", boolean.class).invoke(deleteGenerator, false);
+                deleteClass.getMethod("setCompactSQL", boolean.class).invoke(deleteGenerator, true);
+                var generateDelete = deleteClass.getDeclaredMethod("generateSQL", DBRProgressMonitor.class,
+                    StringBuilder.class, org.jkiss.dbeaver.model.data.DBDResultSetDataProvider.class);
+                generateDelete.setAccessible(true);
+                // No key: identical visible values intentionally match both duplicate rows.
+                execute(c, "INSERT INTO \"订单 表\" SELECT * FROM \"订单 表\" WHERE \"first col\"='3'");
+                assertEquals(8, count(c, "\"订单 表\""));
+                int remaining = 8;
+                for (int index : new int[] {3, 0, 6}) {
+                    var row = mock(org.jkiss.dbeaver.model.data.DBDValueRow.class);
+                    doReturn(List.of(row)).when(provider).getSelectedRows();
+                    when(provider.getCellValue(bindings[0], row)).thenReturn(Integer.toString(index));
+                    when(provider.getCellValue(bindings[1], row)).thenReturn(values[index]);
+                    var sql = new StringBuilder();
+                    generateDelete.invoke(deleteGenerator, new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), sql, provider);
+                    if (index == 0) {
+                        assertTrue(sql.toString().contains("\"second col\" IS NULL"));
+                    }
+                    int affected = index == 3 ? 2 : 1;
+                    c.setAutoCommit(false);
+                    try (var statement = c.createStatement()) {
+                        assertEquals(affected, statement.executeUpdate(sql.toString()));
+                    }
+                    assertEquals(remaining - affected, count(c, "\"订单 表\""));
+                    c.rollback();
+                    assertEquals(remaining, count(c, "\"订单 表\""));
+                    try (var statement = c.createStatement()) {
+                        assertEquals(affected, statement.executeUpdate(sql.toString()));
+                    }
+                    c.commit();
+                    c.setAutoCommit(true);
+                    remaining -= affected;
+                    assertEquals(remaining, count(c, "\"订单 表\""));
+                    assertEquals(values.length, count(c, "reference_rows"));
+                }
+                try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                    "SELECT \"first col\" FROM \"订单 表\" ORDER BY \"first col\"")) {
+                    for (String expected : List.of("1", "2", "4", "5")) {
+                        assertTrue(rows.next());
+                        assertEquals(expected, rows.getString(1));
+                    }
+                    assertFalse(rows.next());
+                }
+            }
         }, java.util.Map.of(), config);
     }
 
