@@ -101,8 +101,13 @@ public class DefaultValueEncryptor implements DBSValueEncryptor {
     @Override
     public byte[] decryptValue(@NotNull byte[] value) throws DBException {
         try (InputStream byteStream = new ByteArrayInputStream(value)) {
-            byte[] fileIv = new byte[16];
-            byteStream.read(fileIv);
+            int blockSize = cipher.getBlockSize();
+            // A valid file contains an IV and at least one padded ciphertext block,
+            // including when the original value is empty.
+            if (value.length < blockSize * 2 || value.length % blockSize != 0) {
+                throw new IllegalArgumentException("Invalid encrypted value length");
+            }
+            byte[] fileIv = byteStream.readNBytes(blockSize);
             cipher.init(Cipher.DECRYPT_MODE, secretKey, new IvParameterSpec(fileIv));
 
             try (CipherInputStream cipherIn = new CipherInputStream(byteStream, cipher)) {
