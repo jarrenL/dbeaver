@@ -37,6 +37,105 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionTableDdlRebuildsHashDefaultsConstraintsAndComments() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".ddl_hash";
+            execute(c, "CREATE TABLE " + table + "(id integer PRIMARY KEY, label varchar(80) NOT NULL DEFAULT '中文',"
+                + " amount numeric(12,2) CHECK(amount>=0)) DISTRIBUTE BY HASH(id)");
+            execute(c, "COMMENT ON TABLE " + table + " IS 'DDL 往返测试'");
+            execute(c, "COMMENT ON COLUMN " + table + ".label IS '默认值与长度'");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            assertTrue(ddl.contains("DISTRIBUTE BY HASH"));
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            execute(c, "INSERT INTO " + table + "(id,amount) VALUES(1,12.50)");
+            assertRows(c, "SELECT id,label,amount FROM " + table, List.of(List.of("1", "中文", "12.50")));
+            assertEquals("23505", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "INSERT INTO " + table + "(id) VALUES(1)")).getSQLState());
+            assertEquals("23514", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "INSERT INTO " + table + "(id,amount) VALUES(2,-1)")).getSQLState());
+            assertEquals("23502", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "INSERT INTO " + table + "(id,label) VALUES(3,NULL)")).getSQLState());
+            assertRows(c, "SELECT obj_description('" + table + "'::regclass),col_description('" + table
+                + "'::regclass,2)", List.of(List.of("DDL 往返测试", "默认值与长度")));
+        });
+    }
+
+    @Test
+    void productionTableDdlRebuildsReplicatedQuotedIdentifiers() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".\"Quoted Table\"";
+            execute(c, "CREATE TABLE " + table + "(\"标识\" integer, \"Text Value\" varchar(30)) DISTRIBUTE BY REPLICATION");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            assertTrue(ddl.contains("DISTRIBUTE BY REPLICATION"));
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            execute(c, "INSERT INTO " + table + " VALUES(1,'quoted '' value')");
+            assertRows(c, "SELECT \"标识\",\"Text Value\" FROM " + table,
+                List.of(List.of("1", "quoted ' value")));
+            assertRows(c, "SELECT pclocatortype FROM pgxc_class WHERE pcrelid='" + table + "'::regclass",
+                List.of(List.of("R")));
+        });
+    }
+
+    private static String readProductionTableDdl(Connection c, String qualifiedTable) throws Exception {
+        long oid;
+        try (var query = c.prepareStatement("SELECT ?::regclass::oid")) {
+            query.setString(1, qualifiedTable);
+            try (var rows = query.executeQuery()) {
+                assertTrue(rows.next());
+                oid = rows.getLong(1);
+            }
+        }
+        var source = mock(GaussDBDataSource.class);
+        var database = mock(PostgreDatabase.class);
+        var table = mock(PostgreTable.class);
+        var context = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
+        var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var infoFactory = org.jkiss.dbeaver.ext.gaussdb.model.GaussDBServerInfo.class.getDeclaredMethod("forTest",
+            org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum.class, java.util.Set.class, java.util.Set.class);
+        infoFactory.setAccessible(true);
+        when(source.getServerInfo()).thenReturn((org.jkiss.dbeaver.ext.gaussdb.model.GaussDBServerInfo)
+            infoFactory.invoke(null, org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnum.ORACLE,
+                java.util.Set.of(), java.util.Set.of("pg_get_tabledef")));
+        when(table.getDataSource()).thenReturn(source);
+        when(table.getObjectId()).thenReturn(oid);
+        when(source.getDefaultInstance()).thenReturn(database);
+        when(database.isInstanceConnected()).thenReturn(true);
+        when(database.getDefaultContext(any(), eq(true))).thenReturn(context);
+        when(context.openSession(any(), any(), anyString())).thenReturn(session);
+        when(session.prepareStatement(anyString())).thenAnswer(invocation -> {
+            var actual = c.prepareStatement(invocation.getArgument(0, String.class));
+            actual.setQueryTimeout(15);
+            doAnswer(i -> { actual.setLong(i.getArgument(0), i.getArgument(1)); return null; })
+                .when(statement).setLong(anyInt(), anyLong());
+            when(statement.executeQuery()).thenAnswer(i -> {
+                var rows = actual.executeQuery();
+                when(result.next()).thenAnswer(a -> rows.next());
+                when(result.getString(anyInt())).thenAnswer(a -> rows.getString(a.getArgument(0, Integer.class)));
+                doAnswer(a -> { rows.close(); return null; }).when(result).close();
+                return result;
+            });
+            doAnswer(i -> { actual.close(); return null; }).when(statement).close();
+            return statement;
+        });
+        var constructor = org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDB.class.getDeclaredConstructor(
+            org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource.class);
+        constructor.setAccessible(true);
+        var server = constructor.newInstance(source);
+        String ddl = server.readTableDDL(mock(DBRProgressMonitor.class), table);
+        verify(statement).setLong(1, oid);
+        verify(result).close();
+        verify(statement).close();
+        verify(session).close();
+        return ddl;
+    }
+
+    @Test
     void compositeHashKeysIncludingNullPreserveRowsAndAggregation() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".hash_rows";
