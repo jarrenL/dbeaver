@@ -1268,6 +1268,54 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void productionTableDdlPreservesExpressionAndPartialIndexAfterRename() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".expression_indexed";
+            execute(c, "CREATE TABLE " + table + "(id integer,label varchar(30),active boolean) DISTRIBUTE BY HASH(id)");
+            execute(c, "CREATE INDEX ix_expression ON " + table + "(lower(label)) WHERE active");
+            execute(c, "ALTER INDEX " + s + ".ix_expression RENAME TO \"Index 中文\"");
+            String ddl = readProductionTableDdl(c, table);
+            assertNotNull(ddl);
+            execute(c, "DROP TABLE " + table);
+            execute(c, ddl);
+            try (var statement = c.prepareStatement(
+                "SELECT pg_get_indexdef(i.indexrelid),pg_get_expr(i.indexprs,i.indrelid),"
+                    + "pg_get_expr(i.indpred,i.indrelid) FROM pg_index i JOIN pg_class x ON x.oid=i.indexrelid "
+                    + "JOIN pg_namespace n ON n.oid=x.relnamespace WHERE n.nspname=? AND x.relname=?")) {
+                statement.setString(1, s);
+                statement.setString(2, "Index 中文");
+                try (var result = statement.executeQuery()) {
+                    assertTrue(result.next());
+                    assertTrue(result.getString(1).contains("\"Index 中文\""));
+                    assertTrue(result.getString(2).contains("lower("));
+                    assertTrue(result.getString(2).contains("label"));
+                    assertEquals("active", result.getString(3));
+                    assertFalse(result.next());
+                }
+            }
+            execute(c, "INSERT INTO " + table + " VALUES(1,'Alpha',true),(2,'ALPHA',false),(3,'Beta',true)");
+            assertRows(c, "SELECT id FROM " + table + " WHERE active AND lower(label)='alpha'",
+                List.of(List.of("1")));
+            boolean found = false;
+            try (var indexes = c.getMetaData().getIndexInfo(null, s, "expression_indexed", false, false)) {
+                while (indexes.next()) {
+                    assertNotEquals("ix_expression", indexes.getString("INDEX_NAME"));
+                    if ("Index 中文".equals(indexes.getString("INDEX_NAME"))) {
+                        found = true;
+                        assertTrue(indexes.getBoolean("NON_UNIQUE"));
+                    }
+                }
+            }
+            assertTrue(found);
+            execute(c, "DROP INDEX " + s + ".\"Index 中文\"");
+            assertEquals(3, count(c, table));
+            try (var indexes = c.getMetaData().getIndexInfo(null, s, "expression_indexed", false, false)) {
+                while (indexes.next()) assertNotEquals("Index 中文", indexes.getString("INDEX_NAME"));
+            }
+        });
+    }
+
+    @Test
     void checkConstraintRejectsBadDataWithoutChangingExistingRows() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".t(id integer, amount numeric CHECK(amount>=0))");
