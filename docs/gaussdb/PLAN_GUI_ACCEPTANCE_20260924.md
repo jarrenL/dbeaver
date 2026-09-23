@@ -40,3 +40,24 @@ ORDER BY g DESC;
 - 当前界面中配置标题仍标为 PostgreSQL，且部分属性和状态文字为英文。这是展示边界，不宣称全面汉化完成。
 
 ![初始失效连接报错](images/plan-gui-20260924/plan-closed-connection.png)
+
+## ANALYSE 及附加字段验证
+
+后续队列764–784，继续使用同一只读 SELECT，无数据写入：
+
+1. 打开解释配置，选择 ANALYSE，先以 TIMING 关闭执行。树中三个节点的行数均从估计1000变为实际5。重新选择 Sort 后，属性显示 `Actual-Rows=5`、`Actual-Loops=1`，仍保留 `Plan-Rows=1000`，排序方法 quicksort、内存25；耗时为空。
+2. 再打开配置，实际鼠标点击标签，截图确认 ANALYSE/VERBOSE/COSTS/BUFFERS/TIMING 五项全选，执行同一查询。
+3. 树中 Sort、WindowAgg、Function Scan 的时间分别显示0.022、0.016、0.007；Sort 属性中 Actual-Startup-Time 和 Actual-Total-Time 均0.022，Actual-Rows=5、Actual-Loops=1。
+4. VERBOSE 输出列为 `g`、`sum(g) OVER ()`；Sort-Key 为 `g.g DESC`。BUFFERS 的 shared/local/temp 读写字段均出现，本查询为0，IO-Read-Time/IO-Write-Time 为0.000。只验证字段呈现，不代表已验证非零磁盘I/O统计。
+
+这些时间为单次计划观测值，未建立性能基准。重新生成计划后属性面板需重新选择节点才能看到新属性；本轮按重新选择后的值核验。
+
+![五项选项实际勾选](images/plan-gui-20260924/plan-all-selected.png)
+
+![关闭TIMING时的实际行数](images/plan-gui-20260924/plan-analyse-node.png)
+
+![开启TIMING后的树与属性](images/plan-gui-20260924/plan-analyse-timed.png)
+
+自动化中的 check 命令只适用于树节点，误用于按钮的失败不算产品失败；初期点击与截图状态不一致、一次黑屏截图均未作通过依据，最终以明确选中截图和返回的实际统计字段确认。查看来源按钮本轮未获得源码视图证据，不列为通过。
+
+此追加覆盖了该只读查询的 ANALYSE、TIMING 开关以及 VERBOSE/BUFFERS字段。更多节点、非零I/O、保存加载、最新全量包仍未验。隔离客户端保留了五项全选设置，后续测试须注意 ANALYSE 会实际执行 SQL，不能直接用于未隔离的数据修改语句。
