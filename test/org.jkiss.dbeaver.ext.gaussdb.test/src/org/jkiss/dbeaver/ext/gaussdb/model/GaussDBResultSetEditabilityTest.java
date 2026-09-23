@@ -32,6 +32,7 @@ import org.jkiss.dbeaver.model.exec.DBCStatement;
 import org.jkiss.dbeaver.model.exec.DBExecUtils;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLQuery;
+import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.struct.DBSEntity;
 import org.jkiss.dbeaver.model.struct.DBSDataManipulator;
 import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
@@ -46,16 +47,26 @@ import static org.mockito.Mockito.*;
 class GaussDBResultSetEditabilityTest {
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
-        "SELECT amount + 1 AS amount FROM accounts | 0 | false",
-        "SELECT amount FROM accounts | 0 | true",
-        "SELECT amount + 1 AS amount, * FROM accounts | 0 | false",
-        "SELECT *, amount + 1 AS amount FROM accounts | 2 | false",
-        "SELECT *, amount FROM accounts | 2 | true",
-        "SELECT * FROM accounts | 1 | true",
-        "SELECT amount + 1 AS amount, accounts.* FROM accounts | 0 | false",
-        "SELECT accounts.*, amount + 1 AS amount FROM accounts | 2 | false"
+        "SELECT amount + 1 AS amount FROM accounts | 0 | 1 | amount | false",
+        "SELECT amount FROM accounts | 0 | 1 | amount | true",
+        "SELECT amount + 1 AS amount, * FROM accounts | 0 | 3 | amount | false",
+        "SELECT *, amount + 1 AS amount FROM accounts | 2 | 3 | amount | false",
+        "SELECT *, amount FROM accounts | 2 | 3 | amount | true",
+        "SELECT * FROM accounts | 1 | 2 | amount | true",
+        "SELECT amount + 1 AS amount, accounts.* FROM accounts | 0 | 3 | amount | false",
+        "SELECT accounts.*, amount + 1 AS amount FROM accounts | 2 | 3 | amount | false",
+        "SELECT amount AS total FROM accounts | 0 | 1 | total | true",
+        "SELECT amount AS total, * FROM accounts | 0 | 3 | total | true",
+        "SELECT *, amount AS total FROM accounts | 2 | 3 | total | true",
+        "SELECT accounts.*, amount AS total FROM accounts | 2 | 3 | total | true",
+        "SELECT amount + 1 AS amount, *, accounts.* FROM accounts | 0 | 5 | amount | false",
+        "SELECT *, accounts.*, amount + 1 AS amount FROM accounts | 4 | 5 | amount | false",
+        "SELECT *, accounts.*, amount AS total FROM accounts | 4 | 5 | total | true",
+        "SELECT *, amount + 1 AS amount, amount AS total FROM accounts | 3 | 4 | total | true"
     })
-    void wildcardDoesNotTurnExpressionAliasIntoPhysicalColumn(String sql, int ordinal, boolean physical) throws Exception {
+    void wildcardDoesNotTurnExpressionAliasIntoPhysicalColumn(
+        String sql, int ordinal, int count, String columnLabel, boolean physical
+    ) throws Exception {
         DBCSession session = mock(DBCSession.class);
         DBPDataSource source = mock(DBPDataSource.class, withSettings().extraInterfaces(DBSObjectContainer.class));
         DBSObjectContainer catalog = (DBSObjectContainer) source;
@@ -69,6 +80,8 @@ class GaussDBResultSetEditabilityTest {
         when(session.getProgressMonitor()).thenReturn(new VoidProgressMonitor());
         when(session.getDataSource()).thenReturn(source);
         when(source.getContainer()).thenReturn(container);
+        when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+        when(container.getPreferenceStore()).thenReturn(mock(DBPPreferenceStore.class));
         when(source.getInfo()).thenReturn(mock(DBPDataSourceInfo.class));
         when(container.isExtraMetadataReadEnabled()).thenReturn(true);
         DBCResultSet resultSet = mock(DBCResultSet.class);
@@ -78,13 +91,12 @@ class GaussDBResultSetEditabilityTest {
         when(statement.getStatementSource()).thenReturn(execution);
         when(execution.getSourceDescriptor()).thenReturn(new SQLQuery(null, sql));
         DBCAttributeMetaData metadata = mock(DBCAttributeMetaData.class);
-        when(metadata.getName()).thenReturn("amount");
-        when(metadata.getLabel()).thenReturn("amount");
+        when(metadata.getName()).thenReturn(columnLabel);
+        when(metadata.getLabel()).thenReturn(columnLabel);
         when(metadata.getOrdinalPosition()).thenReturn(ordinal);
         DBDAttributeBindingMeta binding = mock(DBDAttributeBindingMeta.class, CALLS_REAL_METHODS);
         doReturn(metadata).when(binding).getMetaAttribute();
-        doReturn("amount").when(binding).getName();
-        int count = sql.contains("*") ? (sql.contains(",") ? 3 : 2) : 1;
+        doReturn(columnLabel).when(binding).getName();
         DBDAttributeBinding[] bindings = new DBDAttributeBinding[count];
         for (int i = 0; i < count; i++) {
             bindings[i] = i == ordinal ? binding : mock(DBDAttributeBinding.class);

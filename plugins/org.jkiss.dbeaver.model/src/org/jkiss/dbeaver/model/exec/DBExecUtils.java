@@ -862,19 +862,15 @@ public class DBExecUtils {
                         updateColumnMeta &&
                         CommonUtils.equalObjects(columnName, attrMeta.getLabel()))
                     {
-                        int asteriskIndex = sqlQuery.getSelectItemAsteriskIndex();
-                        if ((asteriskIndex < 0 || asteriskIndex > attrMeta.getOrdinalPosition()) &&
-                            attrMeta.getOrdinalPosition() < sqlQuery.getSelectItemCount())
-                        {
-                            if (selectItem != null && selectItem.isPlainColumn()) {
-                                String realColumnName = selectItem.getName();
-                                if (!realColumnName.equalsIgnoreCase(columnName)) {
-                                    if (DBUtils.isQuotedIdentifier(dataSource, realColumnName)) {
-                                        columnName = DBUtils.getUnQuotedIdentifier(dataSource, realColumnName);
-                                    } else {
-                                        // #12008
-                                        columnName = DBObjectNameCaseTransformer.transformName(dataSource, realColumnName);
-                                    }
+                        // selectItem is already mapped through wildcard expansion.
+                        if (selectItem != null && selectItem.isPlainColumn()) {
+                            String realColumnName = selectItem.getName();
+                            if (!realColumnName.equalsIgnoreCase(columnName)) {
+                                if (DBUtils.isQuotedIdentifier(dataSource, realColumnName)) {
+                                    columnName = DBUtils.getUnQuotedIdentifier(dataSource, realColumnName);
+                                } else {
+                                    // #12008
+                                    columnName = DBObjectNameCaseTransformer.transformName(dataSource, realColumnName);
                                 }
                             }
                         }
