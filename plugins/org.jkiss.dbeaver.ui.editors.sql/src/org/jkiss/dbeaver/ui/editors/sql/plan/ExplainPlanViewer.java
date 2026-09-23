@@ -296,7 +296,9 @@ public class ExplainPlanViewer extends Viewer implements IAdaptable {
                             lastPlan.getQueryString());
                     lastQueryId = lastPlan.getQueryString();
 
-                    refresh();
+                    // Loading a file must not execute its SQL again (especially EXPLAIN ANALYZE).
+                    // Replanning is available separately through the explicit refresh action.
+                    visualizePlan(lastPlan);
 
                     return true;
 

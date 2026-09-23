@@ -14,7 +14,7 @@ FROM generate_series(1, 5) AS g
 ORDER BY g DESC;
 ```
 
-全程只读，无建表或数据变更。未启用 ANALYSE。
+全程只读，无建表或数据变更。首轮未启用 ANALYSE，后续增补见下文。
 
 ## 操作与结果
 
@@ -60,4 +60,22 @@ ORDER BY g DESC;
 
 自动化中的 check 命令只适用于树节点，误用于按钮的失败不算产品失败；初期点击与截图状态不一致、一次黑屏截图均未作通过依据，最终以明确选中截图和返回的实际统计字段确认。查看来源按钮本轮未获得源码视图证据，不列为通过。
 
-此追加覆盖了该只读查询的 ANALYSE、TIMING 开关以及 VERBOSE/BUFFERS字段。更多节点、非零I/O、保存加载、最新全量包仍未验。隔离客户端保留了五项全选设置，后续测试须注意 ANALYSE 会实际执行 SQL，不能直接用于未隔离的数据修改语句。
+此追加覆盖了该只读查询的 ANALYSE、TIMING 开关以及 VERBOSE/BUFFERS字段。更多节点、非零I/O、最新全量包仍未验；保存加载增补见下文。ANALYSE 会实际执行 SQL，不能直接用于未隔离的数据修改语句。
+
+## 保存、加载计划与重执行缺陷修复
+
+队列785–805，采用相同只读查询：
+
+1. 点击计划工具栏“Save plan”，通过文件选择器保存 `/tmp/Untitled.dbplan`。文件5943字节，JSON版本1，包含原查询、三层节点和实际统计字段。
+2. 修复前，从“SQL 编辑器 → 加载执行计划”选择文件后，出现新的 EXPLAIN 配置框。代码在反序列化后调用 `refresh()`，因此会重新规划，启用 ANALYSE 时会再次执行文件中的SQL。此次取消配置框，未再次执行。
+3. 修复 `ExplainPlanViewer.loadQueryPlan()`：读取后调用 `visualizePlan(lastPlan)` 展示文件数据，不调用重新执行逻辑。用户主动点击刷新仍是单独的重新规划操作。
+4. 回归编译和测试 `run-3ekl4d`：1493项，1469通过、24跳过、0失败/错误。未增加JUnit计数；本次新增的是GUI回归场景。构建跳过格式/Checkstyle检查，不视为这些检查通过。
+5. 正常退出隔离客户端并安装 SQL编辑器插件 `1.0.185.202609232058`，本机和容器 SHA-256 一致：`0cc9f4b0c2844def5e5506cf7954b7c783ed9f912b7ca308d033503849b53a05`。其余插件未整体升级，不代表新全量发行包验收。
+6. 重启后重新选择加载文件，直接呈现 Sort → WindowAgg → Function Scan；无 EXPLAIN 配置框。三节点行数均5，时间仍0.022/0.016/0.007，与保存文件一致。选择 Sort 后，属性保留 Plan-Rows=1000、Actual-Rows=5、Actual-Loops=1、Actual-Total-Time=0.022、Sort-Method=quicksort。
+7. 测试仓脚本 `scripts/verify-gui-plan-load.mjs` 对比保存JSON与加载后控件记录，通过；对修复前出现EXPLAIN配置框的记录执行同一核验，正确拒绝。截图另作视觉检查。
+
+![修复前加载文件却弹出执行配置](images/plan-gui-20260924/plan-load-before-fix.png)
+
+![修复后加载保留原始计划数据](images/plan-gui-20260924/plan-loaded-properties.png)
+
+自动化重启后一次误点“解释”而非“加载”，已取消，其配置框不算修复后失败；最终核验使用实际加载操作。未覆盖损坏文件、其他驱动格式、所有节点类型，也未进行网络流量级无SQL审计。
