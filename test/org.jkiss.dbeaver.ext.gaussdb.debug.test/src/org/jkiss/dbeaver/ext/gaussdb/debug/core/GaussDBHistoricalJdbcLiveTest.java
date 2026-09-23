@@ -51,33 +51,55 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     private static void assertSequenceBodyRoundtrip(Connection c, String sequenceName, String options,
         List<String> expectedValues) throws Exception {
         execute(c, "CREATE SEQUENCE " + sequenceName + " " + options);
-        var info = new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence.AdditionalInfo();
-        try (var query = c.createStatement(); var rows = query.executeQuery("SELECT * FROM " + sequenceName)) {
-            assertTrue(rows.next());
-            info.setStartValue(rows.getLong("start_value"));
-            info.setMinValue(rows.getLong("min_value"));
-            info.setMaxValue(rows.getLong("max_value"));
-            info.setIncrementBy(rows.getLong("increment_by"));
-            info.setCacheValue(rows.getLong("cache_value"));
-            info.setCycled(rows.getBoolean("is_cycled"));
-            info.setLoaded(true);
-        }
-        var sequence = new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence(mock(PostgreSchema.class)) {
+        var source = mock(GaussDBDataSource.class);
+        var schema = mock(PostgreSchema.class);
+        var database = mock(PostgreDatabase.class);
+        var context = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
+        var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        when(schema.getDataSource()).thenReturn(source);
+        when(source.getDefaultInstance()).thenReturn(database);
+        when(database.isInstanceConnected()).thenReturn(true);
+        when(database.getDefaultContext(any(), eq(true))).thenReturn(context);
+        when(context.openSession(any(), any(), anyString())).thenReturn(session);
+        when(session.prepareStatement(anyString())).thenAnswer(invocation -> {
+            var actual = c.prepareStatement(invocation.getArgument(0, String.class));
+            actual.setQueryTimeout(15);
+            when(statement.executeQuery()).thenAnswer(i -> {
+                var rows = actual.executeQuery();
+                when(result.next()).thenAnswer(a -> rows.next());
+                when(result.getLong(anyString())).thenAnswer(a -> rows.getLong(a.getArgument(0, String.class)));
+                when(result.getBoolean(anyString())).thenAnswer(a -> rows.getBoolean(a.getArgument(0, String.class)));
+                when(result.wasNull()).thenAnswer(a -> rows.wasNull());
+                doAnswer(a -> { rows.close(); return null; }).when(result).close();
+                return result;
+            });
+            doAnswer(i -> { actual.close(); return null; }).when(statement).close();
+            return statement;
+        });
+        var sequence = new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence(schema) {
             @Override
-            public AdditionalInfo getAdditionalInfo(DBRProgressMonitor monitor) {
-                return info;
+            public String getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext evaluationContext) {
+                return sequenceName;
             }
         };
+        var monitor = mock(DBRProgressMonitor.class);
+        var info = sequence.getAdditionalInfo(monitor);
+        assertTrue(info.getCacheValue() > 0, "Live cache_value must be loaded, not silently lost");
         var ddl = new StringBuilder("CREATE SEQUENCE " + sequenceName);
-        sequence.getSequenceBody(mock(DBRProgressMonitor.class), ddl, false);
+        sequence.getSequenceBody(monitor, ddl, false);
+        verify(result, times(1)).close();
+        verify(statement, times(1)).close();
+        verify(session, times(1)).close();
         execute(c, "DROP SEQUENCE " + sequenceName);
         execute(c, ddl.toString());
         for (String expected : expectedValues) {
             assertRows(c, "SELECT nextval('" + sequenceName + "')", List.of(List.of(expected)));
         }
-        assertRows(c, "SELECT min_value,max_value,increment_by FROM " + sequenceName,
+        assertRows(c, "SELECT min_value,max_value,increment_by,cache_value FROM " + sequenceName,
             List.of(List.of(Long.toString(info.getMinValue()), Long.toString(info.getMaxValue()),
-                Long.toString(info.getIncrementBy()))));
+                Long.toString(info.getIncrementBy()), Long.toString(info.getCacheValue()))));
     }
 
     @Test
