@@ -22,6 +22,7 @@
 :org.jkiss.dbeaver.ext.snowflake
 :org.jkiss.dbeaver.ext.gaussdb
 :org.jkiss.dbeaver.data.transfer
+:org.jkiss.dbeaver.data.office
 :org.jkiss.dbeaver.debug.core
 :org.jkiss.dbeaver.net.ssh
 :org.jkiss.dbeaver.net.ssh.jsch

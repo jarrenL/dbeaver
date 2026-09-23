@@ -45,6 +45,8 @@ import java.awt.*;
 import java.awt.Color;
 import java.io.IOException;
 import java.io.Reader;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
@@ -473,7 +475,7 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
 
             } else if (row[i] instanceof Number) {
 
-                cell.setCellValue(((Number) row[i]).doubleValue());
+                writeNumber(cell, (Number) row[i]);
 
             } else if (row[i] instanceof Date dateVal) {
                 if (dateVal.before(EXCEL_MIN_DATE)) {
@@ -493,6 +495,24 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
         }
         wsh.incRow();
         rowCount++;
+    }
+
+    private void writeNumber(@NotNull Cell cell, @NotNull Number value) {
+        double numericValue = value.doubleValue();
+        if (value instanceof BigDecimal || value instanceof BigInteger || value instanceof Long) {
+            BigDecimal exactValue = value instanceof BigDecimal decimal ? decimal : new BigDecimal(value.toString());
+            // Excel numeric cells retain only 15 significant decimal digits and do not support subnormal numbers.
+            // Preserve exact JDBC numbers as text instead of silently rounding, overflowing or underflowing them.
+            if (exactValue.stripTrailingZeros().precision() > 15
+                || !Double.isFinite(numericValue)
+                || (exactValue.signum() != 0 && Math.abs(numericValue) < Double.MIN_NORMAL)
+                || exactValue.compareTo(BigDecimal.valueOf(numericValue)) != 0
+            ) {
+                cell.setCellValue(value.toString());
+                return;
+            }
+        }
+        cell.setCellValue(numericValue);
     }
 
     private CellType getCellType(DBDAttributeBinding column) {
