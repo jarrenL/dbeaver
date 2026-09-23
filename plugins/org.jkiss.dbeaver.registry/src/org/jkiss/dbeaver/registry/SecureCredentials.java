@@ -41,13 +41,15 @@ public class SecureCredentials {
     public SecureCredentials(@NotNull DBPDataSourceContainer dataSource) {
         this.userName = dataSource.getConnectionConfiguration().getUserName();
         this.userPassword = dataSource.isSavePassword() ? dataSource.getConnectionConfiguration().getUserPassword() : null;
-        this.properties = dataSource.getConnectionConfiguration().getAuthProperties();
+        Map<String, String> authProperties = dataSource.getConnectionConfiguration().getAuthProperties();
+        this.properties = authProperties == null ? null : new HashMap<>(authProperties);
     }
 
     public SecureCredentials(@NotNull DBAAuthProfile profile) {
         this.userName = profile.getUserName();
-        this.userPassword = profile.getUserPassword();
-        this.properties = profile.getProperties();
+        this.userPassword = profile.isSavePassword() ? profile.getUserPassword() : null;
+        Map<String, String> authProperties = profile.getProperties();
+        this.properties = authProperties == null ? null : new HashMap<>(authProperties);
     }
 
     public SecureCredentials(@NotNull DBWHandlerConfiguration handlerConfiguration) {
@@ -79,12 +81,7 @@ public class SecureCredentials {
     }
 
     public void setProperties(@NotNull Map<String, String> properties) {
-        if (this.properties != null) {
-            this.properties.clear();
-            this.properties.putAll(properties);
-        } else {
-            this.properties = new HashMap<>(properties);
-        }
+        this.properties = new HashMap<>(properties);
     }
 
     public void setSecureProp(String key, String value) {
