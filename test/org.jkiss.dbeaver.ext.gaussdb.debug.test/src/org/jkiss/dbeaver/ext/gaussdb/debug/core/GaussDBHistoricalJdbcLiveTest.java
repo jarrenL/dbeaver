@@ -24,6 +24,110 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest {
+    @Test
+    void mergeUpdatesMatchesInsertsMissingRowsAndRollsBack() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".target(id integer PRIMARY KEY, amount numeric(18,2)) DISTRIBUTE BY HASH(id)");
+            execute(c, "CREATE TABLE " + s + ".source(id integer, amount numeric(18,2)) DISTRIBUTE BY HASH(id)");
+            execute(c, "INSERT INTO " + s + ".target VALUES(1,10.25),(2,20.50)");
+            execute(c, "INSERT INTO " + s + ".source VALUES(1,15.75),(3,30.25)");
+            c.setAutoCommit(false);
+            execute(c, "MERGE INTO " + s + ".target t USING " + s + ".source x ON(t.id=x.id) "
+                + "WHEN MATCHED THEN UPDATE SET amount=x.amount "
+                + "WHEN NOT MATCHED THEN INSERT(id,amount) VALUES(x.id,x.amount)");
+            assertRows(c, "SELECT id,amount FROM " + s + ".target ORDER BY id",
+                List.of(List.of("1", "15.75"), List.of("2", "20.50"), List.of("3", "30.25")));
+            c.rollback();
+            assertRows(c, "SELECT id,amount FROM " + s + ".target ORDER BY id",
+                List.of(List.of("1", "10.25"), List.of("2", "20.50")));
+        });
+    }
+
+    @Test
+    void duplicateKeyUpdatePreservesKeyAndUpdatesOnlyConflictingRow() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, label varchar(50)) DISTRIBUTE BY HASH(id)");
+            execute(c, "INSERT INTO " + s + ".t VALUES(1,'before'),(2,'unchanged')");
+            execute(c, "INSERT INTO " + s + ".t VALUES(1,'ignored') ON DUPLICATE KEY UPDATE label='after'");
+            assertRows(c, "SELECT id,label FROM " + s + ".t ORDER BY id",
+                List.of(List.of("1", "after"), List.of("2", "unchanged")));
+        });
+    }
+
+    @Test
+    void correlatedExistsAndNotExistsRespectNullsAndAliases() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".accounts(id integer, label varchar(50)) DISTRIBUTE BY HASH(id)");
+            execute(c, "CREATE TABLE " + s + ".entries(account_id integer) DISTRIBUTE BY HASH(account_id)");
+            execute(c, "INSERT INTO " + s + ".accounts VALUES(1,'一'),(2,'二'),(3,'三')");
+            execute(c, "INSERT INTO " + s + ".entries VALUES(1),(1),(3),(NULL)");
+            assertRows(c, "SELECT a.id,a.label FROM " + s + ".accounts a WHERE EXISTS "
+                + "(SELECT 1 FROM " + s + ".entries e WHERE e.account_id=a.id) ORDER BY a.id",
+                List.of(List.of("1", "一"), List.of("3", "三")));
+            assertRows(c, "SELECT a.id FROM " + s + ".accounts a WHERE NOT EXISTS "
+                + "(SELECT 1 FROM " + s + ".entries e WHERE e.account_id=a.id)", List.of(List.of("2")));
+            assertRows(c, "SELECT id FROM " + s + ".accounts WHERE id NOT IN (SELECT account_id FROM " + s + ".entries)",
+                List.of());
+        });
+    }
+
+    @Test
+    void joinGroupingHavingAndQuotedAliasesReturnExpectedRows() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".a(id integer, label varchar(50)) DISTRIBUTE BY HASH(id)");
+            execute(c, "CREATE TABLE " + s + ".b(id integer, amount integer) DISTRIBUTE BY HASH(id)");
+            execute(c, "INSERT INTO " + s + ".a VALUES(1,'first'),(2,'second'),(3,'empty')");
+            execute(c, "INSERT INTO " + s + ".b VALUES(1,10),(1,20),(2,5)");
+            assertRows(c, "SELECT a.label AS \"Account Label\",coalesce(sum(b.amount),0) AS \"Total\" "
+                + "FROM " + s + ".a a LEFT JOIN " + s + ".b b ON a.id=b.id "
+                + "GROUP BY a.id,a.label HAVING coalesce(sum(b.amount),0)>=10 OR count(b.id)=0 ORDER BY a.id",
+                List.of(List.of("first", "30"), List.of("empty", "0")));
+        });
+    }
+
+    @Test
+    void stringFunctionsPreserveUnicodeAndLiteralQuotes() throws Exception {
+        inIsolatedSchema((c, s) -> assertRows(c,
+            "SELECT substr('甲乙丙',2,2), length('甲乙丙'), replace('O''Brien','''','-'), "
+                + "trim('  保留  '), upper('aBc'), lower('XyZ'), concat('甲','乙')",
+            List.of(List.of("乙丙", "3", "O-Brien", "保留", "ABC", "xyz", "甲乙"))));
+    }
+
+    @Test
+    void numericFunctionsReturnExactDecimalResults() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            try (var statement = c.createStatement()) {
+                statement.setQueryTimeout(15);
+                try (var r = statement.executeQuery("SELECT abs(-7),ceil(1.2),floor(-1.2),round(12.345::numeric,2),"
+                    + "mod(17,5),power(2::numeric,10)")) {
+                    assertTrue(r.next());
+                    String[] expected = {"7", "2", "-2", "12.35", "2", "1024"};
+                    for (int i = 0; i < expected.length; i++) {
+                        assertEquals(0, new java.math.BigDecimal(expected[i]).compareTo(r.getBigDecimal(i + 1)));
+                    }
+                    assertFalse(r.next());
+                }
+            }
+        });
+    }
+
+    private static void assertRows(Connection c, String sql, List<List<String>> expected) throws Exception {
+        try (var statement = c.createStatement()) {
+            statement.setQueryTimeout(15);
+            try (var r = statement.executeQuery(sql)) {
+                var actual = new java.util.ArrayList<List<String>>();
+                while (r.next()) {
+                    var row = new java.util.ArrayList<String>();
+                    for (int i = 1; i <= r.getMetaData().getColumnCount(); i++) {
+                        row.add(r.getString(i));
+                    }
+                    actual.add(row);
+                }
+                assertEquals(expected, actual);
+            }
+        }
+    }
+
     private PostgreProcedureParameter parameter(String type, DBSProcedureParameterKind kind) {
         var p = mock(PostgreProcedureParameter.class);
         when(p.getFullTypeName()).thenReturn(type);
