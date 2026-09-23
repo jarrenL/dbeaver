@@ -2001,6 +2001,10 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private void inIsolatedSchema(Scenario scenario) throws Exception {
+        inIsolatedSchema(scenario, java.util.Map.of());
+    }
+
+    private void inIsolatedSchema(Scenario scenario, java.util.Map<String, String> driverOptions) throws Exception {
         String config = System.getenv("GAUSSDB_HISTORY_CONNECTION");
         assumeTrue(config != null, "Live connection not configured; not a passing database test");
         assertEquals("YES", System.getenv("GAUSSDB_HISTORY_ALLOW_DDL"), "Explicit isolated test database consent required");
@@ -2018,6 +2022,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         properties.remove("driverClass");
         properties.setProperty("socketTimeout", "20");
         properties.setProperty("connectTimeout", "10");
+        properties.putAll(driverOptions);
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(jar).toUri().toURL()},
             ClassLoader.getPlatformClassLoader())) {
             var driver = (Driver) loader.loadClass(driverClass).getConstructor().newInstance();
@@ -2026,15 +2031,30 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                 connection.setAutoCommit(true);
                 String schema = "dbv_hist_" + UUID.randomUUID().toString().replace("-", "");
                 execute(connection, "CREATE SCHEMA " + schema);
+                Throwable scenarioFailure = null;
                 try {
                     scenario.run(connection, schema);
+                } catch (Exception | AssertionError failure) {
+                    scenarioFailure = failure;
+                    throw failure;
                 } finally {
-                    if (!connection.getAutoCommit()) {
-                        connection.rollback();
-                        connection.setAutoCommit(true);
+                    try {
+                        if (connection.isClosed()) {
+                            withIndependentConnection(cleanup -> execute(cleanup, "DROP SCHEMA " + schema + " CASCADE"));
+                        } else {
+                            if (!connection.getAutoCommit()) {
+                                connection.rollback();
+                                connection.setAutoCommit(true);
+                            }
+                            // Only the random schema successfully created by this test is removed.
+                            execute(connection, "DROP SCHEMA " + schema + " CASCADE");
+                        }
+                    } catch (Exception cleanupFailure) {
+                        if (scenarioFailure == null) {
+                            throw cleanupFailure;
+                        }
+                        scenarioFailure.addSuppressed(cleanupFailure);
                     }
-                    // Only a randomly named schema successfully created by this test is removed.
-                    execute(connection, "DROP SCHEMA " + schema + " CASCADE");
                 }
             }
         }
@@ -2424,5 +2444,64 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                 }
             }
         });
+    }
+
+    @Test
+    void simpleProtocolGb18030PreservesChineseSupplementaryCharactersAndNull() throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            String table = schema + ".encoded_rows";
+            execute(connection, "CREATE TABLE " + table + "(id integer, value text)");
+            String original;
+            try (var query = connection.createStatement(); var rows = query.executeQuery("SHOW client_encoding")) {
+                assertTrue(rows.next());
+                original = rows.getString(1);
+            }
+            try {
+                execute(connection, "SET client_encoding TO 'GB18030'");
+                try (var query = connection.createStatement(); var rows = query.executeQuery("SHOW client_encoding")) {
+                    assertTrue(rows.next());
+                    assertEquals("GB18030", rows.getString(1));
+                }
+                String[] values = {"中文银行", "扩展汉字𠀀", "单引号'与反斜杠\\", null};
+                try (var insert = connection.prepareStatement("INSERT INTO " + table + " VALUES(?,?)")) {
+                    for (int i = 0; i < values.length; i++) {
+                        insert.setInt(1, i);
+                        insert.setString(2, values[i]);
+                        assertEquals(1, insert.executeUpdate());
+                    }
+                }
+                try (var query = connection.createStatement(); var rows = query.executeQuery("SELECT value FROM " + table + " ORDER BY id")) {
+                    for (String value : values) {
+                        assertTrue(rows.next());
+                        assertEquals(value, rows.getString(1));
+                        assertEquals(value == null, rows.wasNull());
+                    }
+                    assertFalse(rows.next());
+                }
+                withIndependentConnection(observer -> {
+                    try (var query = observer.createStatement(); var rows = query.executeQuery("SELECT value FROM " + table + " ORDER BY id")) {
+                        for (String value : values) {
+                            assertTrue(rows.next());
+                            assertEquals(value, rows.getString(1));
+                        }
+                        assertFalse(rows.next());
+                    }
+                });
+            } finally {
+                if (!connection.isClosed()) {
+                    execute(connection, "SET client_encoding TO '" + original.replace("'", "''") + "'");
+                }
+            }
+        }, java.util.Map.of("allowEncodingChanges", "true", "preferQueryMode", "simple"));
+    }
+
+    @Test
+    void driverRejectsEncodingChangeWhenExplicitlyDisallowed() throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            var error = assertThrows(java.sql.SQLException.class,
+                () -> execute(connection, "SET client_encoding TO 'GB18030'"));
+            assertEquals("08006", error.getSQLState());
+            assertTrue(connection.isClosed());
+        }, java.util.Map.of("allowEncodingChanges", "false"));
     }
 }
