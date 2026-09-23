@@ -1,5 +1,11 @@
 # SQL投影、别名及来源表测试
 
+## JOIN混合来源补充
+
+新增18项已通过。15项为JOIN/LEFT/RIGHT/FULL/INNER五种连接分别组合CTE在右、CTE在左、派生查询在左；断言整条JOIN不是单表来源，public.accounts的实体列仍正确返回schema/表名，另一投影的CTE/派生别名不伪造成基础表。另3项覆盖递归CTE、串联CTE和内嵌WITH派生查询。
+
+run-Mnh4Ag完整1123项：1099通过、24跳过、0失败/错误；本类60项全部通过。报告`test-results-20260923-mixed-join-sources.json`。本批没有生产代码变更；新增场景是生产解析模型测试，不是真库执行这18条SQL或GUI结果集写回测试。回归临时角色已清理。
+
 ## GaussDB标识符大小写补充
 
 新增8项使用真实GaussDBDialect：未引用Q/q相互匹配、引用小写q与未引用名匹配、引用大写Q与未引用q区分、引用大写同名匹配、public.q不被同名CTE遮蔽。旧代码run-x2VJmW中4项失败；修复时将未引用名按数据源storesUnquotedCase折叠，引用名保留大小写。

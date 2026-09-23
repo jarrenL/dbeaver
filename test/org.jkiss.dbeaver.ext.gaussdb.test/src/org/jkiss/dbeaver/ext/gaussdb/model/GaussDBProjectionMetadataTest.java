@@ -21,13 +21,55 @@ import org.jkiss.dbeaver.model.sql.SQLQueryType;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.Arguments;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.junit.jupiter.api.Test;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBProjectionMetadataTest {
+    static Stream<Arguments> mixedSources() {
+        return Stream.of("JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN", "INNER JOIN")
+            .flatMap(join -> Stream.of("cte-right", "cte-left", "derived-left")
+                .map(orientation -> Arguments.of(join, orientation)));
+    }
+
+    @ParameterizedTest
+    @MethodSource("mixedSources")
+    void joinsPreservePhysicalSourceWithoutInventingVirtualSource(String join, String orientation) {
+        String from = switch (orientation) {
+            case "cte-right" -> "public.accounts a " + join + " q v";
+            case "cte-left" -> "q v " + join + " public.accounts a";
+            default -> "(SELECT id FROM audit.other_table) v " + join + " public.accounts a";
+        };
+        String prefix = orientation.startsWith("cte") ? "WITH q AS (SELECT id FROM audit.other_table) " : "";
+        SQLQuery query = new SQLQuery(null, prefix + "SELECT a.id,v.id FROM " + from + " ON a.id=v.id");
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertEquals(2, query.getSelectItemCount());
+        assertNull(query.getEntityMetadata(false), "A JOIN is not a single physical source");
+        var physical = query.getSelectItem(0).getEntityMetaData();
+        assertNotNull(physical);
+        assertEquals("public", physical.getSchemaName());
+        assertEquals("accounts", physical.getEntityName());
+        assertNull(query.getSelectItem(1).getEntityMetaData(), "CTE/derived alias is not an update table");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "WITH RECURSIVE q(id) AS (SELECT 1 UNION ALL SELECT id+1 FROM q WHERE id<3) SELECT q.id FROM q",
+        "WITH q AS (SELECT 1 AS id), r AS (SELECT id FROM q) SELECT r.id FROM r",
+        "SELECT q.id FROM (WITH q AS (SELECT 1 AS id) SELECT id FROM q) q"
+    })
+    void recursiveChainedAndNestedVirtualSourcesRemainUnresolved(String sql) {
+        SQLQuery query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getEntityMetadata(false));
+        assertNull(query.getSelectItem(0).getEntityMetaData());
+    }
+
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
         "Q|q|true", "q|Q|true", "\"q\"|q|true", "q|\"q\"|true",
