@@ -30,6 +30,7 @@ import java.text.DecimalFormat;
 import java.text.FieldPosition;
 import java.text.NumberFormat;
 import java.text.ParseException;
+import java.text.ParsePosition;
 import java.util.Locale;
 import java.util.Map;
 
@@ -167,7 +168,12 @@ public class NumberDataFormatter implements DBDDataFormatter {
     {
         synchronized (this) {
             numberFormat.setParseBigDecimal(typeHint == BigDecimal.class || typeHint == BigInteger.class);
-            Number number = numberFormat.parse(value);
+            ParsePosition parsePosition = new ParsePosition(0);
+            Number number = numberFormat.parse(value, parsePosition);
+            if (number == null || parsePosition.getIndex() != value.length()) {
+                throw new ParseException("Unparseable number", parsePosition.getErrorIndex() >= 0
+                    ? parsePosition.getErrorIndex() : parsePosition.getIndex());
+            }
             if (number != null && typeHint != null) {
                 boolean isFloat = number instanceof Double || number instanceof Float;
                 if (typeHint == Byte.class) {
