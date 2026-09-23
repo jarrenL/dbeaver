@@ -53,3 +53,16 @@
 ![ONLY 回退确认](images/sql-safety-20260924/only-confirm.png)
 
 这两个回退路径的提示为“多行数据／SQL”，没有显示准确表名及 UPDATE/DELETE 类型，记录为展示限制；不妨碍无 WHERE 确认。未点击 ONLY 的确定执行，本轮仅证明新模型的提示与取消保护，不代替 JDBC 执行或完整 UI 正向验证。测试结束精确删除专用表/schema且目录计数0，编辑器恢复 SELECT，不再询问未勾选。
+
+## ONLY 多语句脚本补验（672–683）
+
+保持上述 SQL 模型 1858，重新创建隔离表两行 original，通过“执行 SQL 脚本”运行 UPDATE ONLY 设置 multi_changed、随后 DELETE FROM ONLY 两条语句。
+
+1. 第一条 UPDATE 确认框点击“确定”，第二条 DELETE 确认框点击“取消”。独立 gsql count=2、original_rows=2；即使第一条已点确定，脚本也未提前执行它。
+2. 再次执行同一脚本，在第一条确认框点击“全部为是”。客户端结束后实际统计显示 Queries=2、Updated Rows=4；独立 gsql rows_after_yes_all=0。这个组合核对同时验证两条 ONLY 语句的实际执行，不仅是最终空表。
+
+![第二条确认前尚未执行脚本](images/sql-safety-20260924/multi-second.png)
+
+![全部确认后的两条执行统计](images/sql-safety-20260924/multi-result.png)
+
+“全部为是”是本次脚本确认按钮，没有勾选持久化“不再询问”。手动事务、混合 DROP/DML 的提示顺序和偏好持久化仍未覆盖。完成后精确 DROP 专用表/schema，目录计数0，编辑器恢复 SELECT。JUnit 数量不变；本轮仅增加 GUI 证据，不改源码。
