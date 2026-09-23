@@ -35,6 +35,16 @@ public abstract class QMMObject {
     private long closeTime;
 
     private transient boolean updated;
+    private transient volatile boolean historyDeleted;
+
+    /** Suppresses this metadata object from query history, without changing database or log files. */
+    public void deleteFromHistory() {
+        historyDeleted = true;
+    }
+
+    public boolean isHistoryDeleted() {
+        return historyDeleted;
+    }
 
     public QMMObject(QMMetaObjectType type) {
         this.type = type;

@@ -35,6 +35,7 @@ import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.LongKeyMap;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -212,7 +213,15 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
 
     public List<QMMetaEvent> getPastEvents() {
         synchronized (historySync) {
+            pastEvents.removeIf(event -> event.getObject().isHistoryDeleted());
             return new ArrayList<>(pastEvents);
+        }
+    }
+
+    public void deleteHistoryObjects(@NotNull Collection<? extends QMMObject> objects) {
+        synchronized (historySync) {
+            objects.forEach(QMMObject::deleteFromHistory);
+            pastEvents.removeIf(event -> event.getObject().isHistoryDeleted());
         }
     }
 
@@ -428,7 +437,11 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
                     }
                 }
                 synchronized (historySync) {
-                    pastEvents.addAll(events);
+                    for (QMMetaEvent event : events) {
+                        if (!event.getObject().isHistoryDeleted()) {
+                            pastEvents.add(event);
+                        }
+                    }
                     int size = pastEvents.size();
                     if (size > MAX_HISTORY_EVENTS) {
                         pastEvents = new ArrayList<>(pastEvents.subList(

@@ -67,6 +67,58 @@ class QueryHistoryCollectorTest extends DBeaverUnitTest {
     }
 
     @Test
+    void deletingOneObjectRemovesAllItsEventsButPreservesOtherObjects() throws Exception {
+        var collector = collector();
+        var removed = mock(QMMStatementExecuteInfo.class, CALLS_REAL_METHODS);
+        var retained = mock(QMMStatementExecuteInfo.class, CALLS_REAL_METHODS);
+        var keep = new QMMetaEvent(retained, QMEventAction.END, 3, "fixture");
+        pending.add(new QMMetaEvent(removed, QMEventAction.BEGIN, 1, "fixture"));
+        pending.add(new QMMetaEvent(removed, QMEventAction.END, 2, "fixture"));
+        pending.add(keep);
+        dispatch(collector);
+        collector.deleteHistoryObjects(List.of(removed));
+        assertEquals(List.of(keep), collector.getPastEvents());
+        collector.deleteHistoryObjects(List.of(removed));
+        assertEquals(List.of(keep), collector.getPastEvents());
+        assertFalse(retained.isHistoryDeleted());
+    }
+
+    @Test
+    void deletionDuringDispatchCannotBeReaddedToHistory() throws Exception {
+        var collector = collector();
+        var removed = mock(QMMStatementExecuteInfo.class, CALLS_REAL_METHODS);
+        var listener = mock(org.jkiss.dbeaver.model.qm.QMMetaListener.class);
+        doAnswer(invocation -> {
+            collector.deleteHistoryObjects(List.of(removed));
+            return null;
+        }).when(listener).metaInfoChanged(any(), any());
+        collector.addListener(listener);
+        pending.add(new QMMetaEvent(removed, QMEventAction.END, 1, "fixture"));
+        dispatch(collector);
+        assertTrue(collector.getPastEvents().isEmpty());
+        pending.add(new QMMetaEvent(removed, QMEventAction.END, 2, "fixture"));
+        dispatch(collector);
+        assertTrue(collector.getPastEvents().isEmpty());
+    }
+
+    @Test
+    void deletionBeforeDispatchSuppressesPendingObjectWithoutSuppressingFutureQueries() throws Exception {
+        var collector = collector();
+        var removed = mock(QMMStatementExecuteInfo.class, CALLS_REAL_METHODS);
+        var next = mock(QMMStatementExecuteInfo.class, CALLS_REAL_METHODS);
+        pending.add(new QMMetaEvent(removed, QMEventAction.END, 1, "fixture"));
+        collector.deleteHistoryObjects(List.of(removed));
+        dispatch(collector);
+        assertTrue(collector.getPastEvents().isEmpty());
+        var nextEvent = new QMMetaEvent(next, QMEventAction.END, 2, "fixture");
+        pending.add(nextEvent);
+        dispatch(collector);
+        assertEquals(List.of(nextEvent), collector.getPastEvents());
+        collector.deleteHistoryObjects(List.of());
+        assertEquals(List.of(nextEvent), collector.getPastEvents());
+    }
+
+    @Test
     void retainsNewestTenThousandEventsAndReturnsDefensiveSnapshot() throws Exception {
         var collector = collector();
         var object = mock(QMMStatementExecuteInfo.class);
