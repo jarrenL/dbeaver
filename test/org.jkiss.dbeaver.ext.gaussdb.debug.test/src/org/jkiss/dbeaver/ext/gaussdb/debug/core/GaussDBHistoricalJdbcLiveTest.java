@@ -37,6 +37,100 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionSearchKeepsSameNamedTablesInTheirRequestedSchema() throws Exception {
+        inIsolatedSchema((c, s) -> inIsolatedSchema((other, otherSchema) -> {
+            execute(c, "CREATE TABLE " + s + ".same_name(id integer)");
+            execute(other, "CREATE TABLE " + otherSchema + ".same_name(id integer)");
+            assertEquals(1, searchTables(c, s, "same_name", true, 10, false).size());
+            assertEquals(1, searchTables(c, otherSchema, "same_name", true, 10, false).size());
+            execute(c, "DROP TABLE " + s + ".same_name");
+            assertTrue(searchTables(c, s, "same_name", true, 10, false).isEmpty());
+            assertEquals(1, searchTables(c, otherSchema, "same_name", true, 10, false).size());
+        }));
+    }
+
+    @Test
+    void productionTableSearchUsesRealCatalogCaseCommentsAndLimit() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".\"SearchAlpha\"(id integer)");
+            execute(c, "CREATE VIEW " + s + ".searchbeta AS SELECT id FROM " + s + ".\"SearchAlpha\"");
+            execute(c, "COMMENT ON VIEW " + s + ".searchbeta IS 'OnlyCommentToken'");
+            var matches = searchTables(c, s, "search%", false, 10, false);
+            assertEquals(List.of("SearchAlpha", "searchbeta"), matches.stream().map(r -> r.getName()).toList());
+            assertEquals("PostgreTable", matches.get(0).getObjectClass().getSimpleName());
+            assertEquals("PostgreView", matches.get(1).getObjectClass().getSimpleName());
+            assertEquals(List.of("searchbeta"), searchTables(c, s, "search%", true, 10, false)
+                .stream().map(r -> r.getName()).toList());
+            assertEquals(1, searchTables(c, s, "search%", false, 1, false).size());
+            assertTrue(searchTables(c, s, "%OnlyCommentToken%", false, 10, false).isEmpty());
+            assertEquals(List.of("searchbeta"), searchTables(c, s, "%OnlyCommentToken%", false, 10, true)
+                .stream().map(r -> r.getName()).toList());
+            assertTrue(searchTables(c, s, "x'; DROP TABLE anything;--", false, 10, false).isEmpty());
+            assertEquals(2, searchTables(c, s, "search%", false, 10, false).size());
+        });
+    }
+
+    /** Production search algorithm and SQL, with a thin mock JDBC interface bridge to the real driver. */
+    private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchTables(
+        Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments
+    ) throws Exception {
+        long schemaId;
+        try (var lookup = c.prepareStatement("SELECT oid FROM pg_namespace WHERE nspname=?")) {
+            lookup.setString(1, schemaName);
+            try (var rows = lookup.executeQuery()) {
+                assertTrue(rows.next());
+                schemaId = rows.getLong(1);
+            }
+        }
+        var monitor = mock(DBRProgressMonitor.class);
+        var source = mock(GaussDBDataSource.class);
+        var database = mock(PostgreDatabase.class);
+        var schema = mock(PostgreSchema.class);
+        when(schema.getDatabase()).thenReturn(database);
+        when(schema.getObjectId()).thenReturn(schemaId);
+        when(database.getSchema(monitor, schemaId)).thenReturn(schema);
+        var context = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
+        when(context.getDataSource()).thenReturn(source);
+        when(context.getDefaultCatalog()).thenReturn(database);
+        var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        when(session.getProgressMonitor()).thenReturn(monitor);
+        when(context.openSession(eq(monitor), any(), anyString())).thenReturn(session);
+        when(session.prepareStatement(anyString())).thenAnswer(invocation -> {
+            var actual = c.prepareStatement(invocation.getArgument(0, String.class));
+            actual.setQueryTimeout(15);
+            var statement = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+            doAnswer(i -> { actual.setString(i.getArgument(0), i.getArgument(1)); return null; })
+                .when(statement).setString(anyInt(), anyString());
+            doAnswer(i -> { actual.setLong(i.getArgument(0), i.getArgument(1)); return null; })
+                .when(statement).setLong(anyInt(), anyLong());
+            when(statement.executeQuery()).thenAnswer(i -> {
+                var rows = actual.executeQuery();
+                var result = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+                when(result.next()).thenAnswer(a -> rows.next());
+                when(result.getString(anyString())).thenAnswer(a -> rows.getString(a.getArgument(0, String.class)));
+                when(result.getLong(anyString())).thenAnswer(a -> rows.getLong(a.getArgument(0, String.class)));
+                when(result.wasNull()).thenAnswer(a -> rows.wasNull());
+                doAnswer(a -> { rows.close(); return null; }).when(result).close();
+                return result;
+            });
+            doAnswer(i -> { actual.close(); return null; }).when(statement).close();
+            return statement;
+        });
+        var params = new org.jkiss.dbeaver.model.struct.DBSStructureAssistant.ObjectsSearchParams(
+            new org.jkiss.dbeaver.model.struct.DBSObjectType[] {
+                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_TABLE
+            }, mask);
+        params.setParentObject(schema);
+        params.setCaseSensitive(caseSensitive);
+        params.setMaxResults(limit);
+        params.setSearchInComments(comments);
+        var result = new org.jkiss.dbeaver.ext.postgresql.model.PostgreStructureAssistant(source)
+            .findObjectsByMask(monitor, context, params);
+        verify(session).close();
+        return result;
+    }
+
+    @Test
     void productionDefaultPrivilegesApplyOnlyToFutureObjectsAndRevocationIsNotRetroactive() throws Exception {
         String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
         assumeTrue(grantee != null, "Dedicated NOLOGIN grantee role not configured; default privilege test not executed");
