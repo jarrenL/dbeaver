@@ -134,3 +134,29 @@
 这是共享导出器空结果行数的行为修正，不影响真实 NULL 记录的输出。导出向导、附带超长 SQL、包含多种换行风格的 SQL 仍需单独验证。
 
 修复后 `run-jxjvAh` 完整回归 **1,321 项，1,297 通过，24 跳过，0 失败/错误**，本类累计 54 项，另有 2 项 JDBC→XLSX 真库测试。[脱敏结果](test-results-20260924-xlsx-empty.json)。临时 grantee 已删除。
+
+## Linux 图形界面：实际导出向导
+
+在已有隔离 Linux x86_64/Xvfb 测试客户端中验收（SWTBot 命令 603–618），不是客户桌面云实机验收。原测试安装未含 Office 扩展，本轮正常退出后保留 bundles.info 备份，安装最新 Office bundle 和 POI/commons-compress/lang3 依赖；重新启动后 XLSX 出现在导出目标中。未修改客户发布包。
+
+Office bundle：`1.1.223.202609231817`，SHA-256 `770b13df044d54a8c0497bcf7376e4c93f096ffef352c53069617350bb426227`。
+
+环境读取结果为 Kylin Linux Advanced Server V10 (Lance)，x86_64；运行于本机 Docker 的仿真测试环境。输出文件 SHA-256 为 `24096b9302cf7f826138524cc5619e9e5ab6ccc3cb21926ee69e406609e0cf9c`。
+
+操作路径：SQL 编辑器执行下列只读查询 → 结果面板“导出数据” → 目标 XLSX → 保持默认格式 → 指定隔离输出目录/新文件名 → 确认 → 继续。
+
+```sql
+SELECT 12345678901234567890.123456789012345678::numeric(38,18) AS amount,
+       (-9223372036854775807 - 1)::bigint AS bigint_value,
+       '中文银行𠀀'::text AS label, NULL::integer AS empty_value;
+```
+
+使用分布式 507 的普通测试账号。确认页显示 SINGLE_QUERY、打开新连接、不是仅使用已获取行；因此覆盖实际向导和数据库抽取，不仅是前述模拟站点。
+
+![XLSX 导出确认页](images/xlsx-gui-20260924/confirm.png)
+
+完成后向导关闭，独立使用 ZIP/XML 读取实际生成的 `xlsx-gui-20260924.xlsx`：1 张数据表、2 行（含表头）、4 列。表头 amount/bigint_value/label/empty_value；数据逐格为精确数值字符串、`-9223372036854775808`、`中文银行𠀀`、空字符串，均为 inlineStr，断言通过。只执行 SELECT，没有创建或修改数据库对象。
+
+![导出后的结果界面](images/xlsx-gui-20260924/result.png)
+
+限制：截图中扩展汉字“𠀀”显示缺字框，文件 XML 中字符完整正确。数据编码通过不能等价于字体显示通过。此轮没有验空结果/追加/取消/错误的 GUI 流程，也未验证 Excel/WPS 打开文件；发布包仍需包含并验证扩展依赖。命令 609 曾使用重启前的控件编号而定位失败，610 按新 dump 纠正，未将该测试操作错误记为产品缺陷。
