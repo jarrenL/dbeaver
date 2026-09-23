@@ -66,9 +66,14 @@ public class QMLogFileWriter implements QMMetaListener, DBPPreferenceListener {
         initLogFile();
     }
 
-    public void dispose()
+    public synchronized void dispose()
     {
         DBWorkbench.getPlatform().getPreferenceStore().removePropertyChangeListener(this);
+        enabled = false;
+        if (logWriter != null) {
+            ContentUtils.close(logWriter);
+            logWriter = null;
+        }
     }
 
     private synchronized void initLogFile() {
