@@ -47,7 +47,6 @@ import org.jkiss.dbeaver.runtime.DBInterruptedException;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.CommonUtils;
-import org.jkiss.utils.IOUtils;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -293,11 +292,9 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
 
     private String loadConfigFile(@NotNull InputStream stream, boolean decrypt) throws DBException, IOException {
         ByteArrayOutputStream credBuffer = new ByteArrayOutputStream();
-        try {
-            IOUtils.copyStream(stream, credBuffer);
-        } catch (Exception e) {
-            log.error("Error reading secure credentials file", e);
-        }
+        // Never parse or decrypt a partial buffer after an unsuccessful read.
+        // The caller owns the stream and reports the original I/O failure.
+        stream.transferTo(credBuffer);
         if (!decrypt) {
             return credBuffer.toString(StandardCharsets.UTF_8);
         } else {
