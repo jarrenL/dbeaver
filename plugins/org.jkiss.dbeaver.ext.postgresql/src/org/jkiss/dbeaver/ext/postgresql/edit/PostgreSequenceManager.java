@@ -152,6 +152,9 @@ public class PostgreSequenceManager extends SQLObjectEditor<PostgreTableBase, Po
 
     @Override
     protected void addObjectRenameActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectRenameCommand command, @NotNull Map<String, Object> options) {
+        if (!canRenameObject(command.getObject())) {
+            throw new IllegalStateException(PostgreSQLMessages.sequence_rename_not_supported);
+        }
         actions.add(
             new SQLDatabasePersistAction("Rename sequence",
                 "ALTER SEQUENCE " + DBUtils.getQuotedIdentifier(command.getObject().getSchema()) + "." + DBUtils.getQuotedIdentifier(command.getObject().getDataSource(), command.getOldName()) +
@@ -160,8 +163,20 @@ public class PostgreSequenceManager extends SQLObjectEditor<PostgreTableBase, Po
 
     @Override
     public void renameObject(@NotNull DBECommandContext commandContext, @NotNull PostgreTableBase object, @NotNull Map<String, Object> options, @NotNull String newName) throws DBException {
+        validateRename(object);
         ObjectRenameCommand command = new ObjectRenameCommand(object, ModelMessages.model_jdbc_rename_object, options, newName);
         commandContext.addCommand(command, new RenameObjectReflector(), true);
+    }
+
+    @Override
+    public boolean canRenameObject(@NotNull PostgreTableBase object) {
+        return object instanceof PostgreSequence sequence && sequence.supportsSequenceRename();
+    }
+
+    private void validateRename(@NotNull PostgreTableBase object) throws DBException {
+        if (!canRenameObject(object)) {
+            throw new DBException(PostgreSQLMessages.sequence_rename_not_supported);
+        }
     }
 
     @Override

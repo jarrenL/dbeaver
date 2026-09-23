@@ -47,9 +47,12 @@ public class PostgreServerGaussDBTest {
         Mockito.when(schema.getDataSource()).thenReturn(source);
         Assertions.assertFalse(server.supportsSequenceRestart());
         Assertions.assertFalse(new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence(schema).supportsSequenceRestart());
+        Assertions.assertFalse(server.supportsSequenceRename());
+        Assertions.assertFalse(new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence(schema).supportsSequenceRename());
         var extension = Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreServerExtension.class,
             Mockito.CALLS_REAL_METHODS);
         Assertions.assertTrue(extension.supportsSequenceRestart());
+        Assertions.assertTrue(extension.supportsSequenceRename());
     }
 
     private final class TableDDLFixture {

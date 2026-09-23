@@ -241,6 +241,10 @@ public class PostgreSequence extends PostgreTableBase implements DBSSequence, DB
         return getDataSource().getServerType().supportsSequenceRestart();
     }
 
+    public boolean supportsSequenceRename() {
+        return getDataSource().getServerType().supportsSequenceRename();
+    }
+
     ///////////////////////////////////////////////////////////////////////
     // Entity
 

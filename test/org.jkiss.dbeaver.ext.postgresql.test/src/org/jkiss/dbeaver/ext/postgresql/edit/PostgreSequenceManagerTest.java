@@ -32,6 +32,29 @@ import static org.mockito.Mockito.*;
 
 class PostgreSequenceManagerTest extends org.jkiss.junit.DBeaverUnitTest {
     private static class Manager extends PostgreSequenceManager {
+        String rename(boolean supported) throws Exception {
+            var source = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource.class);
+            when(source.getSQLDialect()).thenReturn(new org.jkiss.dbeaver.ext.postgresql.model.PostgreDialect());
+            var schema = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema.class);
+            when(schema.getName()).thenReturn("模式 空");
+            when(schema.getDataSource()).thenReturn(source);
+            var sequence = mock(PostgreSequence.class);
+            when(sequence.getSchema()).thenReturn(schema);
+            when(sequence.getDataSource()).thenReturn(source);
+            when(sequence.getName()).thenReturn("旧\"名");
+            when(sequence.supportsSequenceRename()).thenReturn(supported);
+            var command = new ObjectRenameCommand(sequence, "Rename", Map.of(), "新\"名");
+            var actions = new ArrayList<DBEPersistAction>();
+            try {
+                addObjectRenameActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
+            } catch (IllegalStateException failure) {
+                assertTrue(actions.isEmpty());
+                throw failure;
+            }
+            assertEquals(1, actions.size());
+            return actions.get(0).getScript();
+        }
+
         void validateUnsupportedRestart() throws Exception {
             var sequence = mock(PostgreSequence.class);
             when(sequence.getName()).thenReturn("sequence_name");
@@ -135,5 +158,32 @@ class PostgreSequenceManagerTest extends org.jkiss.junit.DBeaverUnitTest {
         when(server.supportsSequenceRestart()).thenReturn(true);
         assertTrue(descriptor.isEditPossible(sequence));
         assertEquals(property.editableExpr(), property.updatableExpr());
+    }
+
+    @Test
+    void unsupportedRenameIsUnavailableAndDoesNotQueueAMutation() {
+        var sequence = mock(PostgreSequence.class);
+        when(sequence.supportsSequenceRename()).thenReturn(false);
+        var context = mock(org.jkiss.dbeaver.model.edit.DBECommandContext.class);
+        var manager = new Manager();
+        assertFalse(manager.canRenameObject(sequence));
+        var failure = assertThrows(org.jkiss.dbeaver.DBException.class,
+            () -> manager.renameObject(context, sequence, Map.of(), "new_name"));
+        assertEquals(org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages.sequence_rename_not_supported,
+            failure.getMessage());
+        verifyNoInteractions(context);
+    }
+
+    @Test
+    void directRenameSqlGenerationAlsoRejectsUnsupportedCapability() {
+        assertThrows(IllegalStateException.class, () -> new Manager().rename(false));
+    }
+
+    @Test
+    void supportedRenamePreservesQuotedIdentifiers() throws Exception {
+        assertEquals("ALTER SEQUENCE \"模式 空\".\"旧\"\"名\" RENAME TO \"新\"\"名\"", new Manager().rename(true));
+        var sequence = mock(PostgreSequence.class);
+        when(sequence.supportsSequenceRename()).thenReturn(true);
+        assertTrue(new Manager().canRenameObject(sequence));
     }
 }

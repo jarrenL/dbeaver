@@ -54,8 +54,10 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             return sequence;
         }
 
-        String rename(String schema, String oldName, String newName) {
+        String rename(String schema, String oldName, String newName) throws Exception {
             var sequence = model(schema, oldName, null);
+            // Probe server SQL support independently of the GaussDB client capability gate.
+            when(sequence.supportsSequenceRename()).thenReturn(true);
             var command = new ObjectRenameCommand(sequence, "Rename test sequence", java.util.Map.of(), newName);
             var actions = new java.util.ArrayList<org.jkiss.dbeaver.model.edit.DBEPersistAction>();
             addObjectRenameActions(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(),

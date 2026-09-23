@@ -49,6 +49,12 @@ import java.util.Map;
 
 public class PostgreServerGaussDB extends PostgreServerExtensionBase {
     @Override
+    public boolean supportsSequenceRename() {
+        // Both centralized and distributed 507 reject ALTER SEQUENCE RENAME.
+        return false;
+    }
+
+    @Override
     public boolean supportsSequenceRestart() {
         // Verified unsupported on both centralized and distributed GaussDB 507.
         // Do not emulate RESTART with non-transactional setval.

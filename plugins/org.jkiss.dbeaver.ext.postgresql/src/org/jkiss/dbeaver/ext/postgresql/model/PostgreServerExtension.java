@@ -97,6 +97,10 @@ public interface PostgreServerExtension {
         return true;
     }
 
+    default boolean supportsSequenceRename() {
+        return true;
+    }
+
     @NotNull
     PostgreSequence createSequence(@NotNull PostgreSchema schema);
 
