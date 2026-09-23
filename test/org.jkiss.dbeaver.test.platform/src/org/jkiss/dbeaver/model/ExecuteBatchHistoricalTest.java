@@ -99,4 +99,57 @@ class ExecuteBatchHistoricalTest {
         assertEquals(-1, batch.execute(session(), Map.of()).getRowsUpdated());
         verify(statement).executeStatementBatch();
     }
+
+    @Test
+    void batchWarningsAreRetainedInOrderWithoutChangingUpdateCount() throws Exception {
+        var statement = mock(DBCStatement.class);
+        var first = new java.sql.SQLWarning("First warning", "01000");
+        var second = new java.sql.SQLWarning("Second warning", "01001");
+        when(statement.executeStatementBatch()).thenReturn(new long[]{1, 1});
+        when(statement.getStatementWarnings()).thenReturn(new Throwable[]{first, second});
+        var statistics = batch(statement, 2).execute(session(), Map.of());
+        assertEquals(2, statistics.getRowsUpdated());
+        assertEquals(java.util.List.of(first, second), statistics.getWarnings());
+        verify(statement).close();
+    }
+
+    @Test
+    void disabledBatchUsesIndividualExecutionAndKeepsStatementReuse() throws Exception {
+        var statement = mock(DBCStatement.class);
+        when(statement.getUpdateRowCount()).thenReturn(1L, 0L, 1L);
+        var statistics = batch(statement, 3).execute(session(), Map.of(
+            org.jkiss.dbeaver.model.struct.DBSDataManipulator.OPTION_DISABLE_BATCHES, true));
+        assertEquals(2, statistics.getRowsUpdated());
+        verify(statement, times(3)).executeStatement();
+        verify(statement, never()).addToBatch();
+        verify(statement, never()).executeStatementBatch();
+        verify(statement).close();
+    }
+
+    @Test
+    void individualExecutionFailureRetainsCauseAndStopsRemainingRows() throws Exception {
+        var statement = mock(DBCStatement.class);
+        var sqlFailure = new java.sql.SQLException("Duplicate fixture key", "23505");
+        var failure = new DBCException("Fixture execution failed", sqlFailure);
+        when(statement.executeStatement()).thenReturn(false).thenThrow(failure);
+        when(statement.getUpdateRowCount()).thenReturn(1L);
+        assertSame(failure, assertThrows(DBCException.class, () -> batch(statement, 3).execute(session(), Map.of(
+            org.jkiss.dbeaver.model.struct.DBSDataManipulator.OPTION_DISABLE_BATCHES, true))));
+        assertSame(sqlFailure, failure.getCause());
+        verify(statement, times(2)).executeStatement();
+        verify(statement).close();
+    }
+
+    @Test
+    void cancellationAfterFirstQueuedRowDoesNotQueueRemainingRows() throws Exception {
+        var statement = mock(DBCStatement.class);
+        var session = session();
+        when(session.getProgressMonitor().isCanceled()).thenReturn(false, true);
+        when(statement.executeStatementBatch()).thenReturn(new long[]{1});
+        // Current contract flushes already queued rows; cancellation is not an automatic rollback.
+        assertEquals(1, batch(statement, 3).execute(session, Map.of()).getRowsUpdated());
+        verify(statement).addToBatch();
+        verify(statement).executeStatementBatch();
+        verify(statement).close();
+    }
 }
