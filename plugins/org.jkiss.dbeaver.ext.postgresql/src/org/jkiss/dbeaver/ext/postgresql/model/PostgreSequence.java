@@ -195,7 +195,7 @@ public class PostgreSequence extends PostgreTableBase implements DBSSequence, DB
                             additionalInfo.minValue = JDBCUtils.safeGetLong(seqResults, "min_value");
                             additionalInfo.maxValue = JDBCUtils.safeGetLong(seqResults, "max_value");
                             additionalInfo.incrementBy = JDBCUtils.safeGetLong(seqResults, "increment_by");
-                            additionalInfo.cacheValue = JDBCUtils.safeGetLong(seqResults, "cache_size");
+                            additionalInfo.cacheValue = JDBCUtils.safeGetLong(seqResults, "cache_value");
                             additionalInfo.isCycled = JDBCUtils.safeGetBoolean(seqResults, "is_cycled");
                         }
                     }

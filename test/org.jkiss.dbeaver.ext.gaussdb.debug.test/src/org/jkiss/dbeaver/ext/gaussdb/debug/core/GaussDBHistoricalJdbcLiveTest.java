@@ -37,6 +37,50 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionSequenceBodyRebuildsAscendingCustomStartAndIncrement() throws Exception {
+        inIsolatedSchema((c, s) -> assertSequenceBodyRoundtrip(c, s + ".seq_up",
+            "START WITH 10 INCREMENT BY 3 MINVALUE 2 MAXVALUE 100", List.of("10", "13", "16")));
+    }
+
+    @Test
+    void productionSequenceBodyRebuildsDescendingNegativeStartAndBounds() throws Exception {
+        inIsolatedSchema((c, s) -> assertSequenceBodyRoundtrip(c, s + ".seq_down",
+            "START WITH -2 INCREMENT BY -3 MINVALUE -100 MAXVALUE 0", List.of("-2", "-5", "-8")));
+    }
+
+    private static void assertSequenceBodyRoundtrip(Connection c, String sequenceName, String options,
+        List<String> expectedValues) throws Exception {
+        execute(c, "CREATE SEQUENCE " + sequenceName + " " + options);
+        var info = new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence.AdditionalInfo();
+        try (var query = c.createStatement(); var rows = query.executeQuery("SELECT * FROM " + sequenceName)) {
+            assertTrue(rows.next());
+            info.setStartValue(rows.getLong("start_value"));
+            info.setMinValue(rows.getLong("min_value"));
+            info.setMaxValue(rows.getLong("max_value"));
+            info.setIncrementBy(rows.getLong("increment_by"));
+            info.setCacheValue(rows.getLong("cache_value"));
+            info.setCycled(rows.getBoolean("is_cycled"));
+            info.setLoaded(true);
+        }
+        var sequence = new org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence(mock(PostgreSchema.class)) {
+            @Override
+            public AdditionalInfo getAdditionalInfo(DBRProgressMonitor monitor) {
+                return info;
+            }
+        };
+        var ddl = new StringBuilder("CREATE SEQUENCE " + sequenceName);
+        sequence.getSequenceBody(mock(DBRProgressMonitor.class), ddl, false);
+        execute(c, "DROP SEQUENCE " + sequenceName);
+        execute(c, ddl.toString());
+        for (String expected : expectedValues) {
+            assertRows(c, "SELECT nextval('" + sequenceName + "')", List.of(List.of(expected)));
+        }
+        assertRows(c, "SELECT min_value,max_value,increment_by FROM " + sequenceName,
+            List.of(List.of(Long.toString(info.getMinValue()), Long.toString(info.getMaxValue()),
+                Long.toString(info.getIncrementBy()))));
+    }
+
+    @Test
     void productionTableDdlRebuildsUniqueAndOrderedCompositeIndexes() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".indexed_ddl";
