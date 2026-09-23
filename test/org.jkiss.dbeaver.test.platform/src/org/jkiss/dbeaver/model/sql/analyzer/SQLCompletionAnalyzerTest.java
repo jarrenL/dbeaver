@@ -24,7 +24,6 @@ import org.jkiss.dbeaver.model.sql.completion.SQLCompletionProposalBase;
 import org.jkiss.junit.DBeaverUnitTest;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -379,7 +378,6 @@ public class SQLCompletionAnalyzerTest extends DBeaverUnitTest {
     }
 
     @Test
-    @Disabled("See #12159: quoted identifier prefix currently returns no proposals")
     public void testQuotedNamesCompletion() throws DBException {
         final RequestResult request = RequestBuilder
             .databases(x -> {
@@ -410,7 +408,12 @@ public class SQLCompletionAnalyzerTest extends DBeaverUnitTest {
         {
             final List<SQLCompletionProposalBase> proposals = request.request("SELECT * FROM \"Database1\".\"Schema1\".\"Tab|\"");
             Assertions.assertEquals(1, proposals.size());
-            Assertions.assertEquals("Table1", proposals.get(0).getReplacementString());
+            Assertions.assertEquals("Table1 t", proposals.get(0).getReplacementString());
+            var proposal = proposals.get(0);
+            String original = "SELECT * FROM \"Database1\".\"Schema1\".\"Tab\"";
+            String completed = original.substring(0, proposal.getReplacementOffset()) + proposal.getReplacementString()
+                + original.substring(proposal.getReplacementOffset() + proposal.getReplacementLength());
+            Assertions.assertEquals("SELECT * FROM \"Database1\".\"Schema1\".Table1 t", completed);
         }
 
         {

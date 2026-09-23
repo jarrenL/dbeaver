@@ -180,6 +180,11 @@ public class RequestResult {
 
         final Document document = new Document();
         document.set(cursor.getFirst());
+        var partitioner = new org.eclipse.jface.text.rules.FastPartitioner(
+            new org.jkiss.dbeaver.model.sql.SQLPartitionScanner(dataSource, dataSource.getSQLDialect(), ruleManager),
+            org.jkiss.dbeaver.model.sql.parser.SQLParserPartitions.SQL_CONTENT_TYPES);
+        partitioner.connect(document);
+        document.setDocumentPartitioner(org.jkiss.dbeaver.model.sql.parser.SQLParserPartitions.SQL_PARTITIONING, partitioner);
 
         final SQLCompletionContext context = new CompletionContext(
             dataSource,
