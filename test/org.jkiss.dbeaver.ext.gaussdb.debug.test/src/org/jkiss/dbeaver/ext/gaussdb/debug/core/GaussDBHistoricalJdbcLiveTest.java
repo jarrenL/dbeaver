@@ -2173,16 +2173,27 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private static void withIndependentConnection(ConnectionScenario scenario) throws Exception {
+        withIndependentConnection(scenario, null);
+    }
+
+    private static void withIndependentConnection(ConnectionScenario scenario, String database) throws Exception {
         var p = new Properties();
         try (var input = Files.newInputStream(Path.of(System.getenv("GAUSSDB_HISTORY_CONNECTION")))) {
             p.load(input);
         }
         p.setProperty("socketTimeout", "20");
         p.setProperty("connectTimeout", "10");
+        String url = p.getProperty("url");
+        if (database != null) {
+            assertTrue(database.matches("[a-z0-9_]+"), "Dedicated test database name required");
+            var uri = java.net.URI.create(url.substring("jdbc:".length()));
+            url = "jdbc:" + new java.net.URI(uri.getScheme(), uri.getAuthority(), "/" + database,
+                uri.getQuery(), uri.getFragment()).toASCIIString();
+        }
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(System.getenv("GAUSSDB_HISTORY_JDBC")).toUri().toURL()},
             ClassLoader.getPlatformClassLoader())) {
             var driver = (Driver) loader.loadClass(p.getProperty("driverClass")).getConstructor().newInstance();
-            try (var observer = driver.connect(p.getProperty("url"), p)) {
+            try (var observer = driver.connect(url, p)) {
                 assertNotNull(observer);
                 scenario.run(observer);
             }
@@ -2503,5 +2514,48 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             assertEquals("08006", error.getSQLState());
             assertTrue(connection.isClosed());
         }, java.util.Map.of("allowEncodingChanges", "false"));
+    }
+
+    @Test
+    void utf8JdbcRoundTripsGb18030DatabaseWithoutChangingClientEncoding() throws Exception {
+        String database = System.getenv("GAUSSDB_HISTORY_ENCODING_DATABASE");
+        assumeTrue(database != null, "Dedicated GB18030 database not configured; not a passing encoding test");
+        assertEquals("YES", System.getenv("GAUSSDB_HISTORY_ALLOW_DDL"));
+        withIndependentConnection(connection -> {
+            try (var query = connection.createStatement(); var rows = query.executeQuery(
+                "SELECT current_database(),pg_encoding_to_char(encoding),current_setting('client_encoding')"
+                    + " FROM pg_database WHERE datname=current_database()")) {
+                assertTrue(rows.next());
+                assertEquals(database, rows.getString(1));
+                assertEquals("GB18030", rows.getString(2));
+                assertEquals("UTF8", rows.getString(3));
+            }
+            String schema = "dbv_hist_" + UUID.randomUUID().toString().replace("-", "");
+            execute(connection, "CREATE SCHEMA " + schema);
+            try {
+                execute(connection, "CREATE TABLE " + schema + ".encoded_rows(id integer, value text)");
+                String[] values = {"中文银行", "扩展汉字𠀀", "单引号'与反斜杠\\", null};
+                try (var insert = connection.prepareStatement("INSERT INTO " + schema + ".encoded_rows VALUES(?,?)")) {
+                    for (int i = 0; i < values.length; i++) {
+                        insert.setInt(1, i);
+                        insert.setString(2, values[i]);
+                        assertEquals(1, insert.executeUpdate());
+                    }
+                }
+                withIndependentConnection(observer -> {
+                    try (var query = observer.createStatement(); var rows = query.executeQuery(
+                        "SELECT value FROM " + schema + ".encoded_rows ORDER BY id")) {
+                        for (String value : values) {
+                            assertTrue(rows.next());
+                            assertEquals(value, rows.getString(1));
+                            assertEquals(value == null, rows.wasNull());
+                        }
+                        assertFalse(rows.next());
+                    }
+                }, database);
+            } finally {
+                execute(connection, "DROP SCHEMA " + schema + " CASCADE");
+            }
+        }, database);
     }
 }
