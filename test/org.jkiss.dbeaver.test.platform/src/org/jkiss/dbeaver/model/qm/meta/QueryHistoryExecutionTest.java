@@ -26,6 +26,32 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class QueryHistoryExecutionTest {
+    @Test
+    void rollbackCollectorUsesTransactionEndTimeWhileConnectionRemainsOpen() throws Exception {
+        var connection = historyConnection();
+        connection.changeTransactional(true);
+        var transaction = connection.getTransaction();
+        var context = mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class, RETURNS_DEEP_STUBS);
+        var project = context.getDataSource().getContainer().getProject();
+        when(project.getSessionContext().getPrimaryAuthSpace()).thenReturn(null);
+        when(project.getWorkspace().getAuthContext().getSpaceSession(any(), any(), eq(false))).thenReturn(null);
+        var collector = mock(org.jkiss.dbeaver.runtime.qm.QMMCollectorImpl.class, CALLS_REAL_METHODS);
+        doReturn(connection).when(collector).getConnectionInfo(context);
+        var events = new java.util.ArrayList<org.jkiss.dbeaver.model.qm.QMMetaEvent>();
+        var field = org.jkiss.dbeaver.runtime.qm.QMMCollectorImpl.class.getDeclaredField("eventPool");
+        field.setAccessible(true);
+        field.set(collector, events);
+        // Skip the constructor's asynchronous dispatcher, but execute the actual handler and event creation.
+        collector.handleTransactionRollback(context, null);
+        assertEquals(1, events.size());
+        assertSame(transaction, events.getFirst().getObject());
+        assertEquals(org.jkiss.dbeaver.model.qm.QMEventAction.END, events.getFirst().getAction());
+        assertEquals(0, connection.getCloseTime());
+        assertTrue(transaction.getCloseTime() > 0);
+        assertEquals(transaction.getCloseTime(), events.getFirst().getTimestamp());
+        assertEquals(transaction.getCloseTime(), org.jkiss.dbeaver.model.qm.QMUtils.getObjectEventTime(events.getFirst()));
+    }
+
     private QMMConnectionInfo historyConnection() {
         return new QMMConnectionInfo(1000, 0, null, "fixture", "fixture", "gaussdb",
             new org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration(), "instance", "editor", false);
