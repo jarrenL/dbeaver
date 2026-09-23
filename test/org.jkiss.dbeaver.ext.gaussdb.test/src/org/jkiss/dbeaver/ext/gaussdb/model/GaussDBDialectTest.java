@@ -34,6 +34,57 @@ import static org.mockito.Mockito.when;
 
 public class GaussDBDialectTest {
     @Test
+    void configuredDialectClassifiesGaussKeywordsCaseInsensitively() {
+        new PostgreServerGaussDB(mock(GaussDBDataSource.class)).configureDialect(dialect);
+        for (String word : List.of("PACKAGE", "BODY", "DBCOMPATIBILITY", "DISTRIBUTE", "REPLICATION")) {
+            assertEquals(org.jkiss.dbeaver.model.DBPKeywordType.KEYWORD, dialect.getKeywordType(word));
+            assertEquals(org.jkiss.dbeaver.model.DBPKeywordType.KEYWORD,
+                dialect.getKeywordType(word.toLowerCase(java.util.Locale.ROOT)));
+        }
+    }
+
+    @Test
+    void configuredDialectClassifiesGaussTypesAndFunctions() {
+        new PostgreServerGaussDB(mock(GaussDBDataSource.class)).configureDialect(dialect);
+        for (String type : List.of("VARCHAR2", "NUMBER", "INT1", "CLOB", "DATETIME")) {
+            assertEquals(org.jkiss.dbeaver.model.DBPKeywordType.TYPE, dialect.getKeywordType(type), type);
+        }
+        // SQL keyword precedence must remain intact for identifier quoting.
+        assertEquals(org.jkiss.dbeaver.model.DBPKeywordType.KEYWORD, dialect.getKeywordType("YEAR"));
+        org.junit.jupiter.api.Assertions.assertTrue(dialect.getDataTypes(null).contains("YEAR"));
+        for (String function : List.of("gs_encrypt_aes128", "hll_cardinality", "vector_norm")) {
+            assertEquals(org.jkiss.dbeaver.model.DBPKeywordType.FUNCTION, dialect.getKeywordType(function), function);
+        }
+        org.junit.jupiter.api.Assertions.assertNull(dialect.getKeywordType("not_a_known_gauss_keyword_947"));
+    }
+
+    @Test
+    void dialectTypeEnumerationDoesNotExposeMutableInternalCollection() {
+        var first = dialect.getDataTypes(null);
+        org.junit.jupiter.api.Assertions.assertTrue(first.containsAll(List.of("VARCHAR2", "NUMBER", "INT1")));
+        first.clear();
+        org.junit.jupiter.api.Assertions.assertTrue(dialect.getDataTypes(null).contains("VARCHAR2"));
+    }
+
+    @Test
+    void quotedIdentifiersRoundTripEmbeddedQuotesAndTerminators() {
+        for (String identifier : List.of("select", "MixedCase", "带空格 名", "a\"b", "semi;colon", "a.b")) {
+            String quoted = dialect.getQuotedIdentifier(identifier, true, true);
+            assertEquals('"' + identifier.replace("\"", "\"\"") + '"', quoted);
+            assertEquals(identifier, dialect.getUnquotedIdentifier(quoted, true));
+        }
+    }
+
+    @Test
+    void standardStringLiteralEscapingPreservesUnicodeAndSeparators() {
+        for (String value : List.of("", "O'Brien", "中文;--", "line1\nline2", "a\\b", "''")) {
+            String quoted = dialect.getQuotedString(value);
+            assertEquals("'" + value.replace("'", "''") + "'", quoted);
+            assertEquals(value, dialect.getUnquotedString(quoted));
+        }
+    }
+
+    @Test
     void historicalQuotedLiteralsDoNotIntroduceStatements() {
         for (String sql : List.of("SELECT '中文;值'", "SELECT 'it''s;quoted'", "SELECT $$a;b$$",
             "SELECT ';--not comment'", "SELECT '/*;*/'")) {
