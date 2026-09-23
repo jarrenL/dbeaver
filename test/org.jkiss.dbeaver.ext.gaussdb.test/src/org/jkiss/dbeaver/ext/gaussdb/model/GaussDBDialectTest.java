@@ -130,6 +130,18 @@ public class GaussDBDialectTest {
         return SQLScriptParser.prepareSqlParserContext(dataSource, dialect, preferences, sql);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "E''", "e'a;b'", "E'a'';b'", "E'it\\'s;still text'", "E'-- ; not comment'",
+        "E'/* ; END; */'", "E'line1\\nline2;中文'", "E'line1\nline2;中文'"
+    })
+    void escapeStringsSurviveFullScriptExtraction(String literal) {
+        String query = "SELECT " + literal;
+        assertEquals(List.of(query), parse(query));
+        assertEquals(List.of(query, "SELECT 2"), parse(query + ";\nSELECT 2;"));
+        assertEquals(List.of("SELECT 0", query), parse("SELECT 0;\r\n" + query));
+    }
+
     private List<String> parse(String sql) {
         var context = context(sql);
         return SQLScriptParser.extractScriptQueries(context, 0, sql.length(), false, false, false)
