@@ -397,6 +397,9 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
         }
         // Both inputs must be readable before applying any parsed objects or credentials.
         secureCredentialsMap = readSecureCredentials(configurationStorage, configurationManager, dataSourceIds);
+        // A successful read replaces the current storage snapshot, including removed credentials.
+        // Do not clear the previous snapshot before reads succeed.
+        secureProperties.clear();
         if (secureCredentialsMap != null) {
             secureProperties.putAll(secureCredentialsMap);
         }

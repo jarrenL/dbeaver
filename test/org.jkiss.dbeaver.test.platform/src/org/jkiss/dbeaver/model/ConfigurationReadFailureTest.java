@@ -237,10 +237,66 @@ class ConfigurationReadFailureTest {
         return captured;
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "empty", "user-only"})
+    void repeatedLoadDoesNotRestoreRemovedCredentials(String replacement) throws Exception {
+        var captured = prepareRepeatedCredentialLoad();
+        parse(new DataSourceParseResults());
+        assertEquals("synthetic-old-password", captured.get().getFirst().getUserPassword());
+        InputStream next = switch (replacement) {
+            case "missing" -> null;
+            case "empty" -> encryptedJson("{}");
+            default -> encryptedJson("{\"profile:fixture-profile\":{\"#connection\":{\"user\":\"replacement-user\"}}}");
+        };
+        when(manager.readConfiguration(credentialsName(), null)).thenReturn(next);
+        parse(new DataSourceParseResults());
+        assertNull(captured.get().getFirst().getUserPassword());
+        assertEquals("user-only".equals(replacement) ? "replacement-user" : null,
+            captured.get().getFirst().getUserName());
+    }
+
+    @Test
+    void failedCredentialReloadLeavesAppliedProfileUntouchedAndCanRetry() throws Exception {
+        var captured = prepareRepeatedCredentialLoad();
+        parse(new DataSourceParseResults());
+        List<DBAAuthProfile> original = captured.get();
+        when(manager.readConfiguration(credentialsName(), null)).thenReturn(new ByteArrayInputStream(new byte[] {1}));
+        var failed = new DataSourceParseResults();
+        assertThrows(DBException.class, () -> parse(failed));
+        assertEmptyResults(failed);
+        assertSame(original, captured.get());
+        assertEquals("synthetic-old-password", original.getFirst().getUserPassword());
+        InputStream cleared = encryptedJson("{}");
+        when(manager.readConfiguration(credentialsName(), null)).thenReturn(cleared);
+        parse(new DataSourceParseResults());
+        assertNull(captured.get().getFirst().getUserPassword());
+    }
+
+    private AtomicReference<List<DBAAuthProfile>> prepareRepeatedCredentialLoad() throws Exception {
+        configure(false);
+        when(storage.getStorageSubId()).thenReturn("");
+        when(manager.readConfiguration("fixture.json", null))
+            .thenAnswer(call -> new ByteArrayInputStream(fixtureConfiguration()));
+        InputStream initial = encryptedJson(
+            "{\"profile:fixture-profile\":{\"#connection\":{\"user\":\"initial-user\",\"password\":\"synthetic-old-password\"}}}");
+        when(manager.readConfiguration(credentialsName(), null)).thenReturn(initial);
+        return captureProfiles();
+    }
+
+    private InputStream encryptedJson(String json) throws Exception {
+        return new ByteArrayInputStream(encryptor.encryptValue(json.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private String credentialsName() {
+        return DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_PREFIX + DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_EXT;
+    }
+
     private void parse(DataSourceParseResults results) throws Exception {
         var secrets = DataSourceSerializerModern.class.getDeclaredField("secureProperties");
         secrets.setAccessible(true);
-        secrets.set(serializer, new HashMap<>());
+        if (secrets.get(serializer) == null) {
+            secrets.set(serializer, new HashMap<>());
+        }
         doCallRealMethod().when(serializer).parseDataSources(storage, manager, results, null);
         var platform = mock(DBPPlatform.class, RETURNS_DEEP_STUBS);
         when(platform.getApplication().isHeadlessMode()).thenReturn(true);
