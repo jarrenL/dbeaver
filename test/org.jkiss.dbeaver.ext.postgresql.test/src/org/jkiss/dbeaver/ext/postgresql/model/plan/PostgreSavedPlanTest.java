@@ -67,7 +67,7 @@ class PostgreSavedPlanTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"", "null", "[]", "{", "{}",
-        "{\"sql\":\"select 1\",\"signature\":\"fixture-driver\",\"root\":null}"})
+        "{\"version\":\"1\",\"sql\":\"select 1\",\"signature\":\"fixture-driver\",\"root\":null}"})
     void malformedInputIsReportedAndDoesNotPoisonNextLoad(String text) throws Exception {
         var planner = planner();
         assertThrows(InvocationTargetException.class, () -> planner.deserialize(new StringReader(text)));
@@ -140,5 +140,55 @@ class PostgreSavedPlanTest {
         var writer = new StringWriter();
         planner.serialize(writer, plan);
         assertTrue(planner.deserialize(new StringReader(writer.toString())).getPlanNodes(Map.of()).isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "null", "7", "{}", "{\"type\":\"Sort\"}",
+        "{\"type\":\"Sort\",\"attributes\":null}",
+        "{\"type\":\"Sort\",\"attributes\":[null]}",
+        "{\"type\":\"Sort\",\"attributes\":[],\"child\":[null]}"
+    })
+    void malformedNodeUnderValidEnvelopeIsRejectedAndRetryWorks(String node) throws Exception {
+        var planner = planner();
+        String input = "{\"version\":\"1\",\"signature\":\"fixture-driver\",\"sql\":\"SELECT 1\",\"root\":["
+            + node + "]}";
+        assertThrows(InvocationTargetException.class, () -> planner.deserialize(new StringReader(input)));
+        assertEquals("SELECT '中文'", planner.deserialize(new StringReader(DOCUMENT)).getQueryString());
+    }
+
+    @Test
+    void interruptedReaderPreservesFailureAndDoesNotCloseCallerResource() throws Exception {
+        var failure = new java.io.IOException("synthetic read interruption");
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var reader = new java.io.Reader() {
+            private boolean started;
+
+            @Override
+            public int read(char[] buffer, int offset, int length) throws java.io.IOException {
+                if (started) {
+                    throw failure;
+                }
+                started = true;
+                buffer[offset] = '{';
+                return 1;
+            }
+
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+        var planner = planner();
+        var error = assertThrows(InvocationTargetException.class, () -> planner.deserialize(reader));
+        Throwable cause = error;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        assertSame(failure, cause);
+        assertFalse(closed.get(), "Reader ownership remains with the caller");
+        reader.close();
+        assertTrue(closed.get());
+        assertEquals("SELECT '中文'", planner.deserialize(new StringReader(DOCUMENT)).getQueryString());
     }
 }
