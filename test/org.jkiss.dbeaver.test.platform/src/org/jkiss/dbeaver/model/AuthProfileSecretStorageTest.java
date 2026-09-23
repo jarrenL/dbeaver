@@ -134,4 +134,49 @@ class AuthProfileSecretStorageTest {
         verify(controller).getPrivateSecretValue(KEY);
         verifyNoMoreInteractions(controller);
     }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void nestedExtensionCredentialsRemainSeparateFromPrimaryFields(boolean save) throws Exception {
+        var values = new HashMap<String, String>();
+        var controller = storage(values);
+        var source = profile(save);
+        var extensions = Map.of("user", "extension-user", "password", "synthetic-extension-secret",
+            "token", "虚构'引号\"换行\n反斜杠\\");
+        source.setProperties(extensions);
+        source.persistSecrets(controller);
+        var json = JsonParser.parseString(values.get(KEY)).getAsJsonObject();
+        assertEquals("中文用户", json.get("user").getAsString());
+        assertEquals(save, json.has("password"));
+        assertEquals("synthetic-extension-secret", json.getAsJsonObject("properties").get("password").getAsString());
+        var restored = profile(save);
+        restored.resolveSecrets(controller);
+        assertEquals("中文用户", restored.getUserName());
+        assertEquals(save ? "synthetic-profile-secret" : null, restored.getUserPassword());
+        assertEquals(extensions, restored.getProperties());
+        assertEquals(extensions, source.getProperties());
+    }
+
+    @Test
+    void updatingOneProfileSecretDoesNotReplaceAnotherProfileRecord() throws Exception {
+        var values = new HashMap<String, String>();
+        var controller = storage(values);
+        var first = profile(true);
+        var second = profile(true);
+        doReturn(KEY + "/second").when(second).getSecretKeyId();
+        second.setUserName("second-user");
+        second.setUserPassword("synthetic-second-secret");
+        first.persistSecrets(controller);
+        second.persistSecrets(controller);
+        String secondPayload = values.get(KEY + "/second");
+        first.setSavePassword(false);
+        first.persistSecrets(controller);
+        assertEquals(2, values.size());
+        assertEquals(secondPayload, values.get(KEY + "/second"));
+        second.setUserPassword(null);
+        second.resolveSecrets(controller);
+        assertEquals("second-user", second.getUserName());
+        assertEquals("synthetic-second-secret", second.getUserPassword());
+        assertFalse(JsonParser.parseString(values.get(KEY)).getAsJsonObject().has("password"));
+    }
 }
