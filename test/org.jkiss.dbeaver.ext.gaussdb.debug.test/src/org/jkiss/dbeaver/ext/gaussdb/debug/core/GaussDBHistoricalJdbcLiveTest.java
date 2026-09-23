@@ -1316,6 +1316,45 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void compositeForeignKeyMetadataAndCascadeWhenServerSupportsForeignKeys() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".fk_parent(a integer,b integer,PRIMARY KEY(a,b)) DISTRIBUTE BY REPLICATION");
+            try {
+                execute(c, "CREATE TABLE " + s + ".fk_child(id integer,a integer,b integer,CONSTRAINT fk_pair "
+                    + "FOREIGN KEY(a,b) REFERENCES " + s + ".fk_parent(a,b) ON UPDATE CASCADE ON DELETE CASCADE) "
+                    + "DISTRIBUTE BY REPLICATION");
+            } catch (java.sql.SQLException e) {
+                if ("0A000".equals(e.getSQLState())) {
+                    assumeTrue(false, "Server rejects foreign keys with SQLSTATE 0A000; positive FK path not verified");
+                }
+                throw e;
+            }
+            var columns = new java.util.ArrayList<String>();
+            try (var keys = c.getMetaData().getImportedKeys(null, s, "fk_child")) {
+                while (keys.next()) {
+                    assertEquals("fk_pair", keys.getString("FK_NAME"));
+                    assertEquals(s, keys.getString("PKTABLE_SCHEM"));
+                    assertEquals("fk_parent", keys.getString("PKTABLE_NAME"));
+                    assertEquals(java.sql.DatabaseMetaData.importedKeyCascade, keys.getShort("UPDATE_RULE"));
+                    assertEquals(java.sql.DatabaseMetaData.importedKeyCascade, keys.getShort("DELETE_RULE"));
+                    columns.add(keys.getShort("KEY_SEQ") + ":" + keys.getString("FKCOLUMN_NAME") + ":"
+                        + keys.getString("PKCOLUMN_NAME"));
+                }
+            }
+            columns.sort(String::compareTo);
+            assertEquals(List.of("1:a:a", "2:b:b"), columns);
+            execute(c, "INSERT INTO " + s + ".fk_parent VALUES(1,2)");
+            execute(c, "INSERT INTO " + s + ".fk_child VALUES(10,1,2)");
+            assertEquals("23503", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "INSERT INTO " + s + ".fk_child VALUES(11,8,9)")).getSQLState());
+            execute(c, "UPDATE " + s + ".fk_parent SET a=3 WHERE a=1");
+            assertRows(c, "SELECT a,b FROM " + s + ".fk_child", List.of(List.of("3", "2")));
+            execute(c, "DELETE FROM " + s + ".fk_parent WHERE a=3");
+            assertEquals(0, count(c, s + ".fk_child"));
+        });
+    }
+
+    @Test
     void checkConstraintRejectsBadDataWithoutChangingExistingRows() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".t(id integer, amount numeric CHECK(amount>=0))");
