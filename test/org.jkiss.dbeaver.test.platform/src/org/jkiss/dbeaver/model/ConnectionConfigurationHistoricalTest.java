@@ -69,6 +69,80 @@ class ConnectionConfigurationHistoricalTest extends DBeaverUnitTest {
     }
 
     @Test
+    void copiedNetworkHandlerPropertiesAndCredentialsAreIndependent() {
+        var original = new DBPConnectionConfiguration();
+        var ssl = handler("postgre_ssl");
+        ssl.setProperty("sslMode", "verify-full");
+        ssl.setSecureProperty("ssl.client.key.value", "synthetic-key-not-a-certificate");
+        ssl.setUserName("fixture-user");
+        ssl.setPassword("synthetic-password-not-used");
+        ssl.setSavePassword(false);
+        original.updateHandler(ssl);
+        var copy = new DBPConnectionConfiguration(original);
+        var copied = copy.getHandler("postgre_ssl");
+        assertNotNull(copied);
+        assertNotSame(ssl, copied);
+        assertTrue(copied.isEnabled());
+        assertFalse(copied.isSavePassword());
+        assertEquals("verify-full", copied.getStringProperty("sslMode"));
+        assertEquals("synthetic-key-not-a-certificate", copied.getSecureProperty("ssl.client.key.value"));
+        assertEquals("fixture-user", copied.getUserName());
+        assertEquals("synthetic-password-not-used", copied.getPassword());
+        copied.setProperty("sslMode", "require");
+        copied.setSecureProperty("ssl.client.key.value", null);
+        copied.setUserName(null);
+        copied.setPassword(null);
+        copied.setSavePassword(true);
+        copied.setEnabled(false);
+        assertEquals("verify-full", ssl.getStringProperty("sslMode"));
+        assertEquals("synthetic-key-not-a-certificate", ssl.getSecureProperty("ssl.client.key.value"));
+        assertEquals("fixture-user", ssl.getUserName());
+        assertEquals("synthetic-password-not-used", ssl.getPassword());
+        assertFalse(ssl.isSavePassword());
+        assertTrue(ssl.isEnabled());
+        copy.removeHandler("postgre_ssl");
+        assertNull(copy.getHandler("postgre_ssl"));
+        assertSame(ssl, original.getHandler("postgre_ssl"));
+    }
+
+    @Test
+    void doNotSavePasswordSuppressesTheWholeSecretPayloadButKeepsRuntimeCredentials() {
+        var ssl = handler("postgre_ssl");
+        ssl.setUserName("fixture-user");
+        ssl.setPassword("synthetic-password-not-used");
+        ssl.setSecureProperty("ssl.client.key.value", "synthetic-key-not-a-certificate");
+        ssl.setSavePassword(false);
+        assertTrue(ssl.saveToSecret().isEmpty());
+        assertEquals("synthetic-password-not-used", ssl.getPassword());
+        ssl.setSavePassword(true);
+        var secret = ssl.saveToSecret();
+        assertEquals("fixture-user", secret.get("user"));
+        assertEquals("synthetic-password-not-used", secret.get("password"));
+        assertEquals(Map.of("ssl.client.key.value", "synthetic-key-not-a-certificate"), secret.get("properties"));
+        ssl.setSavePassword(false);
+        assertTrue(ssl.saveToSecret().isEmpty());
+    }
+
+    @Test
+    void updatingSameHandlerIdReplacesOnlyThatHandlerAndRemovingMissingIdIsHarmless() {
+        var configuration = new DBPConnectionConfiguration();
+        var ssl = handler("postgre_ssl");
+        var ssh = handler("ssh_tunnel");
+        configuration.updateHandler(ssl);
+        configuration.updateHandler(ssh);
+        var replacement = handler("postgre_ssl");
+        replacement.setEnabled(false);
+        configuration.updateHandler(replacement);
+        assertEquals(2, configuration.getHandlers().size());
+        assertSame(replacement, configuration.getHandler("postgre_ssl"));
+        assertSame(ssh, configuration.getHandler("ssh_tunnel"));
+        configuration.removeHandler("missing");
+        assertEquals(2, configuration.getHandlers().size());
+        configuration.removeHandler("postgre_ssl");
+        assertEquals(List.of(ssh), configuration.getHandlers());
+    }
+
+    @Test
     void copiedDriverAndProviderPropertiesDoNotMutateOriginal() {
         var original = new DBPConnectionConfiguration();
         original.setHostName("example.invalid");
