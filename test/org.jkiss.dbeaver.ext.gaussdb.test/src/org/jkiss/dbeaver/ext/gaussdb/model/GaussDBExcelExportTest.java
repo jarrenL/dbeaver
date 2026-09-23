@@ -473,6 +473,35 @@ public class GaussDBExcelExportTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"label", "none"})
+    public void emptyResultDoesNotCreateAnArtificialDataRow(String header) throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("header", header))) {
+            assertEquals(1, workbook.getNumberOfSheets());
+            var sheet = workbook.getSheetAt(0);
+            assertEquals("label".equals(header) ? 1 : 0, sheet.getPhysicalNumberOfRows());
+            if ("label".equals(header)) {
+                assertEquals("金额 中文", sheet.getRow(0).getCell(0).getStringCellValue());
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void exportedSqlUsesSeparateSheetAndPreservesText(boolean split) throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("exportSql", true, "splitSqlText", split),
+            new Object[]{"查询结果"})) {
+            assertEquals(2, workbook.getNumberOfSheets());
+            assertEquals("查询结果", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+            var sql = workbook.getSheetAt(1);
+            assertEquals(split ? 2 : 1, sql.getPhysicalNumberOfRows());
+            assertEquals(split ? "SELECT 1;" : "SELECT 1;\nSELECT '中文';", sql.getRow(0).getCell(0).getStringCellValue());
+            if (split) {
+                assertEquals("SELECT '中文';", sql.getRow(1).getCell(0).getStringCellValue());
+            }
+        }
+    }
+
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {
         return export(kind, overrides, null, rows);
     }
@@ -483,7 +512,9 @@ public class GaussDBExcelExportTest {
         var properties = DataExporterXLSX.getDefaultProperties();
         properties.putAll(overrides);
         when(site.getProperties()).thenReturn(properties);
-        when(site.getSource()).thenReturn(mock(DBPNamedObject.class));
+        DBPNamedObject source = mock(DBPNamedObject.class);
+        when(source.getName()).thenReturn("SELECT 1;\nSELECT '中文';");
+        when(site.getSource()).thenReturn(source);
         when(site.getExportFormat()).thenReturn(DBDDisplayFormat.NATIVE);
         DBDAttributeBinding column = mock(DBDAttributeBinding.class);
         when(column.getName()).thenReturn("amount");

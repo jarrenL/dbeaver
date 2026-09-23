@@ -562,7 +562,8 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
             }
         }
         if (rowCount == 0) {
-            exportRow(null, null, new Object[columns.length]);
+            // Keep an empty result distinct from a real row containing only NULL values.
+            getWsh(null, new Object[columns.length]);
         }
     }
 
