@@ -194,7 +194,7 @@ public class QMRegistryImpl implements QMRegistry {
             Collections.reverse(pastEvents);
             var criteria = cursorFilter.getCriteria();
             var filter = cursorFilter.getFilter();
-            if (criteria.getObjectTypes() != null || criteria.getQueryTypes() != null) {
+            if (criteria.getObjectTypes() != null || criteria.getQueryTypes() != null || filter != null) {
                 // Filter by query type and object type
                 for (Iterator<QMMetaEvent> iter = pastEvents.iterator(); iter.hasNext(); ) {
                     QMMetaEvent event = iter.next();
@@ -226,11 +226,10 @@ public class QMRegistryImpl implements QMRegistry {
             if (CommonUtils.isEmpty(criteria.getSearchString())) {
                 return new QMUtils.ListCursorImpl(pastEvents);
             } else {
-                String searchString = criteria.getSearchString().toLowerCase();
+                String searchString = criteria.getSearchString();
                 List<QMMetaEvent> filtered = new ArrayList<>();
                 for (QMMetaEvent event : pastEvents) {
-                    if (StringUtils.containsIgnoreCase(event.getObject().getText(), searchString) &&
-                        (filter == null || filter.accept(event)))
+                    if (StringUtils.containsIgnoreCase(event.getObject().getText(), searchString))
                     {
                         filtered.add(event);
                     }

@@ -35,6 +35,53 @@ import static org.mockito.Mockito.*;
 class QueryHistoryCursorTest {
     private final VoidProgressMonitor monitor = new VoidProgressMonitor();
 
+    @Test
+    void standaloneCustomFilterCannotBeBypassedByAbsentTypeAndTextCriteria() throws Exception {
+        var visible = event("visible", DBCExecutionPurpose.USER);
+        var hidden = event("hidden", DBCExecutionPurpose.USER);
+        var criteria = new QMEventCriteria();
+        criteria.setObjectTypes(null);
+        criteria.setQueryTypes(null);
+        try (var cursor = browser(List.of(visible, hidden)).getQueryHistoryCursor(
+            new QMCursorFilter(null, criteria, candidate -> candidate.getObject() == visible.getObject()))) {
+            assertEquals(1, cursor.getTotalSize());
+            assertSame(visible.getObject(), cursor.nextEvent(monitor).getObject());
+        }
+    }
+
+    @Test
+    void combinedCriteriaEvaluateCustomFilterOncePerCandidate() throws Exception {
+        var selected = event("SELECT 中文", DBCExecutionPurpose.USER);
+        var criteria = new QMEventCriteria();
+        criteria.setObjectTypes(new QMObjectType[] {QMObjectType.query});
+        criteria.setQueryTypes(new DBCExecutionPurpose[] {DBCExecutionPurpose.USER});
+        criteria.setSearchString("中文");
+        var filter = mock(QMEventFilter.class);
+        when(filter.accept(selected)).thenReturn(true);
+        try (var cursor = browser(List.of(selected)).getQueryHistoryCursor(new QMCursorFilter(null, criteria, filter))) {
+            assertEquals(1, cursor.getTotalSize());
+        }
+        verify(filter, times(1)).accept(selected);
+    }
+
+    @Test
+    void textSearchDoesNotDependOnDefaultLocale() throws Exception {
+        var previous = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+            var criteria = new QMEventCriteria();
+            criteria.setObjectTypes(new QMObjectType[] {QMObjectType.query});
+            criteria.setQueryTypes(new DBCExecutionPurpose[] {DBCExecutionPurpose.USER});
+            criteria.setSearchString("INSERT");
+            try (var cursor = browser(List.of(event("insert into t values (1)", DBCExecutionPurpose.USER)))
+                .getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+                assertEquals(1, cursor.getTotalSize());
+            }
+        } finally {
+            java.util.Locale.setDefault(previous);
+        }
+    }
+
     private QMMetaEvent event(String text, DBCExecutionPurpose purpose) {
         var statement = mock(QMMStatementInfo.class);
         when(statement.getPurpose()).thenReturn(purpose);
