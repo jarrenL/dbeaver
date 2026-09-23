@@ -83,6 +83,10 @@ public abstract class AbstractCommandContext implements DBECommandContext {
 
     @Override
     public void saveChanges(@NotNull DBRProgressMonitor monitor, @NotNull Map<String, Object> options) throws DBException {
+        if (CommonUtils.getOption(options, OPTION_ATOMIC_TRANSACTION)) {
+            saveAtomicChanges(monitor, options);
+            return;
+        }
         if (!executionContext.isConnected()) {
             executionContext.invalidateContext(monitor);
             if (!executionContext.isConnected()) {
@@ -144,6 +148,107 @@ public abstract class AbstractCommandContext implements DBECommandContext {
                     txnManager.setAutoCommit(monitor, oldAutoCommit);
                 }
             }
+        }
+    }
+
+    private void saveAtomicChanges(DBRProgressMonitor monitor, Map<String, Object> options) throws DBException {
+        DBCTransactionManager transaction = DBUtils.getTransactionManager(executionContext);
+        if (transaction == null || !transaction.isSupportsTransactions() || !transaction.isAutoCommit()
+            || !executionContext.getDataSource().getInfo().supportsTransactionsForDDL()) {
+            throw new DBException(ModelMessages.model_edit_atomic_unavailable);
+        }
+        List<CommandInfo> batch = new ArrayList<>();
+        Map<CommandInfo, DBEObjectManager> managers = new IdentityHashMap<>();
+        Map<CommandInfo, DBEPersistAction[]> actions = new IdentityHashMap<>();
+        for (CommandQueue queue : getCommandQueues()) {
+            for (CommandInfo original : queue.commands) {
+                CommandInfo command = original;
+                while (command.mergedBy != null) {
+                    command = command.mergedBy;
+                }
+                if (managers.containsKey(command)) {
+                    continue;
+                }
+                Map<String, Object> validation = new HashMap<>();
+                command.command.validateCommand(monitor, validation);
+                if (command.executed || CommonUtils.getOption(validation, OPTION_AVOID_TRANSACTIONS)) {
+                    throw new DBException(ModelMessages.model_edit_atomic_unavailable);
+                }
+                DBEPersistAction[] scripts = command.command.getPersistActions(monitor, executionContext, options);
+                if (scripts == null) {
+                    scripts = new DBEPersistAction[0];
+                }
+                for (DBEPersistAction action : scripts) {
+                    if (action.getType() != DBEPersistAction.ActionType.NORMAL
+                        && action.getType() != DBEPersistAction.ActionType.COMMENT) {
+                        throw new DBException(ModelMessages.model_edit_atomic_unavailable);
+                    }
+                }
+                batch.add(command);
+                managers.put(command, queue.objectManager);
+                actions.put(command, scripts);
+            }
+        }
+        if (batch.isEmpty()) {
+            return;
+        }
+        boolean transactionFinished = false;
+        boolean committed = false;
+        try (DBCSession session = executionContext.openSession(monitor, DBCExecutionPurpose.META_DDL,
+            ModelMessages.model_edit_atomic_task)) {
+            transaction.setAutoCommit(monitor, false);
+            try {
+                for (CommandInfo command : batch) {
+                    for (DBEPersistAction action : actions.get(command)) {
+                        if (monitor.isCanceled()) {
+                            throw new DBException(ModelMessages.model_edit_atomic_canceled);
+                        }
+                        if (action.getType() != DBEPersistAction.ActionType.COMMENT) {
+                            managers.get(command).executePersistAction(session, command.command, action);
+                        }
+                    }
+                }
+                if (monitor.isCanceled()) {
+                    throw new DBException(ModelMessages.model_edit_atomic_canceled);
+                }
+                transaction.commit(session);
+                committed = true;
+                transactionFinished = true;
+            } catch (Throwable failure) {
+                try {
+                    transaction.rollback(session, null);
+                    transactionFinished = true;
+                } catch (Throwable rollbackFailure) {
+                    failure.addSuppressed(rollbackFailure);
+                }
+                throw failure;
+            } finally {
+                if (committed) {
+                    // A later close/autocommit failure must not leave committed commands available for retry.
+                    commands.clear();
+                    userParams.clear();
+                    clearCommandQueues();
+                    clearUndidCommands();
+                    for (CommandInfo command : batch) {
+                        command.executed = true;
+                        try {
+                            if (atomic && command.reflector != null) {
+                                command.reflector.redoCommand(command.command);
+                            }
+                            command.command.updateModel();
+                        } catch (Exception modelFailure) {
+                            log.warn("Error updating model after atomic commit", modelFailure);
+                        }
+                    }
+                }
+                // Restoring autocommit after a failed rollback could commit partial work.
+                if (transactionFinished) {
+                    transaction.setAutoCommit(monitor, true);
+                }
+            }
+        }
+        for (DBECommandListener listener : getListeners()) {
+            listener.onSave();
         }
     }
 

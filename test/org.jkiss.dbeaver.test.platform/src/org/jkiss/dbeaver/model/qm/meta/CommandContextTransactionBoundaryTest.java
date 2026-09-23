@@ -19,16 +19,21 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CommandContextTransactionBoundaryTest {
-    @Test
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void uiAtomicFlagStillCommitsFirstCommandBeforeSecondCommandFails() throws Exception {
-        var execution = mock(DBCExecutionContext.class);
+    void explicitAtomicOptionRollsBackWhileLegacyUiFlagStillCommitsPerCommand(boolean databaseAtomic) throws Exception {
+        var execution = mock(DBCExecutionContext.class, withSettings().extraInterfaces(DBCTransactionManager.class));
         var session = mock(DBCSession.class);
         when(execution.openSession(any(), any(), anyString())).thenReturn(session);
         var context = new AbstractCommandContext(execution, true) {};
-        var transaction = mock(DBCTransactionManager.class);
+        var transaction = (DBCTransactionManager) execution;
         when(transaction.isSupportsTransactions()).thenReturn(true);
-        when(transaction.isAutoCommit()).thenReturn(false);
+        when(transaction.isAutoCommit()).thenReturn(databaseAtomic);
+        when(execution.isConnected()).thenReturn(true);
+        var source = mock(org.jkiss.dbeaver.model.DBPDataSource.class, RETURNS_DEEP_STUBS);
+        when(source.getInfo().supportsTransactionsForDDL()).thenReturn(true);
+        when(execution.getDataSource()).thenReturn(source);
         var manager = mock(DBEObjectManager.class);
         var first = mock(DBECommand.class);
         var second = mock(DBECommand.class);
@@ -52,6 +57,20 @@ class CommandContextTransactionBoundaryTest {
         var execute = AbstractCommandContext.class.getDeclaredMethod("executeCommands",
             org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class, Map.class, DBCTransactionManager.class);
         execute.setAccessible(true);
+        if (databaseAtomic) {
+            assertSame(failure, assertThrows(DBException.class,
+                () -> context.saveChanges(new VoidProgressMonitor(), Map.of(DBECommandContext.OPTION_ATOMIC_TRANSACTION, true))));
+            var order = inOrder(manager, transaction);
+            order.verify(transaction).setAutoCommit(any(), eq(false));
+            order.verify(manager).executePersistAction(session, first, firstAction);
+            order.verify(manager).executePersistAction(session, second, secondAction);
+            order.verify(transaction).rollback(session, null);
+            order.verify(transaction).setAutoCommit(any(), eq(true));
+            verify(transaction, never()).commit(any());
+            verify(first, never()).updateModel();
+            verify(second, never()).updateModel();
+            return;
+        }
         var thrown = assertThrows(InvocationTargetException.class,
             () -> execute.invoke(context, new VoidProgressMonitor(), Map.of(), transaction));
         assertSame(failure, thrown.getCause());

@@ -36,6 +36,9 @@ public interface DBECommandContext extends DBPContextProvider {
     // Do not use transactions in conect save
     String OPTION_AVOID_TRANSACTIONS = "avoidTransactions";
 
+    // Caller must own an isolated execution context; never use a user's shared transaction.
+    String OPTION_ATOMIC_TRANSACTION = "atomicTransaction";
+
     boolean isDirty();
 
     @Nullable
