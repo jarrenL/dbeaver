@@ -2381,6 +2381,31 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void strictTlsRejectsExistingUnrelatedCertificateWithoutDowngrade() throws Exception {
+        String trusted = System.getenv("GAUSSDB_HISTORY_TLS_CA");
+        String unrelated = System.getenv("GAUSSDB_HISTORY_TLS_UNRELATED_CA");
+        assumeTrue(trusted != null && unrelated != null, "Dedicated trusted and unrelated TLS certificates required");
+        assertTrue(Files.isRegularFile(Path.of(trusted)));
+        assertTrue(Files.isRegularFile(Path.of(unrelated)));
+        assertFalse(java.util.Arrays.equals(Files.readAllBytes(Path.of(trusted)), Files.readAllBytes(Path.of(unrelated))));
+        inIsolatedSchema((c, s) -> {
+            withIndependentConnection(connection -> assertRows(connection, "SELECT 1", List.of(List.of("1"))),
+                null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted));
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(connection -> fail("Untrusted server must not connect"),
+                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", unrelated)));
+            assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
+            boolean handshakeFailure = false;
+            for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                handshakeFailure |= cause instanceof javax.net.ssl.SSLHandshakeException;
+            }
+            assertTrue(handshakeFailure, "Expected certificate handshake rejection, not an unrelated connection failure");
+            withIndependentConnection(connection -> assertRows(connection, "SELECT 2", List.of(List.of("2"))),
+                null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted));
+        });
+    }
+
+    @Test
     void strictTlsConnectsWithTrustedCertificateAndRejectsMissingTrustFile() throws Exception {
         String certificate = System.getenv("GAUSSDB_HISTORY_TLS_CA");
         assumeTrue(certificate != null && Files.isRegularFile(Path.of(certificate)), "Dedicated TLS CA required");
