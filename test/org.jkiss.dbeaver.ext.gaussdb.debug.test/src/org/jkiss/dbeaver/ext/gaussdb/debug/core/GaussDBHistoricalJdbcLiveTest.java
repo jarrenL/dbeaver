@@ -1768,6 +1768,48 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void failedBatchRetainsSqlstateRollsBackAndCanReusePreparedStatement() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String table = s + ".failed_batch";
+            execute(c, "CREATE TABLE " + table + "(id integer PRIMARY KEY, label text)");
+            c.setAutoCommit(false);
+            try (var insert = c.prepareStatement("INSERT INTO " + table + " VALUES(?,?)")) {
+                insert.setQueryTimeout(15);
+                for (int id : new int[]{1, 1, 2}) {
+                    insert.setInt(1, id);
+                    insert.setString(2, "批量" + id);
+                    insert.addBatch();
+                }
+                var error = assertThrows(java.sql.BatchUpdateException.class, insert::executeBatch);
+                assertEquals("23505", error.getSQLState());
+                int[] counts = error.getUpdateCounts();
+                assertTrue(counts.length <= 3);
+                assertTrue(java.util.Arrays.stream(counts).allMatch(value -> value >= 0
+                    || value == java.sql.Statement.SUCCESS_NO_INFO || value == java.sql.Statement.EXECUTE_FAILED));
+                assertTrue(counts.length < 3 || java.util.Arrays.stream(counts)
+                    .anyMatch(value -> value == java.sql.Statement.EXECUTE_FAILED), "Failed batch cannot report all entries successful");
+                assertObserverCount(table, 0);
+                c.rollback();
+                assertEquals(0, count(c, table));
+                assertObserverCount(table, 0);
+                insert.clearBatch();
+                insert.setInt(1, 9);
+                insert.setString(2, "恢复成功");
+                insert.addBatch();
+                assertArrayEquals(new int[]{1}, insert.executeBatch());
+                c.commit();
+                assertObserverCount(table, 1);
+                try (var query = c.createStatement(); var rows = query.executeQuery("SELECT id,label FROM " + table)) {
+                    assertTrue(rows.next());
+                    assertEquals(9, rows.getInt(1));
+                    assertEquals("恢复成功", rows.getString(2));
+                    assertFalse(rows.next());
+                }
+            }
+        });
+    }
+
+    @Test
     void binaryAndTimestampPreservePayloadAndFraction() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".t(payload bytea, ts timestamp(6))");
