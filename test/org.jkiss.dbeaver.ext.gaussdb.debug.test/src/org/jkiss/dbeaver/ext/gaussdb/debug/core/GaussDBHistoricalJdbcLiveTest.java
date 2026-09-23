@@ -36,6 +36,55 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    private static class SequenceActions extends org.jkiss.dbeaver.ext.postgresql.edit.PostgreSequenceManager {
+        String action(String qualifiedName, boolean create) {
+            var sequence = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence.class);
+            when(sequence.getFullyQualifiedName(org.jkiss.dbeaver.model.DBPEvaluationContext.DDL)).thenReturn(qualifiedName);
+            var actions = new java.util.ArrayList<org.jkiss.dbeaver.model.edit.DBEPersistAction>();
+            var context = mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class);
+            if (create) {
+                var command = mock(ObjectCreateCommand.class);
+                when(command.getObject()).thenReturn(sequence);
+                addObjectCreateActions(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(),
+                    context, actions, command, java.util.Map.of());
+            } else {
+                var command = new ObjectDeleteCommand(sequence, "Delete test sequence");
+                addObjectDeleteActions(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(),
+                    context, actions, command, java.util.Map.of());
+            }
+            assertEquals(1, actions.size());
+            return actions.get(0).getScript();
+        }
+    }
+
+    @Test
+    void sequenceManagerCreateDropAgainstDistributedDatabase() throws Exception {
+        assertSequenceManagerLifecycle(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void sequenceManagerCreateDropAgainstCentralizedDatabase() throws Exception {
+        assertSequenceManagerLifecycle(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertSequenceManagerLifecycle(String config) throws Exception {
+        inIsolatedSchema((c, s) -> {
+            String name = s + ".\"流水 号\"";
+            var manager = new SequenceActions();
+            execute(c, manager.action(name, true));
+            assertRows(c, "SELECT nextval('" + name + "'),nextval('" + name + "')", List.of(List.of("1", "2")));
+            assertRows(c, "SELECT relkind FROM pg_class WHERE oid='" + name + "'::regclass", List.of(List.of("S")));
+            execute(c, manager.action(name, false));
+            assertEquals("42P01", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "SELECT nextval('" + name + "')")).getSQLState());
+            execute(c, manager.action(name, true));
+            assertRows(c, "SELECT nextval('" + name + "')", List.of(List.of("1")));
+            execute(c, manager.action(name, false));
+            assertRows(c, "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace"
+                + " WHERE n.nspname='" + s + "' AND c.relname='流水 号'", List.of(List.of("0")));
+        }, java.util.Map.of(), config);
+    }
+
     @Test
     void intervalPartitionDdlRetainsAutomaticMonthlyExpansion() throws Exception {
         inIsolatedSchema((c, s) -> {
