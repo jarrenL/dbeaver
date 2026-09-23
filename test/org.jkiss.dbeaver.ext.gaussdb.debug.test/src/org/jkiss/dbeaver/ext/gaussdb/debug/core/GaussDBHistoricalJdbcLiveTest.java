@@ -1778,6 +1778,48 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void searchPathOrderResolvesShadowedTablesWithoutChangingQualifiedAccess() throws Exception {
+        inIsolatedSchema((c, first) -> inIsolatedSchema((other, second) -> {
+            execute(c, "CREATE TABLE " + first + ".shadowed(id integer)");
+            execute(other, "CREATE TABLE " + second + ".shadowed(id integer)");
+            execute(c, "INSERT INTO " + first + ".shadowed VALUES(11)");
+            execute(other, "INSERT INTO " + second + ".shadowed VALUES(22)");
+            execute(c, "SET search_path TO " + first + "_absent," + first + "," + second);
+            assertRows(c, "SELECT current_schema()", List.of(List.of(first)));
+            assertRows(c, "SELECT id FROM shadowed", List.of(List.of("11")));
+            execute(c, "SET search_path TO " + second + "," + first);
+            assertRows(c, "SELECT current_schema()", List.of(List.of(second)));
+            assertRows(c, "SELECT id FROM shadowed", List.of(List.of("22")));
+            assertRows(c, "SELECT id FROM " + first + ".shadowed", List.of(List.of("11")));
+            execute(c, "SET search_path TO " + first + "_absent");
+            assertEquals("42P01", assertThrows(java.sql.SQLException.class,
+                () -> execute(c, "SELECT id FROM shadowed")).getSQLState());
+            assertRows(c, "SELECT id FROM " + second + ".shadowed", List.of(List.of("22")));
+        }));
+    }
+
+    @Test
+    void localSearchPathRestoresAfterCommitAndRollback() throws Exception {
+        inIsolatedSchema((c, first) -> inIsolatedSchema((other, second) -> {
+            execute(c, "SET search_path TO " + first);
+            c.setAutoCommit(false);
+            try {
+                execute(c, "SET LOCAL search_path TO " + second);
+                assertRows(c, "SELECT current_schema()", List.of(List.of(second)));
+                c.rollback();
+                assertRows(c, "SELECT current_schema()", List.of(List.of(first)));
+                execute(c, "SET LOCAL search_path TO " + second);
+                assertRows(c, "SELECT current_schema()", List.of(List.of(second)));
+                c.commit();
+                assertRows(c, "SELECT current_schema()", List.of(List.of(first)));
+            } finally {
+                c.rollback();
+                c.setAutoCommit(true);
+            }
+        }));
+    }
+
+    @Test
     void failedStatementCanBeRecoveredAtSavepointAndCommitted() throws Exception {
         inIsolatedSchema((c, s) -> {
             String table = s + ".t";
