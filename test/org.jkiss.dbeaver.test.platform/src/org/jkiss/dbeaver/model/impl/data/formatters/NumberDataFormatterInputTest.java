@@ -63,4 +63,44 @@ class NumberDataFormatterInputTest {
         assertEquals(Integer.MAX_VALUE, formatter.parseValue(Integer.toString(Integer.MAX_VALUE), Integer.class));
         assertNull(formatter.formatValue(null));
     }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "byte,128", "byte,-129", "short,32768", "short,-32769",
+        "int,2147483648", "int,-2147483649",
+        "long,9223372036854775808", "long,-9223372036854775809"
+    })
+    void narrowingIntegerOverflowIsRejected(String target, String text) {
+        Class<?> hint = switch (target) {
+            case "byte" -> Byte.class;
+            case "short" -> Short.class;
+            case "long" -> Long.class;
+            default -> Integer.class;
+        };
+        assertThrows(ParseException.class, () -> formatter(Locale.US).parseValue(text, hint));
+    }
+
+    @Test
+    void exactNarrowIntegerEndpointsRemainTyped() throws Exception {
+        var formatter = formatter(Locale.US);
+        assertEquals(Byte.MIN_VALUE, formatter.parseValue("-128", Byte.class));
+        assertEquals(Byte.MAX_VALUE, formatter.parseValue("127", Byte.class));
+        assertEquals(Short.MIN_VALUE, formatter.parseValue("-32768", Short.class));
+        assertEquals(Short.MAX_VALUE, formatter.parseValue("32767", Short.class));
+        assertEquals(Integer.MIN_VALUE, formatter.parseValue("-2147483648", Integer.class));
+        assertEquals(Integer.MAX_VALUE, formatter.parseValue("2147483647", Integer.class));
+        assertEquals(Long.MAX_VALUE, formatter.parseValue("9223372036854775807", Long.class));
+        assertEquals(Long.MIN_VALUE, formatter.parseValue("-9223372036854775808", Long.class));
+    }
+
+    @Test
+    void integerHintsDoNotTruncateFractionalValues() throws Exception {
+        var formatter = formatter(Locale.US);
+        for (Class<?> hint : new Class<?>[] {Byte.class, Short.class, Integer.class, Long.class}) {
+            assertEquals(new BigDecimal("1.123456789012345678"),
+                formatter.parseValue("1.123456789012345678", hint));
+        }
+        assertEquals((byte) 127, formatter.parseValue("127.000", Byte.class));
+        assertEquals(123000L, formatter.parseValue("1.23E5", Long.class));
+    }
 }

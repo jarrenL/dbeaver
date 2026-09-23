@@ -167,36 +167,36 @@ public class NumberDataFormatter implements DBDDataFormatter {
     public Object parseValue(String value, @Nullable Class<?> typeHint) throws ParseException
     {
         synchronized (this) {
-            numberFormat.setParseBigDecimal(typeHint == BigDecimal.class || typeHint == BigInteger.class);
+            boolean integerHint = typeHint == Byte.class || typeHint == Short.class
+                || typeHint == Integer.class || typeHint == Long.class;
+            numberFormat.setParseBigDecimal(integerHint || typeHint == BigDecimal.class || typeHint == BigInteger.class);
             ParsePosition parsePosition = new ParsePosition(0);
             Number number = numberFormat.parse(value, parsePosition);
             if (number == null || parsePosition.getIndex() != value.length()) {
                 throw new ParseException("Unparseable number", parsePosition.getErrorIndex() >= 0
                     ? parsePosition.getErrorIndex() : parsePosition.getIndex());
             }
-            if (number != null && typeHint != null) {
-                boolean isFloat = number instanceof Double || number instanceof Float;
-                if (typeHint == Byte.class) {
-                    if (isFloat) {
-                        return number;
+            if (integerHint && number instanceof BigDecimal decimal) {
+                // A hint must not discard a fractional value. Integral values,
+                // however, must fit the requested type without narrowing wraparound.
+                if (decimal.stripTrailingZeros().scale() > 0) {
+                    return decimal;
+                }
+                try {
+                    if (typeHint == Byte.class) {
+                        return decimal.byteValueExact();
+                    } else if (typeHint == Short.class) {
+                        return decimal.shortValueExact();
+                    } else if (typeHint == Integer.class) {
+                        return decimal.intValueExact();
                     }
-                    return number.byteValue();
-                } else if (typeHint == Short.class) {
-                    if (isFloat) {
-                        return number;
-                    }
-                    return number.shortValue();
-                } else if (typeHint == Integer.class) {
-                    if (isFloat) {
-                        return number;
-                    }
-                    return number.intValue();
-                } else if (typeHint == Long.class) {
-                    if (isFloat) {
-                        return number;
-                    }
-                    return number.longValue();
-                } else if (typeHint == Float.class) {
+                    return decimal.longValueExact();
+                } catch (ArithmeticException e) {
+                    throw new ParseException("Number is outside the requested integer range", 0);
+                }
+            }
+            if (typeHint != null) {
+                if (typeHint == Float.class) {
                     return number.floatValue();
                 } else if (typeHint == Double.class) {
                     return number.doubleValue();
