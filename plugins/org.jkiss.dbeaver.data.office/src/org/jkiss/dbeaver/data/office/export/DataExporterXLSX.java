@@ -139,7 +139,7 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
         properties.put(DataExporterXLSX.PROP_SPLIT_SQLTEXT, false);
         properties.put(DataExporterXLSX.PROP_SPLIT_BYROWCOUNT, EXCEL2007MAXROWS);
         properties.put(DataExporterXLSX.PROP_SPLIT_BYCOL, 0);
-        properties.put(DataExporterXLSX.PROP_DATE_FORMAT, "");
+        properties.put(DataExporterXLSX.PROP_DATE_FORMAT, DEFAULT_DATE_FORMAT);
         properties.put(DataExporterXLSX.PROP_APPEND_STRATEGY, AppendStrategy.CREATE_NEW_SHEETS.value);
         properties.put(DataExporterXLSX.PROP_USE_DEFAULT_SPREADSHEET_NAMES, true);
         return properties;
@@ -223,6 +223,9 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
         this.sheetIndex = 0;
 
         this.dateFormatString = CommonUtils.toString(properties.get(PROP_DATE_FORMAT), DEFAULT_DATE_FORMAT);
+        if (dateFormatString.isBlank()) {
+            dateFormatString = DEFAULT_DATE_FORMAT;
+        }
         styleDate.setDataFormat(wb.getCreationHelper().createDataFormat().getFormat(dateFormatString));
 
         super.init(site);

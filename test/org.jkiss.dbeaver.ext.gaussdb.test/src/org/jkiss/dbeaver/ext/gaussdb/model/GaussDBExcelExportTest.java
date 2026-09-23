@@ -312,6 +312,39 @@ public class GaussDBExcelExportTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    public void emptyDateFormatFallsBackWithoutLosingHistoricalDate(String format) throws Exception {
+        try (XSSFWorkbook workbook = export(DBPDataKind.DATETIME, Map.of("dateFormat", format),
+            new Object[]{Timestamp.valueOf("1899-12-31 12:34:56")},
+            new Object[]{Timestamp.valueOf("2026-09-24 12:34:56")})) {
+            var sheet = workbook.getSheetAt(0);
+            assertEquals("12/31/99", sheet.getRow(1).getCell(0).getStringCellValue());
+            assertEquals("MM/dd/yy", sheet.getRow(2).getCell(0).getCellStyle().getDataFormatString());
+            assertEquals(Timestamp.valueOf("2026-09-24 12:34:56").toLocalDateTime(),
+                sheet.getRow(2).getCell(0).getLocalDateTimeCellValue());
+        }
+    }
+
+    @Test
+    public void defaultDateSettingsUseTheDocumentedDisplayFormat() throws Exception {
+        assertEquals("MM/dd/yy", DataExporterXLSX.getDefaultProperties().get("dateFormat"));
+        try (XSSFWorkbook workbook = export(DBPDataKind.DATETIME, Map.of(),
+            new Object[]{Timestamp.valueOf("1899-12-31 12:34:56")})) {
+            assertEquals("12/31/99", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+        }
+    }
+
+    @Test
+    public void nullDateFormatUsesDefaultRatherThanFailing() throws Exception {
+        Map<String, Object> options = new java.util.HashMap<>();
+        options.put("dateFormat", null);
+        try (XSSFWorkbook workbook = export(DBPDataKind.DATETIME, options,
+            new Object[]{Timestamp.valueOf("1899-12-31 12:34:56")})) {
+            assertEquals("12/31/99", workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue());
+        }
+    }
+
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Object[]... rows) throws Exception {
         return export(kind, overrides, null, rows);
     }
