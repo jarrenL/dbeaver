@@ -26,6 +26,7 @@ import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import org.eclipse.osgi.util.NLS;
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.debug.DBGConstants;
@@ -127,18 +128,14 @@ public class DebugUtils {
         if (object instanceof DatabaseStackFrame) {
             DatabaseStackFrame frame = (DatabaseStackFrame) object;
             Object sourceIdentifier = frame.getSourceIdentifier();
-            DBSObject dbsObject;
+            DBNDatabaseNode node;
             try {
-                dbsObject = findDatabaseObject(frame.getController(), sourceIdentifier, new VoidProgressMonitor());
+                node = resolveSourceNode(frame.getController(), sourceIdentifier,
+                    DBWorkbench.getPlatform().getNavigatorModel(), new VoidProgressMonitor());
             } catch (DBException e) {
                 Status error = DebugUtils.newErrorStatus(e.getMessage(), e);
                 throw new CoreException(error);
             }
-            if (dbsObject == null) {
-                return null;
-            }
-            final DBNModel navigatorModel = DBWorkbench.getPlatform().getNavigatorModel();
-            DBNDatabaseNode node = navigatorModel.getNodeByObject(new VoidProgressMonitor(), dbsObject, false);
             if (node != null) {
                 return node.getNodeUri();
             }
@@ -148,6 +145,35 @@ public class DebugUtils {
             return (String) object;
         }
         return null;
+    }
+
+    @Nullable
+    public static DBNDatabaseNode resolveSourceNode(
+        @NotNull DBGController controller,
+        @NotNull Object identifier,
+        @NotNull DBNModel navigatorModel,
+        @NotNull DBRProgressMonitor monitor
+    ) throws DBException {
+        DBSObject object = findDatabaseObject(controller, identifier, monitor);
+        if (object == null) {
+            return null;
+        }
+        DBNDatabaseNode node = navigatorModel.getNodeByObject(monitor, object, false);
+        if (node == null && object.getParentObject() != null && !monitor.isCanceled()) {
+            // A resolver can discover a newly created routine while the navigator still has
+            // the old child list. Refresh only its owning container, then resolve by identity
+            // again: refreshing can replace the cached model instances.
+            DBNDatabaseNode parent = navigatorModel.getNodeByObject(monitor, object.getParentObject(), false);
+            if (parent != null) {
+                // Do not force unrelated open editors to discard local text.
+                parent.refreshNode(monitor, controller);
+                object = findDatabaseObject(controller, identifier, monitor);
+                if (object != null) {
+                    node = navigatorModel.getNodeByObject(monitor, object, false);
+                }
+            }
+        }
+        return node;
     }
 
     public static Map<String, Object> toBreakpointDescriptor(Map<String, Object> attributes) {
