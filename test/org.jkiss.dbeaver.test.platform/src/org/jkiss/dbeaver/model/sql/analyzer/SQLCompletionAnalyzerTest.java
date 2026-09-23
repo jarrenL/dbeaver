@@ -379,7 +379,7 @@ public class SQLCompletionAnalyzerTest extends DBeaverUnitTest {
     }
 
     @Test
-    @Disabled("See #12159")
+    @Disabled("See #12159: quoted identifier prefix currently returns no proposals")
     public void testQuotedNamesCompletion() throws DBException {
         final RequestResult request = RequestBuilder
             .databases(x -> {
