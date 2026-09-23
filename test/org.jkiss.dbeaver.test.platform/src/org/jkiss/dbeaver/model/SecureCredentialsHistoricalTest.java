@@ -135,4 +135,45 @@ class SecureCredentialsHistoricalTest {
         snapshot.setSecureProp("token", "synthetic-added");
         assertEquals(Map.of("token", "synthetic-added"), serialized(snapshot));
     }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void authPropertiesCannotReplaceDataSourceReservedCredentials(boolean save) throws Exception {
+        var config = new DBPConnectionConfiguration();
+        config.setUserName("canonical-user");
+        config.setUserPassword("synthetic-canonical-password");
+        var extras = Map.of("user", "synthetic-other-user", "password", "synthetic-shadow-password",
+            "token", "synthetic-token");
+        config.setAuthProperties(new HashMap<>(extras));
+        var output = serialized(new SecureCredentials(source(config, save)));
+        assertEquals("canonical-user", output.get("user"));
+        assertEquals(save ? "synthetic-canonical-password" : null, output.get("password"));
+        assertEquals(save, output.containsKey("password"));
+        assertEquals("synthetic-token", output.get("token"));
+        assertEquals(extras, config.getAuthProperties());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void profilePropertiesCannotBypassPrimaryPasswordChoice(boolean save) throws Exception {
+        var profile = mock(DBAAuthProfile.class);
+        when(profile.getUserName()).thenReturn("canonical-profile");
+        when(profile.getUserPassword()).thenReturn("synthetic-primary");
+        when(profile.isSavePassword()).thenReturn(save);
+        when(profile.getProperties()).thenReturn(Map.of("user", "shadow-user", "password", "synthetic-shadow",
+            "token", "synthetic-token"));
+        var output = serialized(new SecureCredentials(profile));
+        assertEquals("canonical-profile", output.get("user"));
+        assertEquals(save ? "synthetic-primary" : null, output.get("password"));
+        assertEquals(save, output.containsKey("password"));
+        assertEquals("synthetic-token", output.get("token"));
+    }
+
+    @Test
+    void emptyPrimaryFieldsAreNotReintroducedFromReservedExtensionKeys() throws Exception {
+        var credentials = new SecureCredentials();
+        credentials.setProperties(Map.of("user", "shadow-user", "password", "synthetic-shadow",
+            "token", "synthetic-token"));
+        assertEquals(Map.of("token", "synthetic-token"), serialized(credentials));
+    }
 }

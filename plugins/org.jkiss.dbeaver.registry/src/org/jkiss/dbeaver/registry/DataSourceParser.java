@@ -265,7 +265,13 @@ public class DataSourceParser {
             propMap.put(RegistryConstants.ATTR_PASSWORD, credentials.getUserPassword());
         }
         if (!CommonUtils.isEmpty(credentials.getProperties())) {
-            propMap.putAll(credentials.getProperties());
+            credentials.getProperties().forEach((key, value) -> {
+                // Reserved fields are controlled by the primary credentials,
+                // including the decision not to persist a password.
+                if (!RegistryConstants.ATTR_USER.equals(key) && !RegistryConstants.ATTR_PASSWORD.equals(key)) {
+                    propMap.put(key, value);
+                }
+            });
         }
     }
 
