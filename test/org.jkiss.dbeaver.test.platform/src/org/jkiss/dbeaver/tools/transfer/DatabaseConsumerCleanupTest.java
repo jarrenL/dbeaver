@@ -18,8 +18,12 @@ package org.jkiss.dbeaver.tools.transfer;
 
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.exec.DBCResultSet;
 import org.jkiss.dbeaver.model.exec.DBCTransactionManager;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSDataBulkLoader;
+import org.jkiss.dbeaver.model.struct.DBSDataManipulator;
 import org.jkiss.dbeaver.tools.transfer.database.DatabaseTransferConsumer;
 import org.jkiss.junit.DBeaverUnitTest;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,6 +105,68 @@ class DatabaseConsumerCleanupTest extends DBeaverUnitTest {
         Mockito.doThrow(new RuntimeException("session close failed")).when(session).close();
         consumer.close();
         Mockito.verify(context).close();
+    }
+
+    @Test
+    void sourceCancellationDiscardsPendingBatchWithoutCommit() throws Exception {
+        DBCSession source = Mockito.mock(DBCSession.class);
+        DBRProgressMonitor sourceMonitor = Mockito.mock(DBRProgressMonitor.class);
+        Mockito.when(source.getProgressMonitor()).thenReturn(sourceMonitor);
+        Mockito.when(sourceMonitor.isCanceled()).thenReturn(true);
+        var batch = Mockito.mock(DBSDataManipulator.ExecuteBatch.class);
+        set("executeBatch", batch);
+        set("rowsExported", 3L);
+        consumer.fetchEnd(source, Mockito.mock(DBCResultSet.class));
+        Mockito.verify(batch).close();
+        Mockito.verifyNoMoreInteractions(batch);
+        Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
+        consumer.close();
+        Mockito.verify(transactions).rollback(session, null);
+    }
+
+    @Test
+    void targetCancellationAlsoDiscardsPendingBatch() throws Exception {
+        DBCSession source = Mockito.mock(DBCSession.class);
+        Mockito.when(source.getProgressMonitor()).thenReturn(monitor);
+        DBRProgressMonitor targetMonitor = Mockito.mock(DBRProgressMonitor.class);
+        Mockito.when(targetMonitor.isCanceled()).thenReturn(true);
+        Mockito.when(session.getProgressMonitor()).thenReturn(targetMonitor);
+        var batch = Mockito.mock(DBSDataManipulator.ExecuteBatch.class);
+        set("executeBatch", batch);
+        set("rowsExported", 3L);
+        consumer.fetchEnd(source, Mockito.mock(DBCResultSet.class));
+        Mockito.verify(batch).close();
+        Mockito.verifyNoMoreInteractions(batch);
+        Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
+        consumer.close();
+        Mockito.verify(transactions).rollback(session, null);
+    }
+
+    @Test
+    void canceledBulkLoadIsClosedWithoutFlushOrFinish() throws Exception {
+        DBRProgressMonitor canceled = Mockito.mock(DBRProgressMonitor.class);
+        Mockito.when(canceled.isCanceled()).thenReturn(true);
+        Mockito.when(session.getProgressMonitor()).thenReturn(canceled);
+        var bulk = Mockito.mock(DBSDataBulkLoader.BulkLoadManager.class);
+        set("bulkLoadManager", bulk);
+        set("rowsExported", 3L);
+        consumer.fetchEnd(session, Mockito.mock(DBCResultSet.class));
+        Mockito.verifyNoInteractions(bulk);
+        consumer.close();
+        Mockito.verify(bulk).close();
+        Mockito.verifyNoMoreInteractions(bulk);
+        Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
+    }
+
+    @Test
+    void emptyFetchClosesBatchWithoutExecutingOrCommitting() throws Exception {
+        var batch = Mockito.mock(DBSDataManipulator.ExecuteBatch.class);
+        set("executeBatch", batch);
+        consumer.fetchEnd(session, Mockito.mock(DBCResultSet.class));
+        consumer.fetchEnd(session, Mockito.mock(DBCResultSet.class));
+        Mockito.verify(batch).close();
+        Mockito.verifyNoMoreInteractions(batch);
+        Mockito.verify(transactions, Mockito.never()).commit(Mockito.any());
     }
 
     private void set(String name, Object value) throws Exception {
