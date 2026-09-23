@@ -338,8 +338,8 @@ public class DataExporterCSV extends StreamExporterAbstract implements IAppendab
             char singleQuoteChar = quoteChar.charAt(0);
             isNeedQuote = true;
             buffer.setLength(0);
-            for (int i = 0; i < value.length(); i++) {
-                char c = value.charAt(i);
+            for (int i = 0; i < preparedValue.length(); i++) {
+                char c = preparedValue.charAt(i);
                 if (c == singleQuoteChar) {
                     buffer.append(singleQuoteChar);
                 }

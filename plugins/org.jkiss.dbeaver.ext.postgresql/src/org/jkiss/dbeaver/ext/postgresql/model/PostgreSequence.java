@@ -302,25 +302,25 @@ public class PostgreSequence extends PostgreTableBase implements DBSSequence, DB
     public void getSequenceBody(@NotNull DBRProgressMonitor monitor, @NotNull StringBuilder sql, boolean hasIndentation)
         throws DBCException {
         AdditionalInfo info = getAdditionalInfo(monitor);
-        if (info.getIncrementBy() > 0) {
+        if (info.getIncrementBy() != 0) {
             addIndentation(sql, hasIndentation);
             sql.append("INCREMENT BY ").append(info.getIncrementBy());
         }
-        if (info.getMinValue() >= 0) {
+        if (info.loaded || info.getMinValue() >= 0) {
             addIndentation(sql, hasIndentation);
             sql.append("MINVALUE ").append(info.getMinValue());
         } else {
             addIndentation(sql, hasIndentation);
             sql.append("NO MINVALUE");
         }
-        if (info.getMaxValue() > 0) {
+        if (info.loaded || info.getMaxValue() > 0) {
             addIndentation(sql, hasIndentation);
             sql.append("MAXVALUE ").append(info.getMaxValue());
         } else {
             addIndentation(sql, hasIndentation);
             sql.append("NO MAXVALUE");
         }
-        if (info.getStartValue() >= 0) {
+        if (info.loaded || info.getStartValue() >= 0) {
             addIndentation(sql, hasIndentation);
             sql.append("START ").append(info.getStartValue());
         }

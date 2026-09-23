@@ -43,7 +43,7 @@ public class PostgrePlanNodeXML extends PostgrePlanNodeBase<PostgrePlanNodeXML> 
         Element nestedPlansElement = XMLUtils.getChildElement(element, "Plans");
         if (nestedPlansElement != null) {
             for (Element planElement : XMLUtils.getChildElementList(nestedPlansElement, "Plan")) {
-                nested.add(new PostgrePlanNodeXML(dataSource, null, planElement));
+                nested.add(new PostgrePlanNodeXML(dataSource, this, planElement));
             }
         }
     }

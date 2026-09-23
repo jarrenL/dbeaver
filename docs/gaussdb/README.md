@@ -19,6 +19,7 @@ Linux x86_64 已有麒麟 V10 用户空间与 GaussDB 507 的专项界面验证�
 
 ## 质量与验证记录
 
+- [历史场景迁移与 JDBC 回归（2026-09-23）](HISTORICAL_TEST_MIGRATION.md)：当前源码验证，新增修复尚未包含在 9 月 22 日安装包中。
 - [中文设置修复与验证](../../GAUSSDB_LANGUAGE_VALIDATION_20260922.md)。
 - [断点、源码导航及脚本执行修复记录](../../ICBC_LINUX_FIX_PROGRESS_20260921.md)。
 - [复杂包语法验证](../../ICBC_COMPLEX_SYNTAX_ACCEPTANCE_20260921.md)。

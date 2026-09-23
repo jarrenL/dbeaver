@@ -24,6 +24,53 @@ import org.mockito.Mockito;
 
 public class GaussDBTableTest {
 
+    private GaussDBTable table(String partType, String strategy, String key) throws Exception {
+        var schema = Mockito.mock(GaussDBSchema.class);
+        var dataSource = Mockito.mock(GaussDBDataSource.class);
+        var server = Mockito.mock(PostgreServerExtension.class);
+        var result = Mockito.mock(JDBCResultSet.class);
+        Mockito.when(schema.getDataSource()).thenReturn(dataSource);
+        Mockito.when(dataSource.getServerType()).thenReturn(server);
+        Mockito.when(result.getString("relname")).thenReturn("historical_table");
+        Mockito.when(result.getString("gauss_parttype")).thenReturn(partType);
+        Mockito.when(result.getString("gauss_partstrategy")).thenReturn(strategy);
+        Mockito.when(result.getString("gauss_partkey")).thenReturn(key);
+        return new GaussDBTable(schema, result);
+    }
+
+    @Test
+    public void listPartitionKeyUsesCatalogAttributeOrder() throws Exception {
+        Assertions.assertEquals("LIST (attribute 3 1)", table("p", "l", " 3 1 ").getPartitionKey());
+    }
+
+    @Test
+    public void hashSubpartitionIsRecognizedCaseInsensitively() throws Exception {
+        var table = table("S", "H", "2");
+        Assertions.assertTrue(table.hasPartitions());
+        Assertions.assertEquals("HASH (attribute 2)", table.getPartitionKey());
+    }
+
+    @Test
+    public void intervalStrategyWithoutKeyDoesNotInventAttributes() throws Exception {
+        Assertions.assertEquals("INTERVAL", table("p", "i", "  ").getPartitionKey());
+    }
+
+    @Test
+    public void unknownStrategyPreservesRawAttributeReferences() throws Exception {
+        Assertions.assertEquals("PARTITION (attribute 5)", table("p", "future", "5").getPartitionKey());
+        Assertions.assertEquals("PARTITION", table("p", null, null).getPartitionKey());
+    }
+
+    @Test
+    public void absentPartitionCatalogColumnsRemainAnOrdinaryTable() throws Exception {
+        var table = table(null, null, null);
+        Assertions.assertFalse(table.hasPartitions());
+        Assertions.assertNull(table.getPartitionKey());
+        var monitor = Mockito.mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        Assertions.assertNull(table.getPartitions(monitor));
+        Mockito.verifyNoInteractions(monitor);
+    }
+
     @Test
     public void recognizesGaussDBPartitionedTableMetadata() throws Exception {
         GaussDBSchema schema = Mockito.mock(GaussDBSchema.class);

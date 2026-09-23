@@ -96,6 +96,51 @@ public class DataExporterCSVTest extends DBeaverUnitTest {
         when(site.getWriter()).thenReturn(printWriter);
     }
 
+    private String exportHistoricalRow(Object... row) throws Exception {
+        properties.put("header", "none");
+        for (int i = 0; i < row.length; i++) {
+            addColumn("c" + i, "c" + i, JDBCStringValueHandler.INSTANCE);
+        }
+        initExporter();
+        dataExporterCSV.exportHeader(dbcSession);
+        dataExporterCSV.exportRow(dbcSession, resultSetMock, row);
+        return stringWriter.toString();
+    }
+
+    @Test
+    public void historicalSqlNullEmptyAndLiteralNullRemainDistinct() throws Exception {
+        assertEquals(",\"\",NULL\n", exportHistoricalRow(null, "", "NULL"));
+    }
+
+    @Test
+    public void historicalCustomNullMarkerIsEscapedLikeAField() throws Exception {
+        properties.put("nullString", "NULL,VALUE");
+        assertEquals("\"NULL,VALUE\",text\n", exportHistoricalRow(null, "text"));
+    }
+
+    @Test
+    public void historicalWindowsRowSeparatorPreservesEmbeddedNewlines() throws Exception {
+        rowsSeparator = "\r\n";
+        assertEquals("\"甲\r\n乙\",尾\r\n", exportHistoricalRow("甲\r\n乙", "尾"));
+    }
+
+    @Test
+    public void historicalQuoteEscapingMustNotUndoLineFeedReplacement() throws Exception {
+        properties.put(DataExporterCSV.PROP_LINE_FEED_ESCAPE_STRING, "<LF>");
+        assertEquals("\"甲\"\"<LF>乙\"\",丙\"\n", exportHistoricalRow("甲\"\n乙\",丙"));
+    }
+
+    @Test
+    public void historicalLargeUnicodeFieldIsNotTruncated() throws Exception {
+        String text = "汉字😀".repeat(20000);
+        assertEquals(text + "\n", exportHistoricalRow(text));
+    }
+
+    @Test
+    public void historicalLeadingZeroIdentifierIsQuotedWithoutChangingDigits() throws Exception {
+        assertEquals("\"0000123400\"\n", exportHistoricalRow("0000123400"));
+    }
+
     @Test
     public void testExportHeader() throws DBException, IOException {
         // given

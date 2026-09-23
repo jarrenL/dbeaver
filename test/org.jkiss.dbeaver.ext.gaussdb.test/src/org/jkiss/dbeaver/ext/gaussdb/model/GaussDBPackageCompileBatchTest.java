@@ -16,6 +16,49 @@ import static org.mockito.Mockito.*;
 
 class GaussDBPackageCompileBatchTest {
     @Test
+    void emptyBatchDoesNotInvokeCompiler() {
+        var result = GaussDBPackageCompileBatch.compile(mock(DBRProgressMonitor.class), List.of(),
+            GaussDBPackageCompileTarget.ALL, (m, log, pkg, target) -> fail("Empty batch must not execute SQL"));
+        assertEquals(0, result.completed());
+        assertFalse(result.interrupted());
+        assertTrue(result.diagnostics().isEmpty());
+    }
+
+    @Test
+    void allTargetsPreserveObjectOrderAndRequestedTarget() {
+        for (var target : GaussDBPackageCompileTarget.values()) {
+            var first = mock(GaussDBPackage.class);
+            var second = mock(GaussDBPackage.class);
+            var visited = new java.util.ArrayList<GaussDBPackage>();
+            var result = GaussDBPackageCompileBatch.compile(mock(DBRProgressMonitor.class), List.of(first, second),
+                target, (m, log, pkg, requested) -> {
+                    assertSame(target, requested);
+                    visited.add(pkg);
+                });
+            assertEquals(List.of(first, second), visited);
+            assertEquals(2, result.completed());
+            assertFalse(result.interrupted());
+        }
+    }
+
+    @Test
+    void firstFailureStopsBeforeAnyLaterPackage() {
+        var first = mock(GaussDBPackage.class);
+        var second = mock(GaussDBPackage.class);
+        var failure = new DBException("permission denied");
+        var result = GaussDBPackageCompileBatch.compile(mock(DBRProgressMonitor.class), List.of(first, second),
+            GaussDBPackageCompileTarget.BODY, (m, log, pkg, target) -> {
+                assertSame(first, pkg);
+                throw failure;
+            });
+        assertSame(first, result.stoppedAt());
+        assertSame(failure, result.failure());
+        assertEquals(0, result.completed());
+        assertTrue(result.interrupted());
+        verifyNoInteractions(second);
+    }
+
+    @Test
     void retainsEarlierDiagnosticsWhenLaterPackageFails() throws Exception {
         var monitor = mock(DBRProgressMonitor.class);
         var first = mock(GaussDBPackage.class);

@@ -179,7 +179,9 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         List<PostgreProcedureParameter> parameters = routine.getInputParameters();
         Object rawModes = configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETER_MODES);
         List<String> modes = rawModes instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of();
-        GaussDBDebugArguments.Plan arguments = GaussDBDebugArguments.build(parameters, parameterValues(), modes);
+        GaussDBDebugArguments.Plan arguments = routine.getProcedureType() == DBSProcedureType.PROCEDURE
+            ? GaussDBDebugArguments.buildProcedure(routine.getParameters(monitor), parameterValues(), modes)
+            : GaussDBDebugArguments.build(parameters, parameterValues(), modes);
         List<String> values = arguments.values();
         if (values.size() < parameters.size()) {
             validateDefaultInvocation(monitor);

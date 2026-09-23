@@ -33,6 +33,38 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class GaussDBDialectTest {
+    @Test
+    void historicalQuotedLiteralsDoNotIntroduceStatements() {
+        for (String sql : List.of("SELECT '中文;值'", "SELECT 'it''s;quoted'", "SELECT $$a;b$$",
+            "SELECT ';--not comment'", "SELECT '/*;*/'")) {
+            // Dollar-quoted blocks retain their delimiter under the production parser contract.
+            assertEquals(List.of(sql + (sql.contains("$$") ? ";" : ""), "SELECT 2"), parse(sql + "; SELECT 2;"));
+        }
+    }
+
+    @Test
+    void historicalAliasesAndNestedExpressionsKeepStatementBoundaries() {
+        for (String sql : List.of(
+            "SELECT CASE WHEN a.id IS NULL THEN 'missing;' ELSE 'ok' END AS result FROM t a",
+            "SELECT a.id FROM t a JOIN (SELECT id FROM u WHERE id > 0) b ON a.id=b.id",
+            "SELECT row_number() OVER (PARTITION BY a.kind ORDER BY a.id) AS n FROM t a",
+            "WITH q AS (SELECT 1 AS id) SELECT id FROM q UNION ALL SELECT 2")) {
+            // CASE is tracked as a block; preserving its final semicolon is intentional.
+            assertEquals(List.of(sql + (sql.startsWith("SELECT CASE") ? ";" : ""), "SELECT 3"), parse(sql + "; SELECT 3;"));
+        }
+    }
+
+    @Test
+    void historicalDmlAndDistributedDdlRemainIntact() {
+        for (String sql : List.of(
+            "CREATE TABLE t(id integer, name varchar(20)) DISTRIBUTE BY HASH(id)",
+            "MERGE INTO t USING u ON (t.id=u.id) WHEN MATCHED THEN UPDATE SET name=u.name",
+            "INSERT INTO t VALUES(1,'a') ON DUPLICATE KEY UPDATE name='b'",
+            "EXECUTE DIRECT ON (dn_1) 'SELECT 1; SELECT 2'")) {
+            assertEquals(List.of(sql, "SELECT 4"), parse(sql + "; SELECT 4;"));
+        }
+    }
+
     private final GaussDBDialect dialect = new GaussDBDialect();
     private final DBPPreferenceStore preferences = mock(DBPPreferenceStore.class);
 
@@ -146,5 +178,32 @@ public class GaussDBDialectTest {
         String sql = "CREATE PACKAGE s.p AS FUNCTION f RETURN INTEGER; END p;";
         var context = context(sql);
         assertEquals(sql, SQLScriptParser.extractActiveQuery(context, 0, sql.length()).getText());
+    }
+
+    @Test
+    void quotedAliasesContainingTerminatorsRemainInOneQuery() {
+        String sql = "SELECT t.id AS \"END;别名\" FROM \"Mixed;Table\" t ORDER BY \"END;别名\"";
+        assertEquals(List.of(sql, "SELECT 2"), parse(sql + "; SELECT 2;"));
+    }
+
+    @Test
+    void updateSubqueryAndDeleteUsingRemainSeparateCommands() {
+        String update = "UPDATE t SET v=(SELECT max(v) FROM q WHERE q.id=t.id) WHERE t.id=1";
+        String delete = "DELETE FROM t USING q WHERE t.id=q.id";
+        assertEquals(List.of(update, delete, "SELECT 1"), parse(update + ";" + delete + ";SELECT 1;"));
+    }
+
+    @Test
+    void unionAndQuotedTextDoNotCreatePhantomCommands() {
+        String sql = "SELECT 'UNION; END;' AS v UNION ALL SELECT 'BEGIN; /* not comment */'";
+        assertEquals(List.of(sql, "SELECT 1"), parse(sql + ";SELECT 1;"));
+    }
+
+    @Test
+    void multipleSlashTerminatedProceduresKeepTheirBodies() {
+        String first = "CREATE PROCEDURE p AS BEGIN NULL; END;";
+        String second = "CREATE PROCEDURE q AS BEGIN NULL; EXCEPTION WHEN OTHERS THEN NULL; END;";
+        assertEquals(List.of(first, second, "SELECT 1"),
+            parse(first + "\r\n/\r\n" + second + "\r\n/\r\nSELECT 1;"));
     }
 }

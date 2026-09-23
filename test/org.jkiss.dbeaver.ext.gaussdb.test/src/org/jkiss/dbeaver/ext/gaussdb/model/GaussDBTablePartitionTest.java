@@ -21,6 +21,42 @@ import org.junit.jupiter.api.Test;
 
 public class GaussDBTablePartitionTest {
     @Test
+    public void absentBoundariesDoNotGenerateAnInventedClause() {
+        Assertions.assertEquals("", GaussDBTablePartition.formatPartitionExpression("r", null));
+        Assertions.assertEquals("", GaussDBTablePartition.formatPartitionExpression("l", " \t"));
+    }
+
+    @Test
+    public void signedDecimalsAndExponentsRemainNumeric() {
+        Assertions.assertEquals("VALUES LESS THAN (-12,+3,.5,2.,1e-3)",
+            GaussDBTablePartition.formatPartitionExpression("r", "{-12,+3,.5,2.,1e-3}"));
+    }
+
+    @Test
+    public void quotedNullAndEmptyStringAreNotDefaultPartitions() {
+        Assertions.assertEquals("VALUES ('NULL','',DEFAULT)",
+            GaussDBTablePartition.formatPartitionExpression("l", "{\"NULL\",\"\",NULL}"));
+    }
+
+    @Test
+    public void escapedQuotesAndBackslashesSurviveCatalogArrayDecoding() {
+        Assertions.assertEquals("VALUES ('a\"b','c\\d')",
+            GaussDBTablePartition.formatPartitionExpression("l", "{\"a\\\"b\",\"c\\\\d\"}"));
+    }
+
+    @Test
+    public void timestampAndUnicodeBoundariesRemainStringLiterals() {
+        Assertions.assertEquals("VALUES LESS THAN ('2024-02-29 23:59:59','中文,边界')",
+            GaussDBTablePartition.formatPartitionExpression("R", "{\"2024-02-29 23:59:59\",\"中文,边界\"}"));
+    }
+
+    @Test
+    public void apostropheAndSqlLookingBoundaryRemainQuotedData() {
+        Assertions.assertEquals("VALUES ('x''); DROP TABLE t; --')",
+            GaussDBTablePartition.formatPartitionExpression("l", "{\"x'); DROP TABLE t; --\"}"));
+    }
+
+    @Test
     public void formatsNumericAndSpecialBoundaries() {
         Assertions.assertEquals(
             "VALUES LESS THAN (10,MAXVALUE)",

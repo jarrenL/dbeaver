@@ -22,6 +22,34 @@ import org.junit.jupiter.api.Test;
 public class GaussDBDataSourceProviderTest {
 
     @Test
+    public void emptyHostEntriesAreIgnoredWithoutInventingAnEndpoint() {
+        Assertions.assertEquals("", GaussDBDataSourceProvider.formatHosts(null, "8000"));
+        Assertions.assertEquals("", GaussDBDataSourceProvider.formatHosts(" , , ", "8000"));
+        Assertions.assertEquals("cn1:8000,cn2:8000",
+            GaussDBDataSourceProvider.formatHosts(" ,cn1, ,cn2, ", "8000"));
+    }
+
+    @Test
+    public void missingDefaultPortDoesNotAppendLiteralNullOrColon() {
+        Assertions.assertEquals("cn1,cn2:8002", GaussDBDataSourceProvider.formatHosts("cn1,cn2:8002", null));
+        Assertions.assertEquals("[::1]", GaussDBDataSourceProvider.formatHosts("::1", ""));
+    }
+
+    @Test
+    public void bracketedIpv6GetsExactlyOneDefaultPort() {
+        Assertions.assertEquals("[::1]:8000,[2001:db8::1]:8001",
+            GaussDBDataSourceProvider.formatHosts("[::1],[2001:db8::1]:8001", "8000"));
+    }
+
+    @Test
+    public void manualHostsCannotInjectQueryFragmentOrUserInfo() {
+        for (String host : java.util.List.of("cn1?ssl=false", "cn1#fragment", "user@cn1", "cn1/database")) {
+            Assertions.assertThrows(IllegalArgumentException.class,
+                () -> GaussDBDataSourceProvider.formatHosts(host, "8000"), host);
+        }
+    }
+
+    @Test
     public void formatsMultiHostAddressWithSharedPort() {
         Assertions.assertEquals(
             "cn1.example:8000,cn2.example:8000",
