@@ -6,6 +6,18 @@
 package org.jkiss.dbeaver.ext.gaussdb.debug.core;
 
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureParameter;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialect;
+import org.jkiss.dbeaver.ext.postgresql.edit.PostgreCommandGrantPrivilege;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreDefaultPrivilege;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeGrant;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreRoleReference;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreTable;
+import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.junit.jupiter.api.Test;
 
 import java.net.URLClassLoader;
@@ -24,6 +36,57 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    @Test
+    void productionDefaultPrivilegesApplyOnlyToFutureObjectsAndRevocationIsNotRetroactive() throws Exception {
+        String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
+        assumeTrue(grantee != null, "Dedicated NOLOGIN grantee role not configured; default privilege test not executed");
+        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_]+"), "Only a dedicated test role is allowed");
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".before_grant(id integer)");
+            var source = mock(GaussDBDataSource.class);
+            when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+            when(source.getSupportedPrivilegeTypes()).thenReturn(new PostgrePrivilegeType[] {
+                PostgrePrivilegeType.SELECT, PostgrePrivilegeType.INSERT
+            });
+            var schema = mock(PostgreSchema.class);
+            when(schema.getName()).thenReturn(s);
+            when(schema.getDataSource()).thenReturn(source);
+            var permission = mock(PostgreDefaultPrivilege.class);
+            when(permission.getOwner()).thenReturn(schema);
+            when(permission.getUnderKind()).thenReturn(PostgrePrivilegeGrant.Kind.TABLE);
+            var reference = new PostgreRoleReference(mock(PostgreDatabase.class), grantee, null);
+            when(permission.getGrantee()).thenReturn(reference);
+            var targetType = mock(PostgreTable.class);
+            for (boolean grant : new boolean[] {true, false}) {
+                var command = new PostgreCommandGrantPrivilege(schema, grant, targetType, permission,
+                    new PostgrePrivilegeType[] {PostgrePrivilegeType.SELECT});
+                for (var action : command.getPersistActions(mock(DBRProgressMonitor.class),
+                    mock(DBCExecutionContext.class), java.util.Map.of())) {
+                    execute(c, action.getScript());
+                }
+                execute(c, "CREATE TABLE " + s + (grant ? ".after_grant" : ".after_revoke") + "(id integer)");
+                // A schema-scoped default must not modify old tables, and its removal
+                // must not revoke permissions already materialized on existing tables.
+                List<String> tables = grant ? List.of("before_grant", "after_grant")
+                    : List.of("before_grant", "after_grant", "after_revoke");
+                try (var statement = c.prepareStatement("SELECT has_table_privilege(?,?,?)")) {
+                    for (String name : tables) {
+                        for (String privilege : List.of("SELECT", "INSERT", "SELECT WITH GRANT OPTION")) {
+                            statement.setString(1, grantee);
+                            statement.setString(2, s + "." + name);
+                            statement.setString(3, privilege);
+                            try (var result = statement.executeQuery()) {
+                                assertTrue(result.next());
+                                assertEquals(name.equals("after_grant") && privilege.equals("SELECT"),
+                                    result.getBoolean(1), name + ":" + privilege + " grant=" + grant);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     @Test
     void productionGrantCommandsPreservePerPrivilegeGrantabilityInDatabase() throws Exception {
         String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");

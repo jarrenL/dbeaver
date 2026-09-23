@@ -647,7 +647,7 @@ public class PostgreUtils {
             if (CommonUtils.isEmpty(aclValue)) {
                 continue;
             }
-            int divPos = aclValue.indexOf('=');
+            int divPos = findAclGranteeSeparator(aclValue);
             if (divPos == -1) {
                 log.warn("Bad ACL item: " + aclValue);
                 continue;
@@ -658,7 +658,23 @@ public class PostgreUtils {
         return grantees;
     }
 
-    // FIXME consider user/group/role name like "test test", "test=test", "test,test", "test\"test" and user name like "group" or "role"
+    private static int findAclGranteeSeparator(@NotNull String aclValue) {
+        boolean quoted = false;
+        for (int i = 0; i < aclValue.length(); i++) {
+            char ch = aclValue.charAt(i);
+            if (ch == '"') {
+                if (quoted && i + 1 < aclValue.length() && aclValue.charAt(i + 1) == '"') {
+                    i++;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (ch == '=' && !quoted) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     @NotNull
     public static List<PostgrePrivilege> extractPermissionsFromACL(
         @NotNull PostgrePrivilegeOwner owner,
@@ -670,7 +686,7 @@ public class PostgreUtils {
             if (CommonUtils.isEmpty(aclValue)) {
                 continue;
             }
-            int divPos = aclValue.indexOf('=');
+            int divPos = findAclGranteeSeparator(aclValue);
             if (divPos == -1) {
                 log.warn("Bad ACL item: " + aclValue);
                 continue;
@@ -683,7 +699,8 @@ public class PostgreUtils {
                 continue;
             }
             String privString = permString.substring(0, divPos2);
-            String grantorName = permString.substring(divPos2 + 1);
+            String grantorName = owner.getDatabase().getDataSource().getSQLDialect()
+                .getUnquotedIdentifier(permString.substring(divPos2 + 1), true);
             PostgreRoleReference grantor = new PostgreRoleReference(owner.getDatabase(), grantorName, null);
             List<PostgrePrivilegeGrant> privileges = new ArrayList<>();
             for (int k = 0; k < privString.length(); k++) {
@@ -728,7 +745,7 @@ public class PostgreUtils {
                     grantee = grantee.substring(prefixEnd).trim();
                 }
             }
-            grantee = DBUtils.getUnQuotedIdentifier(database.getDataSource(), grantee);
+            grantee = database.getDataSource().getSQLDialect().getUnquotedIdentifier(grantee, true);
         }
         return new PostgreRoleReference(database, grantee, granteeType);
     }
