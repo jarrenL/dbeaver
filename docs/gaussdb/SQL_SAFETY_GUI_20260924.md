@@ -22,4 +22,21 @@
 
 本轮没有找到以下规则在已检查 SQL 模型/编辑器路径中的独立质量诊断实现，仍记录为能力待确认/覆盖缺口，不算测试通过，也不擅自称为不适用：INSERT 显式列清单、ORDER BY 不用序号、LIKE 禁止前导通配符、NULL 禁止直接比较、二元两侧相同、SELECT 禁止星号、EXISTS 子查询要求 WHERE、CASE 重复 WHEN、NOT IN 子查询非 NULL。解析成功、生成 SQL 含列名、执行结果正确都不能替代对应告警验收。
 
-DELETE/DROP 确认、多个危险语句、取消后的事务状态、ONLY 新修复以及持久化“不再询问”选项仍待 GUI 补验。JUnit 数量不因本次手动 GUI 场景增加。
+多个危险语句、手动事务模式下取消后的事务状态、ONLY 新修复以及持久化“不再询问”选项仍待 GUI 补验。JUnit 数量不因本次手动 GUI 场景增加。
+
+## DELETE 与 DROP 补验（命令 639–656）
+
+同一隔离客户端和 bundle 版本，重新创建上述专用 schema/table，2 行 original，普通测试账号为表 owner，自动提交模式。
+
+| 操作 | 界面证据 | 独立 gsql 结果 |
+| --- | --- | --- |
+| DELETE 无 WHERE 后取消 | 中文危险查询提示明确 DELETE 没有 WHERE，SQL 预览只读，取消可用 | rows_after_cancel=2 |
+| 再次 DELETE 后确定 | 再次提示，点击确定；不勾选“不再询问” | rows_after_confirm=0 |
+| DROP TABLE 后取消 | 单独“执行 DROP 查询”中文提示及只读 SQL 预览 | pg_class/pg_namespace 精确查表 tables_after_cancel=1 |
+| 再次 DROP 后确定 | 同一 DROP 确认再次出现，点击确定 | tables_after_confirm=0 |
+
+![DELETE 确认](images/sql-safety-20260924/delete-confirm.png)
+
+![DROP 确认](images/sql-safety-20260924/drop-confirm.png)
+
+完成后仅删除已空的专用 schema（未使用 CASCADE），remaining_schemas=0。可重建测试表已通过实际客户端 DROP 删除；无用户数据被删除。编辑器恢复 SELECT 文本，确认偏好未改动。本轮未改变源码，不增加 JUnit 数量，不代表最新 model.sql 的 ONLY 修复已完成 GUI 验收。
