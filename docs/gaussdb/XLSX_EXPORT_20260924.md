@@ -110,3 +110,17 @@
 此处是输出流故障模拟与引用清理断言，不是真实磁盘空间耗尽、操作系统句柄统计或临时文件残留检查。输出失败会留下不完整输出，本修复不把它当作成功文件，也不自动删除调用方管理的输出路径。
 
 修复后 `run-hcvL7P` 完整回归 **1,315 项，1,291 通过，24 跳过，0 失败/错误**，本类累计 50 项。[脱敏结果](test-results-20260924-xlsx-output-failure.json)。临时 grantee 已删除。
+
+## 真实 JDBC 取数到 XLSX
+
+`GaussDBHistoricalJdbcLiveTest` 增加集中式/分布式各一项：
+
+1. 在随机隔离 schema 创建 xlsx_values，使用 PreparedStatement 写入 numeric(38,18)、bigint、text、整数 NULL。
+2. 数据分别为 `12345678901234567890.123456789012345678`、Long.MIN_VALUE、含中文/扩展汉字/引号/换行的文本及 NULL。
+3. 通过真实厂商 JDBC ResultSet.getObject 取出，先与输入逐值断言，再不改写地交给生产 DataExporterXLSX。列名来自真实 JDBC 元数据；DBDAttributeBinding 和导出站点仍是测试适配对象。
+4. 完成写出后重新打开 XLSX，逐格检查四列标题、2 行/4 列、单元格类型及文本值。高精度数值依照修复后的策略为精确文本；NULL 为默认空文本。
+5. 使用既有隔离框架清理测试 schema，不修改业务数据。
+
+这两项打通数据库写入→厂商驱动读取→生产导出器→XLSX 文件读回，但不包含数据传输向导/实际数据库接收器、真实绑定模型发现或客户办公软件界面。
+
+`run-ECvtcg` 两个 507 环境均通过，完整回归 **1,317 项，1,293 通过，24 跳过，0 失败/错误**。[脱敏结果](test-results-20260924-xlsx-jdbc.json)。本批无生产修改；两库目录复查 xlsx_values 测试表残留均为 0，临时 grantee 已删除。

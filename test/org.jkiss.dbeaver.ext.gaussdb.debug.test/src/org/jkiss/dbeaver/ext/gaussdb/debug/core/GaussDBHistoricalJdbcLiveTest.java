@@ -2694,6 +2694,80 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         assertGeneratedInsertRoundTrip(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
     }
 
+    @Test
+    void xlsxPreservesVendorJdbcValuesFromDistributedDatabase() throws Exception {
+        assertXlsxJdbcRoundTrip(System.getenv("GAUSSDB_HISTORY_CONNECTION"));
+    }
+
+    @Test
+    void xlsxPreservesVendorJdbcValuesFromCentralizedDatabase() throws Exception {
+        assertXlsxJdbcRoundTrip(System.getenv("GAUSSDB_HISTORY_CENTRAL_CONNECTION"));
+    }
+
+    private void assertXlsxJdbcRoundTrip(String config) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            String table = schema + ".xlsx_values";
+            execute(connection, "CREATE TABLE " + table + "(n numeric(38,18), b bigint, v text, z integer)");
+            var decimal = new java.math.BigDecimal("12345678901234567890.123456789012345678");
+            String text = "中文𠀀'引号\n=1+1";
+            try (var insert = connection.prepareStatement("INSERT INTO " + table + " VALUES(?,?,?,?)")) {
+                insert.setBigDecimal(1, decimal);
+                insert.setLong(2, Long.MIN_VALUE);
+                insert.setString(3, text);
+                insert.setNull(4, java.sql.Types.INTEGER);
+                assertEquals(1, insert.executeUpdate());
+            }
+            var output = new java.io.ByteArrayOutputStream();
+            var site = mock(org.jkiss.dbeaver.tools.transfer.stream.IStreamDataExporterSite.class);
+            when(site.getProperties()).thenReturn(org.jkiss.dbeaver.data.office.export.DataExporterXLSX.getDefaultProperties());
+            when(site.getOutputStream()).thenReturn(output);
+            when(site.getSource()).thenReturn(mock(org.jkiss.dbeaver.model.DBPNamedObject.class));
+            when(site.getExportFormat()).thenReturn(org.jkiss.dbeaver.model.data.DBDDisplayFormat.NATIVE);
+            try (var query = connection.createStatement(); var rows = query.executeQuery("SELECT n,b,v,z FROM " + table)) {
+                assertTrue(rows.next());
+                Object[] values = new Object[4];
+                var bindings = new org.jkiss.dbeaver.model.data.DBDAttributeBinding[4];
+                for (int i = 0; i < 4; i++) {
+                    values[i] = rows.getObject(i + 1);
+                    bindings[i] = mock(org.jkiss.dbeaver.model.data.DBDAttributeBinding.class);
+                    when(bindings[i].getName()).thenReturn(rows.getMetaData().getColumnName(i + 1));
+                    when(bindings[i].getDataKind()).thenReturn(i == 2
+                        ? org.jkiss.dbeaver.model.DBPDataKind.STRING : org.jkiss.dbeaver.model.DBPDataKind.NUMERIC);
+                    when(bindings[i].getValueHandler()).thenReturn(
+                        org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCStringValueHandler.INSTANCE);
+                }
+                assertEquals(decimal, values[0]);
+                assertEquals(Long.MIN_VALUE, values[1]);
+                assertEquals(text, values[2]);
+                assertNull(values[3]);
+                assertFalse(rows.next());
+                when(site.getAttributes()).thenReturn(bindings);
+                var exporter = new org.jkiss.dbeaver.data.office.export.DataExporterXLSX();
+                exporter.init(site);
+                try {
+                    exporter.exportHeader(mock(org.jkiss.dbeaver.model.exec.DBCSession.class));
+                    exporter.exportRow(null, null, values);
+                    exporter.exportFooter(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor());
+                } finally {
+                    exporter.dispose();
+                }
+            }
+            try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(
+                new java.io.ByteArrayInputStream(output.toByteArray()))) {
+                var sheet = workbook.getSheetAt(0);
+                assertEquals(2, sheet.getPhysicalNumberOfRows());
+                assertEquals(4, sheet.getRow(1).getPhysicalNumberOfCells());
+                String[] expected = {decimal.toString(), Long.toString(Long.MIN_VALUE), text, ""};
+                String[] names = {"n", "b", "v", "z"};
+                for (int i = 0; i < 4; i++) {
+                    assertEquals(names[i], sheet.getRow(0).getCell(i).getStringCellValue());
+                    assertEquals(org.apache.poi.ss.usermodel.CellType.STRING, sheet.getRow(1).getCell(i).getCellType());
+                    assertEquals(expected[i], sheet.getRow(1).getCell(i).getStringCellValue());
+                }
+            }
+        }, java.util.Map.of(), config);
+    }
+
     private void assertGeneratedInsertRoundTrip(String config) throws Exception {
         assertGeneratedInsertRoundTrip(config, false);
     }

@@ -9,5 +9,7 @@ Fragment-Host: org.jkiss.dbeaver.ext.gaussdb.debug.core
 Require-Bundle: org.jkiss.dbeaver.headless,
  org.jkiss.dbeaver.ui.editors.sql,
  org.jkiss.dbeaver.data.transfer,
+ org.jkiss.dbeaver.data.office,
+ org.jkiss.bundle.apache.poi,
  org.jkiss.dbeaver.test.platform,
  org.jkiss.dbeaver.osgi.test.runner
