@@ -42,6 +42,11 @@ event alone is not proof that the field is read-only; check the widget flag and 
 editable control as a positive contrast. This diagnostic does not change the widget.
 Menu items also report `enabled`; a click that has no effect is not proof that a command is disabled.
 
+`folding` reads the active SQL editor's actual projection annotations (offset, length,
+collapsed state and count) on the UI thread. It does not trigger reconciliation or
+create annotations; inspect after the background reconciler has settled. A successful
+command alone does not prove the expected folding ranges.
+
 Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 `text ID VALUE`, `secret ID /absolute/password-file`, `focus ID`,
 `key ID F7` (or `SHIFT+F7`), `combo ID VALUE`, `cell TABLE_ID ROW COLUMN`,

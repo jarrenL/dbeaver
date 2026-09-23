@@ -77,6 +77,34 @@ public final class Bot implements IStartup {
     }
 
     private void execute(String[] args, PrintWriter out) throws Exception {
+        if (args[0].equals("folding")) {
+            display.syncExec(() -> {
+                try {
+                    Object editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
+                    Object model = editor.getClass().getMethod("getProjectionAnnotationModel").invoke(editor);
+                    if (model == null) {
+                        throw new IllegalStateException("Active editor has no projection model");
+                    }
+                    Iterator<?> annotations = (Iterator<?>) model.getClass().getMethod("getAnnotationIterator").invoke(model);
+                    int count = 0;
+                    while (annotations.hasNext()) {
+                        Object annotation = annotations.next();
+                        var positionMethod = Arrays.stream(model.getClass().getMethods())
+                            .filter(method -> method.getName().equals("getPosition") && method.getParameterCount() == 1)
+                            .findFirst().orElseThrow();
+                        Object position = positionMethod.invoke(model, annotation);
+                        out.println("fold offset=" + position.getClass().getMethod("getOffset").invoke(position)
+                            + " length=" + position.getClass().getMethod("getLength").invoke(position)
+                            + " collapsed=" + annotation.getClass().getMethod("isCollapsed").invoke(annotation));
+                        count++;
+                    }
+                    out.println("fold-count=" + count);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            return;
+        }
         if (args[0].equals("parameter-fixture")) {
             display.syncExec(() -> {
                 try {
