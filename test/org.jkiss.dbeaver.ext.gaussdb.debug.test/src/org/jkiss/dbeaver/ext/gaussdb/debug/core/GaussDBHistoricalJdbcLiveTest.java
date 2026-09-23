@@ -37,6 +37,55 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void enumValuesUseDeclarationOrderAndPreserveUnicodeLabels() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TYPE " + s + ".status_value AS ENUM ('等待','处理中','完成')");
+            execute(c, "CREATE TABLE " + s + ".enum_values(id int, value " + s + ".status_value)");
+            execute(c, "INSERT INTO " + s + ".enum_values VALUES(1,'完成'),(2,'等待'),(3,'处理中'),(4,NULL)");
+            assertRows(c, "SELECT id,value FROM " + s + ".enum_values WHERE value IS NOT NULL ORDER BY value",
+                List.of(List.of("2", "等待"), List.of("3", "处理中"), List.of("1", "完成")));
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT value FROM " + s + ".enum_values WHERE id=4")) {
+                assertTrue(rows.next());
+                assertNull(rows.getString(1));
+                assertTrue(rows.wasNull());
+            }
+            try (var insert = c.prepareStatement("INSERT INTO " + s + ".enum_values VALUES(5,?::" + s + ".status_value)")) {
+                insert.setString(1, "非法枚举");
+                var failure = assertThrows(java.sql.SQLException.class, insert::executeUpdate);
+                assertEquals("22P02", failure.getSQLState());
+            }
+            assertRows(c, "SELECT count(*) FROM " + s + ".enum_values", List.of(List.of("4")));
+        });
+    }
+
+    @Test
+    void rangeValuesDistinguishBoundsEmptyAndSqlNull() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".range_values(id int, value int4range)");
+            execute(c, "INSERT INTO " + s + ".range_values VALUES(1,'[1,5)'),(2,'empty'),(3,NULL),(4,'(,5)')");
+            assertRows(c, "SELECT value::text,lower(value),upper(value),lower_inc(value),upper_inc(value),"
+                    + "value @> 1,value @> 5 FROM " + s + ".range_values WHERE id=1",
+                List.of(List.of("[1,5)", "1", "5", "t", "f", "t", "f")));
+            try (var statement = c.createStatement(); var rows = statement.executeQuery(
+                "SELECT value,isempty(value),lower_inf(value) FROM " + s + ".range_values ORDER BY id")) {
+                assertTrue(rows.next());
+                assertEquals("int4range", rows.getMetaData().getColumnTypeName(1));
+                assertNotNull(rows.getObject(1));
+                assertTrue(rows.next());
+                assertEquals("empty", rows.getString(1));
+                assertTrue(rows.getBoolean(2));
+                assertTrue(rows.next());
+                assertNull(rows.getObject(1));
+                assertTrue(rows.wasNull());
+                assertTrue(rows.next());
+                assertTrue(rows.getBoolean(3));
+                assertFalse(rows.next());
+            }
+        });
+    }
+
+    @Test
     void textArrayPreservesEscapesAndDistinguishesNullArrayFromEmptyArray() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".text_arrays(id int, value text[])");
