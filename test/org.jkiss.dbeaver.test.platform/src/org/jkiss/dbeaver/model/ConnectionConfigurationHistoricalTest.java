@@ -19,6 +19,8 @@ package org.jkiss.dbeaver.model;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPConnectionEventType;
 import org.jkiss.dbeaver.model.runtime.DBRShellCommand;
+import org.jkiss.dbeaver.model.net.DBWHandlerConfiguration;
+import org.jkiss.dbeaver.model.net.DBWHandlerDescriptor;
 import org.jkiss.junit.DBeaverUnitTest;
 import org.junit.jupiter.api.Test;
 
@@ -28,8 +30,44 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class ConnectionConfigurationHistoricalTest extends DBeaverUnitTest {
+    private DBWHandlerConfiguration handler(String id) {
+        var descriptor = mock(DBWHandlerDescriptor.class);
+        when(descriptor.getId()).thenReturn(id);
+        var handler = new DBWHandlerConfiguration(descriptor, null);
+        handler.setEnabled(true);
+        return handler;
+    }
+
+    @Test
+    void importedNetworkHandlersAreInstalledOnNewConfigurationWithoutListAliasing() {
+        var configuration = new DBPConnectionConfiguration();
+        var ssl = handler("postgre_ssl");
+        var input = new ArrayList<>(List.of(ssl));
+        configuration.setHandlers(input);
+        assertSame(ssl, configuration.getHandler("postgre_ssl"));
+        input.clear();
+        assertEquals(1, configuration.getHandlers().size());
+        assertTrue(configuration.getHandler("postgre_ssl").isEnabled());
+    }
+
+    @Test
+    void replacingNetworkHandlersAcceptsOwnListAndCanClearIt() {
+        var configuration = new DBPConnectionConfiguration();
+        var ssl = handler("postgre_ssl");
+        configuration.updateHandler(ssl);
+        configuration.setHandlers(configuration.getHandlers());
+        assertSame(ssl, configuration.getHandler("postgre_ssl"));
+        var ssh = handler("ssh_tunnel");
+        configuration.setHandlers(List.of(ssh));
+        assertNull(configuration.getHandler("postgre_ssl"));
+        assertSame(ssh, configuration.getHandler("ssh_tunnel"));
+        configuration.setHandlers(List.of());
+        assertTrue(configuration.getHandlers().isEmpty());
+    }
+
     @Test
     void copiedDriverAndProviderPropertiesDoNotMutateOriginal() {
         var original = new DBPConnectionConfiguration();

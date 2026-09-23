@@ -375,10 +375,7 @@ public class DBPConnectionConfiguration implements DBPObject {
     }
 
     public synchronized void setHandlers(@NotNull List<DBWHandlerConfiguration> handlers) {
-        if (this.handlers != null) {
-            this.handlers.clear();
-            this.handlers.addAll(handlers);
-        }
+        this.handlers = new ArrayList<>(handlers);
     }
 
     public synchronized void updateHandler(@NotNull DBWHandlerConfiguration handler) {
