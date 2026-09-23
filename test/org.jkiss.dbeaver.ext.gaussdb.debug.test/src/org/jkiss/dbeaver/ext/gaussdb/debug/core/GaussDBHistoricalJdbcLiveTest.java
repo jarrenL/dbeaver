@@ -603,6 +603,51 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void productionRoleModelReadsLiveCatalogWithServerVisibilityRules() throws Exception {
+        String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
+        assumeTrue(grantee != null, "Dedicated NOLOGIN role not configured; role catalog test not executed");
+        assertTrue(grantee.matches("dbv_hist_grantee_[a-z0-9_]+"));
+        inIsolatedSchema((connection, schema) -> {
+            var database = mock(PostgreDatabase.class);
+            var names = new java.util.HashSet<String>();
+            boolean currentRoleFound = false;
+            boolean canEnumerateOtherRoles = false;
+            try (var statement = connection.prepareStatement(
+                "SELECT r.*,rolname=current_user AS is_current,shobj_description(r.oid,'pg_authid') AS description "
+                    + "FROM pg_roles r WHERE rolname=current_user OR rolname=?")) {
+                statement.setString(1, grantee);
+                statement.setQueryTimeout(15);
+                try (var rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        var role = new org.jkiss.dbeaver.ext.postgresql.model.PostgreRole(database, rows);
+                        names.add(role.getName());
+                        if (rows.getBoolean("is_current")) {
+                            currentRoleFound = true;
+                            canEnumerateOtherRoles = rows.getBoolean("rolcreaterole") || rows.getBoolean("rolsystemadmin");
+                        }
+                        assertEquals(rows.getLong("oid"), role.getObjectId());
+                        assertTrue(role.isPersisted());
+                        assertEquals(rows.getBoolean("rolsuper"), role.isSuperUser());
+                        assertEquals(rows.getBoolean("rolinherit"), role.isInherit());
+                        assertEquals(rows.getBoolean("rolcreaterole"), role.isCreateRole());
+                        assertEquals(rows.getBoolean("rolcreatedb"), role.isCreateDatabase());
+                        assertEquals(rows.getBoolean("rolreplication"), role.isReplication());
+                        assertEquals(rows.getInt("rolconnlimit"), role.getConnLimit());
+                        assertEquals(!grantee.equals(role.getName()), role.isCanLogin());
+                        assertEquals(role.isCanLogin(), role.isUser());
+                        var expiry = rows.getTimestamp("rolvaliduntil");
+                        assertEquals(expiry == null ? null : expiry.toLocalDateTime(), role.getValidUntil());
+                    }
+                }
+            }
+            assertTrue(currentRoleFound);
+            // GaussDB pg_roles filters other roles unless CREATEROLE or SYSADMIN is set.
+            assertEquals(canEnumerateOtherRoles ? 2 : 1, names.size());
+            assertEquals(canEnumerateOtherRoles, names.contains(grantee));
+        });
+    }
+
+    @Test
     void productionDefaultPrivilegesApplyOnlyToFutureObjectsAndRevocationIsNotRetroactive() throws Exception {
         String grantee = System.getenv("GAUSSDB_HISTORY_GRANTEE_ROLE");
         assumeTrue(grantee != null, "Dedicated NOLOGIN grantee role not configured; default privilege test not executed");
