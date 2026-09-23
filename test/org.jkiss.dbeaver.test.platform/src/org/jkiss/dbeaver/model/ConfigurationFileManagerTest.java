@@ -19,6 +19,10 @@ package org.jkiss.dbeaver.model;
 import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
 import org.jkiss.dbeaver.model.app.DBPProject;
 import org.jkiss.dbeaver.registry.DataSourceConfigurationManagerNIO;
+import org.jkiss.dbeaver.registry.DataSourceConfigurationManager;
+import org.jkiss.dbeaver.registry.DataSourceRegistry;
+import org.jkiss.dbeaver.registry.DataSourceSerializerModern;
+import org.jkiss.dbeaver.model.impl.app.DefaultValueEncryptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,9 +30,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -153,5 +161,88 @@ class ConfigurationFileManagerTest {
         Files.writeString(invalidTarget.resolve("sentinel.txt"), "keep");
         assertThrows(IOException.class, () -> manager.writeConfiguration(CONFIG, bytes("new-data")));
         assertEquals("keep", Files.readString(invalidTarget.resolve("sentinel.txt")));
+    }
+
+    @Test
+    void subsequentSameDayWritesKeepFirstBackup() throws Exception {
+        manager.writeConfiguration(CONFIG, bytes("first"));
+        manager.writeConfiguration(CONFIG, bytes("second"));
+        manager.writeConfiguration(CONFIG, bytes("third"));
+        assertEquals("third", Files.readString(metadata.resolve(CONFIG)));
+        assertEquals("first", Files.readString(metadata.resolve("." + CONFIG + ".bak")));
+    }
+
+    @Test
+    void olderBackupIsReplacedWithContentBeforeCurrentWrite() throws Exception {
+        manager.writeConfiguration(CONFIG, bytes("first"));
+        manager.writeConfiguration(CONFIG, bytes("second"));
+        Path backup = metadata.resolve("." + CONFIG + ".bak");
+        Files.setLastModifiedTime(backup, FileTime.from(Instant.now().minus(2, ChronoUnit.DAYS)));
+        manager.writeConfiguration(CONFIG, bytes("third"));
+        assertEquals("second", Files.readString(backup));
+        assertEquals("third", Files.readString(metadata.resolve(CONFIG)));
+    }
+
+    @Test
+    void dotPrefixedFileUsesSingleLeadingDotForBackup() throws Exception {
+        String name = ".fixture-credentials";
+        manager.writeConfiguration(name, bytes("first"));
+        manager.writeConfiguration(name, bytes("second"));
+        assertEquals("first", Files.readString(metadata.resolve(name + ".bak")));
+        assertFalse(Files.exists(metadata.resolve("." + name + ".bak")));
+    }
+
+    @Test
+    void deletedConfigurationCanBeRestoredFromRetainedBackup() throws Exception {
+        manager.writeConfiguration(CONFIG, bytes("中文恢复数据"));
+        manager.writeConfiguration(CONFIG, null);
+        Path backup = metadata.resolve("." + CONFIG + ".bak");
+        byte[] retained = Files.readAllBytes(backup);
+        manager.writeConfiguration(CONFIG, retained);
+        assertArrayEquals(retained, read(CONFIG));
+        assertArrayEquals(retained, Files.readAllBytes(backup));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void productionSerializerWritesAndReadsRealFilesAndRetainsBackupOnRemoval(boolean encrypted) throws Exception {
+        var serializer = serializerWithFixtureKey();
+        String name = "fixture-credentials.json";
+        String content = "{\"user\":\"中文𠀀\",\"password\":\"synthetic-credential-only\"}";
+        var save = DataSourceSerializerModern.class.getDeclaredMethod("saveConfigFile",
+            DataSourceConfigurationManager.class, String.class, String.class, boolean.class);
+        save.setAccessible(true);
+        save.invoke(serializer, manager, name, content, encrypted);
+        byte[] stored = Files.readAllBytes(metadata.resolve(name));
+        if (encrypted) {
+            assertFalse(new String(stored, StandardCharsets.UTF_8).contains("synthetic-credential-only"));
+        } else {
+            assertArrayEquals(bytes(content), stored);
+        }
+        var load = DataSourceSerializerModern.class.getDeclaredMethod("loadConfigFile", InputStream.class, boolean.class);
+        load.setAccessible(true);
+        try (var stream = manager.readConfiguration(name, null)) {
+            assertEquals(content, load.invoke(serializerWithFixtureKey(), stream, encrypted));
+        }
+        save.invoke(serializer, manager, name, null, encrypted);
+        assertNull(read(name));
+        Path backup = metadata.resolve("." + name + ".bak");
+        assertArrayEquals(stored, Files.readAllBytes(backup));
+        try (var stream = Files.newInputStream(backup)) {
+            assertEquals(content, load.invoke(serializerWithFixtureKey(), stream, encrypted));
+        }
+    }
+
+    private DataSourceSerializerModern<?> serializerWithFixtureKey() throws Exception {
+        var serializer = mock(DataSourceSerializerModern.class);
+        var registry = mock(DataSourceRegistry.class);
+        var project = mock(DBPProject.class);
+        when(registry.getProject()).thenReturn(project);
+        when(project.getValueEncryptor()).thenReturn(new DefaultValueEncryptor(
+            DefaultValueEncryptor.makeSecretKeyFromPassword("synthetic-key-03")));
+        var field = DataSourceSerializerModern.class.getDeclaredField("registry");
+        field.setAccessible(true);
+        field.set(serializer, registry);
+        return serializer;
     }
 }
