@@ -32,3 +32,11 @@
 源码对应：NavigatorObjectsDeleter为对象分别建立ObjectSaver任务，TasksJob逐项执行并询问错误处理；并未在全部对象外包裹共同事务。本场景是在现有Auto连接配置下验证，不外推手工事务、其他驱动或编辑器保存路径。下一步需要独立评估同连接批量原子执行及跨连接选择的边界，不能承诺停止就能撤销。
 
 取证后按依赖顺序精准删除本轮测试视图、两张剩余表和空schema。未触及其他对象。
+
+### 命令上下文的第二层提交边界
+
+`AbstractCommandContext.executeCommands` 会在每个命令完成后提交；构造参数 `atomic` 的注释明确只约束界面反映时机。因此仅把多个删除任务合并到同一个上下文，仍不足以获得数据库原子性。
+
+新增 `CommandContextTransactionBoundaryTest.uiAtomicFlagStillCommitsFirstCommandBeforeSecondCommandFails` 调用实际执行方法：两个模拟命令中第二个抛异常，验证第一命令后已经commit、失败后只更新第一对象模型。这是现状特征测试，用于防止错误修复方案，**不是原子回滚通过的验收测试**。后续实现需同时处理任务聚合、单次提交/回滚、已有用户事务隔离、失败后模型恢复及跨连接拒绝。
+
+run-4bvThs确认上述特征测试通过；回归1545项、1522通过、23跳过、0失败/错误，报告test-results-command-boundary-20260924.json。原子回滚需求仍未通过，本轮未改生产事务行为。
