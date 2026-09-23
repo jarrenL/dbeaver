@@ -25,6 +25,95 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest {
     @Test
+    void serverWarningIsAvailableAndCanBeClearedWithoutClosingConnection() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE PROCEDURE " + s + ".warn_probe() AS BEGIN RAISE WARNING 'dbv_history_warning'; END;");
+            try (var statement = c.createStatement()) {
+                statement.setQueryTimeout(15);
+                statement.execute("CALL " + s + ".warn_probe()");
+                boolean found = false;
+                for (var warning = statement.getWarnings(); warning != null; warning = warning.getNextWarning()) {
+                    if (warning.getMessage().contains("dbv_history_warning")) {
+                        found = true;
+                        assertNotNull(warning.getSQLState());
+                    }
+                }
+                assertTrue(found, "Server warning must be exposed by Statement.getWarnings");
+                statement.clearWarnings();
+                assertNull(statement.getWarnings());
+                try (var result = statement.executeQuery("SELECT 9")) {
+                    assertTrue(result.next());
+                    assertEquals(9, result.getInt(1));
+                }
+            }
+        });
+    }
+
+    @Test
+    void resultMetadataRetainsAliasesPrecisionScaleAndColumnOrder() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer, amount numeric(18,4), label varchar(37))");
+            execute(c, "INSERT INTO " + s + ".t VALUES(1,123.4500,'中文')");
+            try (var statement = c.createStatement()) {
+                statement.setQueryTimeout(15);
+                try (var result = statement.executeQuery("SELECT amount AS \"金额\",label AS \"Display Label\",id FROM " + s + ".t")) {
+                    var metadata = result.getMetaData();
+                    assertEquals(3, metadata.getColumnCount());
+                    assertEquals("金额", metadata.getColumnLabel(1));
+                    assertEquals("Display Label", metadata.getColumnLabel(2));
+                    assertEquals("id", metadata.getColumnLabel(3));
+                    assertEquals(java.sql.Types.NUMERIC, metadata.getColumnType(1));
+                    assertEquals(18, metadata.getPrecision(1));
+                    assertEquals(4, metadata.getScale(1));
+                    assertEquals(37, metadata.getPrecision(2));
+                    assertTrue(result.next());
+                    assertEquals(new java.math.BigDecimal("123.4500"), result.getBigDecimal(1));
+                    assertEquals("中文", result.getString(2));
+                    assertEquals(1, result.getInt(3));
+                }
+            }
+        });
+    }
+
+    @Test
+    void closedStatementAndResultRejectUseButConnectionRemainsUsable() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            var statement = c.createStatement();
+            statement.setQueryTimeout(15);
+            var result = statement.executeQuery("SELECT 1");
+            try {
+                assertTrue(result.next());
+                result.close();
+                assertTrue(result.isClosed());
+                assertThrows(java.sql.SQLException.class, () -> result.getInt(1));
+                statement.close();
+                assertThrows(java.sql.SQLException.class, () -> statement.executeQuery("SELECT 2"));
+                assertFalse(c.isClosed());
+                assertTrue(c.isValid(5));
+                assertRows(c, "SELECT 3", List.of(List.of("3")));
+            } finally {
+                result.close();
+                statement.close();
+            }
+        });
+    }
+
+    @Test
+    void preparedDataContainingSqlDoesNotExecuteAsStatements() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer, value text)");
+            String payload = "'); DROP TABLE " + s + ".t; -- 中文\n\\quoted";
+            try (var insert = c.prepareStatement("INSERT INTO " + s + ".t VALUES(?,?)")) {
+                insert.setQueryTimeout(15);
+                insert.setInt(1, 1);
+                insert.setString(2, payload);
+                assertEquals(1, insert.executeUpdate());
+            }
+            assertRows(c, "SELECT id,value FROM " + s + ".t", List.of(List.of("1", payload)));
+        });
+    }
+
+    @Test
     void mergeUpdatesMatchesInsertsMissingRowsAndRollsBack() throws Exception {
         inIsolatedSchema((c, s) -> {
             execute(c, "CREATE TABLE " + s + ".target(id integer PRIMARY KEY, amount numeric(18,2)) DISTRIBUTE BY HASH(id)");
