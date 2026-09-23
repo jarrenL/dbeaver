@@ -51,7 +51,16 @@ class SQLTokenPredicateFactory extends TokenPredicateFactory {
 
         @Override
         public int getColumn() {
-            throw new UnsupportedOperationException();
+            int offset = Math.max(0, Math.min(pos, string.length()));
+            int lineStart = offset;
+            while (lineStart > 0) {
+                char previous = string.charAt(lineStart - 1);
+                if (previous == '\r' || previous == '\n') {
+                    break;
+                }
+                lineStart--;
+            }
+            return offset - lineStart;
         }
 
         @Override
