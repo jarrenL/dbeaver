@@ -489,7 +489,8 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
             "c.relnamespace",
             "x.attname"
         );
-        queryParams.setWhereClause("c.oid=x.attrelid");
+        queryParams.setWhereClause("c.oid=x.attrelid AND x.attnum > 0 AND NOT x.attisdropped "
+            + "AND c.relkind IN ('r','v','m','f','p')");
         if (objectsSearchParams.isSearchInComments()) {
             queryParams.setDescriptionClause("col_description(c.oid, x.attnum)");
         }

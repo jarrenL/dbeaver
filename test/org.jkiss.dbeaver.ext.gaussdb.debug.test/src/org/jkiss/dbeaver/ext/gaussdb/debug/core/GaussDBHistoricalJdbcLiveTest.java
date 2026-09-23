@@ -37,6 +37,35 @@ import static org.mockito.Mockito.*;
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
+    void productionColumnSearchExcludesSystemDroppedAndIndexAttributes() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer PRIMARY KEY, search_col text, obsolete integer)");
+            execute(c, "ALTER TABLE " + s + ".t DROP COLUMN obsolete");
+            execute(c, "COMMENT ON COLUMN " + s + ".t.search_col IS 'column_comment_token'");
+            var type = org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_TABLE_COLUMN;
+            var rows = searchObjects(c, s, "%", false, 100, false, type);
+            assertEquals(List.of("id", "search_col"), rows.stream().map(r -> r.getName()).sorted().toList());
+            assertEquals(List.of("search_col"), searchObjects(c, s, "%column_comment_token%", false, 100, true, type)
+                .stream().map(r -> r.getName()).toList());
+        });
+    }
+
+    @Test
+    void productionConstraintAndCompositeTypeSearchFindNamedCatalogObjects() throws Exception {
+        inIsolatedSchema((c, s) -> {
+            execute(c, "CREATE TABLE " + s + ".t(id integer CONSTRAINT search_pk PRIMARY KEY, amount integer "
+                + "CONSTRAINT search_positive CHECK(amount>0))");
+            var constraints = searchObjects(c, s, "search%", true, 10, false,
+                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_CONSTRAINT);
+            assertEquals(List.of("search_pk", "search_positive"), constraints.stream().map(r -> r.getName()).sorted().toList());
+            execute(c, "CREATE TYPE " + s + ".search_type AS (label text)");
+            var types = searchObjects(c, s, "%search_type%", false, 10, false,
+                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_DATA_TYPE);
+            assertEquals(List.of("search_type"), types.stream().map(r -> r.getName()).toList());
+        });
+    }
+
+    @Test
     void productionSearchKeepsSameNamedTablesInTheirRequestedSchema() throws Exception {
         inIsolatedSchema((c, s) -> inIsolatedSchema((other, otherSchema) -> {
             execute(c, "CREATE TABLE " + s + ".same_name(id integer)");
@@ -73,6 +102,14 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     /** Production search algorithm and SQL, with a thin mock JDBC interface bridge to the real driver. */
     private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchTables(
         Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments
+    ) throws Exception {
+        return searchObjects(c, schemaName, mask, caseSensitive, limit, comments,
+            org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_TABLE);
+    }
+
+    private static List<org.jkiss.dbeaver.model.struct.DBSObjectReference> searchObjects(
+        Connection c, String schemaName, String mask, boolean caseSensitive, int limit, boolean comments,
+        org.jkiss.dbeaver.model.struct.DBSObjectType objectType
     ) throws Exception {
         long schemaId;
         try (var lookup = c.prepareStatement("SELECT oid FROM pg_namespace WHERE nspname=?")) {
@@ -117,9 +154,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             return statement;
         });
         var params = new org.jkiss.dbeaver.model.struct.DBSStructureAssistant.ObjectsSearchParams(
-            new org.jkiss.dbeaver.model.struct.DBSObjectType[] {
-                org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_TABLE
-            }, mask);
+            new org.jkiss.dbeaver.model.struct.DBSObjectType[] {objectType}, mask);
         params.setParentObject(schema);
         params.setCaseSensitive(caseSensitive);
         params.setMaxResults(limit);

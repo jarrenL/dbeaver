@@ -127,6 +127,17 @@ class PostgreStructureSearchTest {
     }
 
     @Test
+    void columnQueryExcludesInternalCatalogAttributes() throws Exception {
+        var params = new DBSStructureAssistant.ObjectsSearchParams(
+            new DBSObjectType[] {RelationalObjectType.TYPE_TABLE_COLUMN}, "%");
+        params.setGlobalSearch(true);
+        assertTrue(assistant.findObjectsByMask(monitor, context, params).isEmpty());
+        verify(session).prepareStatement(argThat(sql -> sql.contains("x.attnum > 0")
+            && sql.contains("NOT x.attisdropped") && sql.contains("c.relkind IN ('r','v','m','f','p')")));
+        verify(statement).setString(1, "%");
+    }
+
+    @Test
     void missingSchemaIsSkippedWithoutPublishingAnUnresolvableReference() throws Exception {
         when(result.next()).thenReturn(true, false);
         when(result.getString("relkind")).thenReturn("r");
