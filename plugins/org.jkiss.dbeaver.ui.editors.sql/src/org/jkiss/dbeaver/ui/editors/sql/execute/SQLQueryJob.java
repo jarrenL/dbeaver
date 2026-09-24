@@ -613,6 +613,9 @@ public class SQLQueryJob extends DataSourceJob {
             if (SQLQueryRecoveryPolicy.mayReplay(execStatement)) {
                 DBExecUtils.tryExecuteRecover(session, session.getDataSource(), executor);
             } else {
+                // Result-set readers may wrap this job in another recovery loop.
+                // Blocking only the inner loop would still replay a write there.
+                DBExecUtils.preventAutomaticRecovery();
                 try {
                     executor.run(session);
                 } catch (InvocationTargetException e) {

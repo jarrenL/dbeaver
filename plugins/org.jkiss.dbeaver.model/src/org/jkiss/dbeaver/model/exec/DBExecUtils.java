@@ -91,6 +91,18 @@ public class DBExecUtils {
         boolean recoveryFailed;
     }
 
+    /**
+     * Prevent replay by any enclosing recovery loop on this thread. Call before
+     * an operation whose effects cannot safely be repeated. The restriction ends
+     * with the outermost tryExecuteRecover invocation, not with the inner call.
+     */
+    public static void preventAutomaticRecovery() {
+        RecoveryState state = recoveryStack.get();
+        if (state != null) {
+            state.recoveryFailed = true;
+        }
+    }
+
     @Nullable
     public static DBPDataSourceContainer getCurrentThreadContext() {
         return ACTIVE_CONTEXT.get();

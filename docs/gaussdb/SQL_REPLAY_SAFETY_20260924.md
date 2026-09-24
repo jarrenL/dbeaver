@@ -29,4 +29,14 @@ run-I3dSGg完整1601项，1578通过、23跳过、0失败错误。结果见test-
 
 ## 待完成
 
-更新专用GUI副本的model及ui.editors.sql插件，重跑同一INSERT，确认故障后不重试、没有残留数据并可显式恢复。SQL函数副作用、提交已成功但响应丢失、手动事务上下文恢复和其他语句类型仍需继续覆盖。当前不能标记写操作断连GUI已验收通过。
+### 首次GUI修复复验仍失败，发现外层重放
+
+1082–1087正常退出后更新model和ui.editors.sql至202609240158并重启。1088执行相同INSERT，确认active后终止专用会话；1089–1090依旧出现新会话中的相同INSERT，说明单独内层门控不足。1091取消后独立active/行数均0，已删除专用表和schema。
+
+进一步检查发现ResultSetJobDataRead用tryExecuteRecover包裹整个dataContainer.readData，内层SQLQueryJob即使不重试，外层仍会重试。新增DBExecUtils.preventAutomaticRecovery，在不允许重放的SQL执行前标记当前线程恢复链，外层看到该状态后不再恢复；最外层结束后原有finally清理ThreadLocal，防止影响后续独立请求。对纯SQL脚本无外层恢复的情况该调用无副作用。
+
+DBExecRecoveryBoundaryTest补3项：内层禁止后外层不调用错误分类/恢复；嵌套成功返回后后续取数失败仍不能重放；最外层结束或外部调用后不污染下一独立请求。首轮run-UAO3kx因测试私有接口无法被Mockito模拟报3个测试构造错误，已改为公开测试接口，不算产品红测。
+
+run-Rjg8sa完整回归1604项、1581通过、23跳过、0失败错误，新增3项恢复边界测试通过；安全结果test-results-sql-replay-boundary-20260924.json。
+
+仍需更新专用GUI副本的model及ui.editors.sql插件，重跑同一INSERT，确认故障后不重试、没有残留数据并可显式恢复。SQL函数副作用、提交已成功但响应丢失、手动事务上下文恢复和其他语句类型仍需继续覆盖。当前不能标记写操作断连GUI已验收通过。
