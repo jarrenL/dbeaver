@@ -260,29 +260,34 @@ public class NavigatorObjectsDeleter {
             return false;
         }
         final var owner = instance;
-        try {
-            UIUtils.runInProgressService(monitor -> {
+        // Workbench runnable contexts only mark the monitor canceled while JDBC I/O is blocked.
+        // AbstractJob additionally cancels the active DBRBlockingObject (the JDBC statement).
+        var job = new org.jkiss.dbeaver.model.runtime.AbstractJob(UINavigatorMessages.actions_navigator_atomic_delete_task) {
+            @Override
+            protected org.eclipse.core.runtime.IStatus run(DBRProgressMonitor monitor) {
                 try (var isolated = owner.openIsolatedContext(monitor, UINavigatorMessages.actions_navigator_atomic_delete_task, null)) {
                     var batch = new org.jkiss.dbeaver.ui.editors.SimpleCommandContext(isolated, true);
                     for (int i = 0; i < objects.size(); i++) {
                         if (monitor.isCanceled()) {
-                            return;
+                            return org.eclipse.core.runtime.Status.CANCEL_STATUS;
                         }
                         makers.get(i).deleteObject(batch, objects.get(i), options.get(i));
                     }
                     Map<String, Object> saveOptions = new HashMap<>(options.get(0));
                     saveOptions.put(DBECommandContext.OPTION_ATOMIC_TRANSACTION, true);
                     batch.saveChanges(monitor, saveOptions);
+                    return org.eclipse.core.runtime.Status.OK_STATUS;
                 } catch (DBException e) {
-                    throw new InvocationTargetException(e);
+                    // Do not offer per-object Skip/Retry for an atomic batch.
+                    var failure = new DBException(UINavigatorMessages.actions_navigator_atomic_delete_failed, e);
+                    UIUtils.asyncExec(() -> DBWorkbench.getPlatformUI().showError(
+                        UINavigatorMessages.actions_navigator_error_dialog_delete_object_title, failure.getMessage(), failure));
+                    return org.jkiss.dbeaver.utils.GeneralUtils.makeExceptionStatus(failure);
                 }
-            });
-        } catch (InvocationTargetException e) {
-            // No per-object Skip/Retry here: a failed batch is rolled back as a unit.
-            throw new DBException(UINavigatorMessages.actions_navigator_atomic_delete_failed, e.getTargetException());
-        } catch (InterruptedException ignored) {
-            // The command context rolls back when its monitor observes cancellation.
-        }
+            }
+        };
+        job.setUser(true);
+        job.schedule();
         return true;
     }
 
