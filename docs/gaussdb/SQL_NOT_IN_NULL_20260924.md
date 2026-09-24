@@ -28,11 +28,21 @@ SELECT (1 NOT IN (2,NULL)) IS NULL,
 
 两者均返回 `t|t|t|t|f`。只读，未创建对象。CAST 用于真库确定子查询类型，当前客户端专项测试覆盖直接 NULL，不将 CAST 推导算作已覆盖。
 
+## 麒麟 V10 x86_64 GUI 验证
+
+验收副本已加载 `model.sql 1.0.175.202609240508`。真实 SWT 编辑器输入 `SELECT 1 WHERE 1 NOT IN (2, NULL);` 后，队列 1261 读取到一条中文 WARNING，offset=17、length=16，准确覆盖 `NOT IN (2, NULL)`，提示保留“若实际返回 NULL”和“可能得到 UNKNOWN”的条件说明。
+
+修改为 `SELECT 1 WHERE 1 NOT IN (2, COALESCE(NULL, 3));` 后，1263 读取到 0 条语义标记，旧提示清除。这只验证该反例没有误报，不宣称实现了通用 COALESCE 类型或可空性推导。
+
+两份实际快照由 `verify-not-in-diagnostic-gui.mjs` 验证通过；验证器自身 6 项正反例通过，单独计数，不加入 JUnit 总数。读取的是编辑器已生成的标记，没有调用解析器制造标记。本轮只编辑，未在 GUI 执行 SQL。
+
+![NOT IN 中文界面中的源码标记](not-in-diagnostic-gui-20260924.png)
+
 ## 待补范围
 
 - 列元数据的 nullable、外连接引入 NULL、函数/CASE/CAST 等表达式可空性传播。
 - 有无 IS NOT NULL 条件、条件作用域及逻辑蕴含的消除分析。
-- 真实麒麟 GUI 的中文标记、范围及修改后清除；本轮尚未更新 GUI 验收副本。
+- 子查询投影及更多表达式的 GUI 验证、英文界面与鼠标悬停。
 - 更多方言与完整交付包验证。
 
 当前无提示仅表示未命中显式 NULL 规则，不保证 NOT IN 安全。不能用元数据列 NOT NULL 直接证明外连接或复合表达式的最终结果非空。
