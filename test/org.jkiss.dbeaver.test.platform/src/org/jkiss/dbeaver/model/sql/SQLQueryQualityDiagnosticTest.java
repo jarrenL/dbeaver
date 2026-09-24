@@ -31,6 +31,48 @@ import static org.mockito.Mockito.mock;
 class SQLQueryQualityDiagnosticTest {
     @ParameterizedTest
     @ValueSource(strings = {
+        "SELECT CASE WHEN a=1 THEN 1 WHEN a=1 THEN 2 END FROM t",
+        "SELECT CASE WHEN a = 1 THEN 1 WHEN a/*same*/=1 THEN 2 END FROM t",
+        "SELECT CASE a WHEN 1 THEN 'a' WHEN 1 THEN 'b' END FROM t",
+        "SELECT CASE a WHEN '中文' THEN 1 WHEN '中文' THEN 2 END FROM t",
+        "SELECT CASE WHEN random()>0 THEN 1 WHEN random()>0 THEN 2 END FROM t",
+        "SELECT CASE WHEN a=1 THEN CASE WHEN b=1 THEN 1 WHEN b=1 THEN 2 END ELSE 0 END FROM t"
+    })
+    void repeatedCaseConditionsProduceAdvisory(String sql) { check(sql, "CASE ", 1); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT CASE WHEN a=1 THEN 1 WHEN a=2 THEN 2 END FROM t",
+        "SELECT CASE a WHEN 'a' THEN 1 WHEN 'A' THEN 2 END FROM t",
+        "SELECT CASE WHEN a=1 THEN CASE WHEN a=1 THEN 1 ELSE 2 END ELSE 0 END FROM t",
+        "SELECT CASE a WHEN 1 THEN 1 END, CASE a WHEN 1 THEN 2 END FROM t",
+        "SELECT 'CASE WHEN a=1 THEN 1 WHEN a=1 THEN 2 END' FROM t",
+        "SELECT CASE WHEN a=1 THEN 1 /* WHEN a=1 THEN 2 */ ELSE 2 END FROM t"
+    })
+    void separateCasesAndDifferentConditionsDoNotCollide(String sql) { check(sql, "CASE ", 0); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT a FROM t WHERE a=a", "SELECT a FROM t WHERE a<>a",
+        "SELECT a FROM t WHERE a!=a", "SELECT a FROM t WHERE a<a",
+        "SELECT a FROM t WHERE a>a", "SELECT a FROM t WHERE a<=a",
+        "SELECT a FROM t WHERE a>=a", "SELECT a FROM t WHERE (a+1)=(a + 1)",
+        "SELECT a FROM t WHERE a/*same*/=a", "SELECT 1 WHERE random()=random()",
+        "SELECT a FROM t WHERE '中文'='中文'"
+    })
+    void identicalComparisonOperandsProduceAdvisory(String sql) { check(sql, "Comparison", 1); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT a FROM t WHERE a=b", "SELECT a FROM t WHERE t.a=s.a",
+        "SELECT a FROM t WHERE 'a'='A'", "SELECT a FROM t WHERE (a+1)=(a+2)",
+        "SELECT a FROM t WHERE \"a\"=\"A\"", "SELECT 'a=a' FROM t",
+        "SELECT a FROM t /* WHERE a=a */", "SELECT a FROM t WHERE a IS NULL"
+    })
+    void distinctOperandsAndQuotedTextDoNotTriggerComparisonRule(String sql) { check(sql, "Comparison", 0); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
         "SELECT a FROM t WHERE a LIKE '%tail'",
         "SELECT a FROM t WHERE a LIKE '_tail'",
         "SELECT a FROM t WHERE a ILIKE '%中文'",

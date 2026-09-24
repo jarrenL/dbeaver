@@ -1027,6 +1027,23 @@ public class SQLQueryModelRecognizer {
         pending.push(root);
         while (!pending.isEmpty()) {
             var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_simpleCase
+                || node.getNodeKindId() == SQLStandardParser.RULE_searchedCase) {
+                var conditions = new HashSet<String>();
+                for (int i = 0; i < node.getChildCount(); i++) {
+                    var clause = node.getChildNode(i);
+                    if (clause.getNodeKindId() == SQLStandardParser.RULE_simpleWhenClause
+                        || clause.getNodeKindId() == SQLStandardParser.RULE_searchedWhenClause) {
+                        var condition = clause.findFirstChildOfName("searchCondition");
+                        if (condition == null) {
+                            condition = clause.findFirstChildOfName("valueExpression");
+                        }
+                        if (condition != null && !condition.hasErrorChildren() && !conditions.add(condition.getText())) {
+                            this.recognitionContext.appendWarning(condition, ModelSQLMessages.model_sql_semantic_case_duplicate);
+                        }
+                    }
+                }
+            }
             if (node.getNodeKindId() == SQLStandardParser.RULE_likePredicate) {
                 var pattern = node.findFirstChildOfName("pattern");
                 var escape = node.findFirstChildOfName("escapeCharacter");
@@ -1057,6 +1074,11 @@ public class SQLQueryModelRecognizer {
                 var left = node.findFirstChildOfName("rowValueConstructor");
                 var right = comparison == null ? null : comparison.findFirstChildOfName("rowValueConstructor");
                 var operator = comparison == null ? null : comparison.findFirstChildOfName("compOp");
+                if (left != null && right != null && operator != null
+                    && Set.of("=", "<>", "!=", "<", ">", "<=", ">=").contains(operator.getText())
+                    && !left.hasErrorChildren() && !right.hasErrorChildren() && left.getText().equals(right.getText())) {
+                    this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_comparison_duplicate);
+                }
                 if (left != null && right != null && operator != null
                     && Set.of("=", "<>", "!=", "<", ">", "<=", ">=").contains(operator.getText())
                     && (isNullLiteral(left) || isNullLiteral(right))) {
