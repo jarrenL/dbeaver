@@ -102,7 +102,11 @@ public class PostgreTablespace extends PostgreInformation implements PostgreScri
     @Override
     public String getObjectDefinitionText(@NotNull DBRProgressMonitor monitor, @NotNull Map<String, Object> options) throws DBException {
         StringBuilder sb = new StringBuilder("CREATE TABLESPACE ");
-        sb.append(DBUtils.getQuotedIdentifier(this)).append(" OWNER ").append(DBUtils.getQuotedIdentifier(getOwner(monitor)));
+        sb.append(DBUtils.getQuotedIdentifier(this));
+        PostgreRole owner = getOwner(monitor);
+        if (owner != null) {
+            sb.append(" OWNER ").append(DBUtils.getQuotedIdentifier(owner));
+        }
         if (CommonUtils.isNotEmpty(getLoc())) {
             sb.append(" LOCATION ").append(SQLUtils.quoteString(this, getLoc()));
         }

@@ -61,6 +61,15 @@ class GaussDBTablespaceContractTest {
     }
 
     @Test
+    void unresolvedOwnerOmitsOptionalClauseInsteadOfCrashingPreview() throws Exception {
+        var tablespace = model();
+        when(tablespace.getDatabase().getRoleById(any(), eq(42L))).thenReturn(null);
+        tablespace.setLoc("/data/preview");
+        assertEquals("CREATE TABLESPACE \"space\"\"name\" LOCATION '/data/preview'",
+            tablespace.getObjectDefinitionText(new VoidProgressMonitor(), Map.of()));
+    }
+
+    @Test
     void createManagerKeepsDefinitionErrorsInsteadOfReturningSuccessfulEmptyActions() throws Exception {
         var tablespace = mock(PostgreTablespace.class);
         var failure = new DBException("Synthetic owner lookup failure");
