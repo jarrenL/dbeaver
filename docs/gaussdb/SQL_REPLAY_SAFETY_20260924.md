@@ -39,4 +39,13 @@ DBExecRecoveryBoundaryTest补3项：内层禁止后外层不调用错误分类/�
 
 run-Rjg8sa完整回归1604项、1581通过、23跳过、0失败错误，新增3项恢复边界测试通过；安全结果test-results-sql-replay-boundary-20260924.json。
 
-仍需更新专用GUI副本的model及ui.editors.sql插件，重跑同一INSERT，确认故障后不重试、没有残留数据并可显式恢复。SQL函数副作用、提交已成功但响应丢失、手动事务上下文恢复和其他语句类型仍需继续覆盖。当前不能标记写操作断连GUI已验收通过。
+### 外层保护修复后的GUI复验通过
+
+1092–1097正常退出、更新model和ui.editors.sql至202609240207并重启；重建独立空表。1098执行相同INSERT SELECT pg_sleep，服务端确认active及query_start=02:12:04.328829，再按pid/库/账号/application/唯一SQL标记终止目标连接。
+
+- 1099–1100：活动测试INSERT计数0、表计数0；执行日志记录该INSERT失败，源码旁错误面板可见57P01及FATAL terminating connection due to administrator command，没有重新出现等待查询。
+- 1101–1102：同一SQL编辑器执行新的中文SELECT，成功1行，文本结果实际为恢复验证中文/42；再次独立核对原INSERT active及表计数仍为0。
+- 1103–1105：显式提交新的INSERT VALUES(9)，GUI执行日志成功、更新1行；独立SELECT仅返回9，证明后续独立写操作可用，没有错误地重放原值7。
+- 删除专用表/schema并确认schema目录计数0。只清理本轮专用对象，无业务对象变化。
+
+本次INSERT在执行中断连后不自动重放、无残留数据、后续读写可恢复的GUI场景通过。它不涵盖提交已经成功但响应丢失，也不能推广为所有SQL恰好执行一次。SQL函数副作用、手动事务上下文恢复和其他语句类型仍需继续覆盖。
