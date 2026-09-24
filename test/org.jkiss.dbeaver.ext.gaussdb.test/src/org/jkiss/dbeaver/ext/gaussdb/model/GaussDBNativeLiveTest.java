@@ -156,8 +156,25 @@ class GaussDBNativeLiveTest {
                         assertEquals(1, insert.executeUpdate());
                     }
                     exec(c, "INSERT INTO review_native.payload VALUES(2,NULL,NULL,NULL,NULL,NULL,NULL)");
-                    // Generate a genuinely empty bytea on the server, independent of JDBC's empty-string binding semantics.
-                    exec(c, "INSERT INTO review_native.payload(id,raw_bytes) VALUES(3,substring(decode('00','hex') from 1 for 0))");
+                    // Exercise the production GaussDB binding, not a server-side fixture workaround.
+                    try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload(id,raw_bytes) VALUES(3,?)")) {
+                        var jdbc = (org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
+                            getClass().getClassLoader(), new Class<?>[]{org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class},
+                            (proxy, method, args) -> {
+                                try { return PreparedStatement.class.getMethod(method.getName(), method.getParameterTypes()).invoke(insert, args); }
+                                catch (java.lang.reflect.InvocationTargetException e) { throw e.getCause(); }
+                            });
+                        var type = mock(org.jkiss.dbeaver.model.struct.DBSTypedObject.class);
+                        when(type.getTypeName()).thenReturn("bytea");
+                        when(type.getTypeID()).thenReturn(Types.BINARY);
+                        var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+                        var handler = new org.jkiss.dbeaver.ext.gaussdb.model.data.GaussDBValueHandlerProvider()
+                            .getValueHandler(source, mock(org.jkiss.dbeaver.model.data.DBDFormatSettings.class), type);
+                        assertNotNull(handler);
+                        handler.bindValueObject(session, jdbc, type, 0, new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBytes(
+                            mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), new byte[0]));
+                        assertEquals(1, insert.executeUpdate());
+                    }
                     try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload(id,raw_bytes) VALUES(?,?)")) {
                         insert.setInt(1, 4);
                         insert.setBytes(2, largeBinaryPayload());

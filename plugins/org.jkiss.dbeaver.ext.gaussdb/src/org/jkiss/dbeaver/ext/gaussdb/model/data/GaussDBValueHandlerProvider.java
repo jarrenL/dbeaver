@@ -40,6 +40,7 @@ public class GaussDBValueHandlerProvider extends PostgreValueHandlerProvider {
         String typeName = typedObject.getTypeName();
         if (typeName != null) {
             return switch (typeName.toLowerCase(Locale.ENGLISH)) {
+                case "bytea" -> GaussDBBinaryValueHandler.INSTANCE;
                 case "floatvector" -> GaussDBVectorValueHandler.FLOAT_VECTOR;
                 case "boolvector" -> GaussDBVectorValueHandler.BOOL_VECTOR;
                 case "hll", "hll_hashval" -> GaussDBHllValueHandler.INSTANCE;
