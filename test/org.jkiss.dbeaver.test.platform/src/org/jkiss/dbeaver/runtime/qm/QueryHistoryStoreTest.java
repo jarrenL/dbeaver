@@ -33,7 +33,7 @@ class QueryHistoryStoreTest {
 
     private QueryHistoryStore.Entry entry(long time, String sql) {
         return new QueryHistoryStore.Entry(UUID.randomUUID(), "project", "connection", "验收连接", "gaussdb",
-            sql, "USER", "模式", "database", time, time + 10, 42, 0, null);
+            sql, "USER", "模式", "database", time, time + 10, 42, 0, null, -1, 0, 0, false, "Project", "SQL");
     }
 
     @Test
@@ -90,7 +90,7 @@ class QueryHistoryStoreTest {
     void malformedAndUnknownFormatsAreNotSilentlyOverwritten() throws Exception {
         var file = directory.resolve("history.json");
         for (String damaged : List.of("{broken", "null", "{}", "{\"version\":999,\"entries\":[]}",
-            "{\"version\":1,\"entries\":[null]}")) {
+            "{\"version\":2,\"entries\":[null]}")) {
             Files.writeString(file, damaged);
             assertThrows(IOException.class, () -> new QueryHistoryStore(file, 10));
             assertEquals(damaged, Files.readString(file));
@@ -139,7 +139,7 @@ class QueryHistoryStoreTest {
         var success = entry(100, "SELECT 1");
         var failed = new QueryHistoryStore.Entry(UUID.randomUUID(), "other-project", "other-connection",
             "其他连接", "postgresql", "SELECT missing", "USER", null, null,
-            200, 220, -1, 42, "找不到对象\n详细信息");
+            200, 220, -1, 42, "找不到对象\n详细信息", -1, 0, 0, true, "Other project", "SQL");
         store.put(success);
         store.put(failed);
         var restarted = new QueryHistoryStore(file, 10);

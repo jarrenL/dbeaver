@@ -40,7 +40,7 @@ import java.util.UUID;
  * One instance owns one workspace file; this is not a cross-process database.
  */
 public final class QueryHistoryStore {
-    private static final int FORMAT_VERSION = 1;
+    private static final int FORMAT_VERSION = 2;
     private static final long MAX_BYTES = 16 * 1024 * 1024;
     private static final Gson GSON = new Gson();
     private final Path file;
@@ -51,7 +51,9 @@ public final class QueryHistoryStore {
         @NotNull UUID id, @NotNull String projectId, @NotNull String dataSourceId,
         @NotNull String dataSourceName, @NotNull String driverId, @NotNull String sql,
         @NotNull String purpose, @Nullable String schema, @Nullable String catalog,
-        long startTime, long endTime, long rowCount, int errorCode, @Nullable String errorMessage
+        long startTime, long endTime, long rowCount, int errorCode, @Nullable String errorMessage,
+        long updateRowCount, long fetchBeginTime, long fetchEndTime, boolean transactional,
+        @Nullable String projectName, @Nullable String contextName
     ) {
     }
 
