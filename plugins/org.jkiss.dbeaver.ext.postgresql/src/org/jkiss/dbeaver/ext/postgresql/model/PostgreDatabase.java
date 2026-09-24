@@ -1229,11 +1229,8 @@ public class PostgreDatabase extends JDBCRemoteInstance
             return new PostgreTablespace(owner, dbResult);
         }
 
-        @Override
-        protected boolean handleCacheReadError(@NotNull Exception error) {
-            log.debug("Error reading tablespaces", error);
-            return true;
-        }
+        // Use the default error propagation. Treating a failed metadata read as
+        // success publishes an empty cache and bypasses connection recovery.
     }
 
     static class AvailableExtensionCache extends PostgreDatabaseJDBCObjectCache<PostgreAvailableExtension> {
