@@ -37,7 +37,11 @@ class SQLNullComparisonDiagnosticTest {
         "SELECT '😀🧪' WHERE 1 = NULL",
         "/* 😀 */ SELECT 1 WHERE 1 = NULL",
         "-- 😀\r\nSELECT 1 WHERE 1 = NULL",
-        "SELECT 'é😀' WHERE 1 = NULL"
+        "SELECT 'é😀' WHERE 1 = NULL",
+        "SELECT \"名称😀\" FROM t WHERE 1 = NULL",
+        "SELECT \"😀\" FROM \"表🧪\" WHERE 1 = NULL",
+        "SELECT 'quote''😀' WHERE 1 = NULL",
+        "SELECT '𠀀' WHERE 1 = NULL"
     })
     void diagnosticRangeUsesJavaDocumentOffsets(String sql) {
         var warnings = warnings(sql);
