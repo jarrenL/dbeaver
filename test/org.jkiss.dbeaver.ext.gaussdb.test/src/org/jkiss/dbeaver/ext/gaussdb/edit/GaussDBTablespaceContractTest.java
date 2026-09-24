@@ -12,6 +12,7 @@ import org.jkiss.dbeaver.ext.postgresql.edit.PostgreTablespaceManager;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreRole;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTablespace;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreServerExtension;
 import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
@@ -22,6 +23,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -78,7 +81,66 @@ class GaussDBTablespaceContractTest {
             actions.get(0).getScript());
     }
 
+    @Test
+    void catalogMetadataKeepsIdentityOwnerLocationAndOptions() throws Exception {
+        var database = model().getDatabase();
+        var server = mock(PostgreServerExtension.class);
+        when(database.getDataSource().getServerType()).thenReturn(server);
+        when(server.supportsTablespaceLocation()).thenReturn(true);
+        var rows = mock(ResultSet.class);
+        when(rows.getLong("oid")).thenReturn(101L);
+        when(rows.getLong("spcowner")).thenReturn(42L);
+        when(rows.getString("spcname")).thenReturn("catalog_space");
+        when(rows.getString("loc")).thenReturn("/data/catalog_space");
+        var tablespace = new PostgreTablespace(database, rows);
+        assertEquals(101L, tablespace.getObjectId());
+        assertEquals("catalog_space", tablespace.getName());
+        assertEquals("owner name", tablespace.getOwner(new VoidProgressMonitor()).getName());
+        assertEquals("/data/catalog_space", tablespace.getLoc());
+        assertEquals("", tablespace.getOptions());
+    }
+
+    @Test
+    void unsupportedLocationDoesNotReadMissingColumn() throws Exception {
+        var database = model().getDatabase();
+        var server = mock(PostgreServerExtension.class);
+        when(database.getDataSource().getServerType()).thenReturn(server);
+        var rows = mock(ResultSet.class);
+        when(rows.getString("loc")).thenThrow(new SQLException("Missing optional column"));
+        assertNull(new PostgreTablespace(database, rows).getLoc());
+        verify(rows, never()).getString("loc");
+    }
+
+    @Test
+    void catalogOwnerLookupFailureIsNotHidden() throws Exception {
+        var tablespace = model();
+        var failure = new DBException("Role metadata unavailable");
+        when(tablespace.getDatabase().getRoleById(any(), eq(42L))).thenThrow(failure);
+        assertSame(failure, assertThrows(DBException.class,
+            () -> tablespace.getObjectDefinitionText(new VoidProgressMonitor(), Map.of())));
+    }
+
+    @Test
+    void optionsArePreservedInDefinition() throws Exception {
+        var tablespace = model();
+        tablespace.setOptions("random_page_cost=2,seq_page_cost=1");
+        assertTrue(tablespace.getObjectDefinitionText(new VoidProgressMonitor(), Map.of())
+            .endsWith("\nWITH (random_page_cost=2,seq_page_cost=1)"));
+    }
+
+    @Test
+    void dropManagerQuotesIdentifierWithoutCascade() throws Exception {
+        var actions = new ArrayList<DBEPersistAction>();
+        new Manager().drop(model(), actions);
+        assertEquals(1, actions.size());
+        assertEquals("DROP TABLESPACE \"space\"\"name\"", actions.get(0).getScript());
+    }
+
     private static class Manager extends PostgreTablespaceManager {
+        void drop(PostgreTablespace tablespace, List<DBEPersistAction> actions) {
+            var command = new ObjectDeleteCommand(tablespace, "Drop fixture tablespace");
+            addObjectDeleteActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
+        }
         void create(PostgreTablespace tablespace, List<DBEPersistAction> actions) throws DBException {
             var command = mock(ObjectCreateCommand.class);
             when(command.getObject()).thenReturn(tablespace);
