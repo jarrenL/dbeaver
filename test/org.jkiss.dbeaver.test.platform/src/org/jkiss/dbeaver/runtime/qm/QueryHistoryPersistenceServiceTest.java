@@ -116,4 +116,69 @@ class QueryHistoryPersistenceServiceTest {
         assertTrue(new QueryHistoryStore(file, 2000).getEntries().isEmpty());
         service.dispose();
     }
+
+    private QMRegistryImpl registry(QueryHistoryPersistenceService service, List<QMMetaEvent> pending) throws Exception {
+        var collector = mock(QMMCollectorImpl.class, CALLS_REAL_METHODS);
+        setField(collector, QMMCollectorImpl.class, "eventPool", new java.util.ArrayList<>(pending));
+        setField(collector, QMMCollectorImpl.class, "pastEvents", new java.util.ArrayList<>());
+        setField(collector, QMMCollectorImpl.class, "dispatchingEvents", List.of());
+        setField(collector, QMMCollectorImpl.class, "historySync", new Object());
+        setField(collector, QMMCollectorImpl.class, "listeners", new java.util.ArrayList<>(List.of(service)));
+        // Do not start or wait for Eclipse jobs; snapshot and listener removal remain production code.
+        doNothing().when(collector).dispose();
+        var registry = mock(QMRegistryImpl.class, CALLS_REAL_METHODS);
+        setField(registry, QMRegistryImpl.class, "metaHandler", collector);
+        setField(registry, QMRegistryImpl.class, "historyPersistence", service);
+        setField(registry, QMRegistryImpl.class, "handlers", new java.util.ArrayList<>(List.of(collector)));
+        return registry;
+    }
+
+    private void setField(Object target, Class<?> type, String name, Object value) throws Exception {
+        var field = type.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    @Test
+    void registryShutdownPersistsCompletedEventBeforeNormalDispatch() throws Exception {
+        var preferences = preferences(true);
+        var file = directory.resolve("history.json");
+        var service = new QueryHistoryPersistenceService(preferences, file, e -> true);
+        var completed = event(System.currentTimeMillis() + 1, "SELECT '退出前完成'");
+        var registry = registry(service, List.of(completed));
+        assertFalse(Files.exists(file));
+        registry.dispose();
+        var entries = new QueryHistoryStore(file, 2000).getEntries();
+        assertEquals(1, entries.size());
+        assertEquals("SELECT '退出前完成'", entries.getFirst().sql());
+        verify(preferences).removePropertyChangeListener(service);
+        registry.dispose(); // repeated disposal must not rewrite or duplicate saved events
+        assertEquals(entries, new QueryHistoryStore(file, 2000).getEntries());
+    }
+
+    @Test
+    void registryShutdownDoesNotPersistActiveOrDeletedEventsOrLateCallbacks() throws Exception {
+        var preferences = preferences(true);
+        var file = directory.resolve("history.json");
+        var service = new QueryHistoryPersistenceService(preferences, file, e -> true);
+        var running = event(System.currentTimeMillis() + 1, "still running");
+        running.getObject().setCloseTime(0);
+        var deleted = event(System.currentTimeMillis() + 1, "removed");
+        deleted.getObject().deleteFromHistory();
+        registry(service, List.of(running, deleted)).dispose();
+        assertFalse(Files.exists(file));
+        running.getObject().setCloseTime(System.currentTimeMillis() + 2);
+        service.metaInfoChanged(new VoidProgressMonitor(), List.of(running));
+        assertFalse(Files.exists(file));
+    }
+
+    @Test
+    void registryShutdownRespectsDisabledPersistence() throws Exception {
+        var preferences = preferences(false);
+        var file = directory.resolve("history.json");
+        var service = new QueryHistoryPersistenceService(preferences, file, e -> true);
+        registry(service, List.of(event(System.currentTimeMillis() + 1, "not enabled"))).dispose();
+        assertFalse(Files.exists(file));
+        verify(preferences).removePropertyChangeListener(service);
+    }
 }
