@@ -199,10 +199,19 @@ public class QMRegistryImpl implements QMRegistry {
             Collections.reverse(pastEvents);
             var criteria = cursorFilter.getCriteria();
             var filter = cursorFilter.getFilter();
-            if (criteria.getObjectTypes() != null || criteria.getQueryTypes() != null || filter != null) {
+            if (criteria.getObjectTypes() != null || criteria.getQueryTypes() != null
+                || filter != null || criteria.isSkipEmptyQueries()) {
                 // Filter by query type and object type
                 for (Iterator<QMMetaEvent> iter = pastEvents.iterator(); iter.hasNext(); ) {
                     QMMetaEvent event = iter.next();
+                    // Empty execution text is not a useful query history entry. Do not
+                    // apply this to connection/transaction events, which may have no SQL.
+                    if (criteria.isSkipEmptyQueries()
+                        && event.getObject() instanceof QMMStatementExecuteInfo
+                        && (event.getObject().getText() == null || event.getObject().getText().isBlank())) {
+                        iter.remove();
+                        continue;
+                    }
                     if (criteria.getObjectTypes() != null) {
                         if (!matchesObjectType(event.getObject(), criteria.getObjectTypes())) {
                             iter.remove();

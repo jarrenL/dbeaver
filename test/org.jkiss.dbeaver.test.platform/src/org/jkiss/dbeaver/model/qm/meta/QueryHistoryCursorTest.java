@@ -92,6 +92,40 @@ class QueryHistoryCursorTest {
     }
 
     @Test
+    void skipEmptyQueriesExcludesNullEmptyAndWhitespaceWithoutChangingRealSql() throws Exception {
+        var sql = event(" SELECT '  ' -- 保留字符串空白", DBCExecutionPurpose.USER);
+        var criteria = new QMEventCriteria();
+        criteria.setObjectTypes(null);
+        criteria.setQueryTypes(null);
+        criteria.setSkipEmptyQueries(true);
+        var events = List.of(event(null, DBCExecutionPurpose.USER), event("", DBCExecutionPurpose.USER),
+            event(" \t\r\n", DBCExecutionPurpose.USER), sql);
+        try (var cursor = browser(events).getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+            assertEquals(1, cursor.getTotalSize());
+            assertSame(sql.getObject(), cursor.nextEvent(monitor).getObject());
+            assertEquals(" SELECT '  ' -- 保留字符串空白", sql.getObject().getText());
+        }
+    }
+
+    @Test
+    void emptyQueryFilterIsOptInAndDoesNotRemoveConnectionEvents() throws Exception {
+        var empty = event("", DBCExecutionPurpose.USER);
+        var connection = new QMMetaEvent(mock(QMMConnectionInfo.class), QMEventAction.END, 0, "fixture");
+        var criteria = new QMEventCriteria();
+        criteria.setObjectTypes(null);
+        criteria.setQueryTypes(null);
+        var browser = browser(List.of(empty, connection));
+        try (var cursor = browser.getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+            assertEquals(2, cursor.getTotalSize());
+        }
+        criteria.setSkipEmptyQueries(true);
+        try (var cursor = browser.getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+            assertEquals(1, cursor.getTotalSize());
+            assertSame(connection.getObject(), cursor.nextEvent(monitor).getObject());
+        }
+    }
+
+    @Test
     void scrollingForwardAndBackwardChangesNextEvent() throws Exception {
         var first = event("first", DBCExecutionPurpose.USER);
         var second = event("second", DBCExecutionPurpose.USER);
