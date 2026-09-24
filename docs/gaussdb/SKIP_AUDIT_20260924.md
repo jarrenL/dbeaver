@@ -4,6 +4,8 @@
 
 ## 最新复跑：23 项跳过降为 17 项
 
+后续启用单库原生导出恢复后，`run-myQeSn` 当前为 1,870 项、1,854 通过、16 跳过、0 失败错误。下面“原生工具可选配置”2项现仅剩空集群 dumpall 1项；单库备份恢复新增二进制/布尔/NULL数据断言也通过，详见 NATIVE_RESTORE_PAYLOAD_20260924.md。其余分类不变。
+
 最新常规回归曾有 23 项跳过，其中包编译及调试会话 6 项未传入可选配置，而非没有可用环境。重新启用 `GAUSSDB_REVIEW_CONNECTION`（指向明确隔离的集中式测试库）和 `GAUSSDB_REVIEW_JDBC`，并保留 `GAUSSDB_HISTORY_ALLOW_DDL=YES`。
 
 第一次 `run-RNo0TX`：包编译两项及会话三项通过，真实断点测试报服务端调试权限不足；这是失败，不算通过。确认专用测试账号无 `gs_role_pldebugger` 成员关系后，仅临时授予该角色（不授 SYSADMIN），通过 EXIT 清理撤销，再次执行完整回归。

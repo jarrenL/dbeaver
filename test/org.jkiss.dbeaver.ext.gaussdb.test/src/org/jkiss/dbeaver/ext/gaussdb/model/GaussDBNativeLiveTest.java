@@ -56,17 +56,27 @@ class GaussDBNativeLiveTest {
 
     private static void verifyPayload(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement();
-             ResultSet rows = statement.executeQuery("SELECT id,label,amount,occurred FROM review_native.payload ORDER BY id")) {
+             ResultSet rows = statement.executeQuery("SELECT id,label,amount,occurred,raw_bytes,enabled,disabled FROM review_native.payload ORDER BY id")) {
             assertTrue(rows.next());
             assertEquals(1, rows.getInt(1));
             assertEquals("中文'引号\\反斜杠\n第二行\t制表", rows.getString(2));
             assertEquals(new java.math.BigDecimal("12345678901234567890.123456789"), rows.getBigDecimal(3));
             assertEquals(Timestamp.valueOf("2024-02-29 12:34:56.001234"), rows.getTimestamp(4));
+            assertArrayEquals(new byte[]{0, 1, 127, (byte) 128, (byte) 255}, rows.getBytes(5));
+            assertTrue(rows.getBoolean(6));
+            assertFalse(rows.wasNull());
+            assertFalse(rows.getBoolean(7));
+            assertFalse(rows.wasNull());
             assertTrue(rows.next());
             assertEquals(2, rows.getInt(1));
             assertNull(rows.getString(2));
             assertNull(rows.getBigDecimal(3));
             assertNull(rows.getTimestamp(4));
+            assertNull(rows.getBytes(5));
+            assertFalse(rows.getBoolean(6));
+            assertTrue(rows.wasNull(), "SQL NULL must not become boolean false during restore");
+            assertFalse(rows.getBoolean(7));
+            assertTrue(rows.wasNull());
             assertFalse(rows.next());
         }
     }
@@ -115,15 +125,19 @@ class GaussDBNativeLiveTest {
                 try {
                     exec(c, "CREATE TABLE review_native.rows_to_restore(n integer)");
                     exec(c, "INSERT INTO review_native.rows_to_restore VALUES(1),(2),(3)");
-                    exec(c, "CREATE TABLE review_native.payload(id integer PRIMARY KEY,label text,amount numeric(38,9),occurred timestamp(6))");
-                    try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload VALUES(?,?,?,?)")) {
+                    exec(c, "CREATE TABLE review_native.payload(id integer PRIMARY KEY,label text,amount numeric(38,9),"
+                        + "occurred timestamp(6),raw_bytes bytea,enabled boolean,disabled boolean)");
+                    try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload VALUES(?,?,?,?,?,?,?)")) {
                         insert.setInt(1, 1);
                         insert.setString(2, "中文'引号\\反斜杠\n第二行\t制表");
                         insert.setBigDecimal(3, new java.math.BigDecimal("12345678901234567890.123456789"));
                         insert.setTimestamp(4, Timestamp.valueOf("2024-02-29 12:34:56.001234"));
+                        insert.setBytes(5, new byte[]{0, 1, 127, (byte) 128, (byte) 255});
+                        insert.setBoolean(6, true);
+                        insert.setBoolean(7, false);
                         assertEquals(1, insert.executeUpdate());
                     }
-                    exec(c, "INSERT INTO review_native.payload VALUES(2,NULL,NULL,NULL)");
+                    exec(c, "INSERT INTO review_native.payload VALUES(2,NULL,NULL,NULL,NULL,NULL,NULL)");
                     var backup = new ProcessBuilder(tool("gs_dump", database, user, "-n", "review_native", "-f", remote))
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD);
                     run(backup, errors, settings);
