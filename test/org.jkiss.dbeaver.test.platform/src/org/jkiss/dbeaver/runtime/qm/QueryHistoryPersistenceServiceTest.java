@@ -181,4 +181,21 @@ class QueryHistoryPersistenceServiceTest {
         assertFalse(Files.exists(file));
         verify(preferences).removePropertyChangeListener(service);
     }
+
+    @Test
+    void disposedServiceCannotBeReenabledByAlreadyQueuedPreferenceNotification() throws Exception {
+        var preferences = preferences(false);
+        var file = directory.resolve("history.json");
+        var service = new QueryHistoryPersistenceService(preferences, file, e -> true);
+        service.dispose();
+        when(preferences.getBoolean(QMConstants.PROP_STORE_HISTORY)).thenReturn(true);
+        service.preferenceChange(new DBPPreferenceListener.PreferenceChangeEvent(preferences,
+            QMConstants.PROP_STORE_HISTORY, false, true));
+        service.metaInfoChanged(new VoidProgressMonitor(),
+            List.of(event(System.currentTimeMillis() + 1, "SELECT 'late after close'")));
+        assertTrue(service.getEvents().isEmpty());
+        assertFalse(Files.exists(file));
+        service.dispose();
+        verify(preferences, times(1)).removePropertyChangeListener(service);
+    }
 }

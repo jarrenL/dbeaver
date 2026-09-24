@@ -18,6 +18,8 @@
 
 ## 本轮验证
 
+晚到首选项通知补验：`disposedServiceCannotBeReenabledByAlreadyQueuedPreferenceNotification` 在 `run-YRdCCp` 先复现关闭后的服务被开启通知重新激活，记录新的查询。新增终态保护后，晚到通知被忽略、重复关闭仅移除一次监听器。完整回归 `run-LAvxxH`：1666 项，1643 通过、23 跳过、0 失败/错误，见 `history-dispose-guard-results-20260924.json`。这是确定回调顺序测试；尚未将该终态保护安装至 GUI 验收副本，不声称实际并发队列压力测试通过。
+
 2026-09-24 退出边界补验：`QueryHistoryPersistenceServiceTest` 新增三项，通过生产 `QMRegistryImpl.dispose()`、collector 快照和真实临时文件验证待分发已完成查询落盘、重复关闭不重复记录、活动/已删除查询及关闭后的晚到回调不写入、未开启持久化时不建文件。collector 后台任务销毁被替换，不启动 Eclipse 后台线程；这是确定时序的组件测试，不代表强杀、断电或 GUI 极短退出窗口已验证。完整回归 `run-6byozE`：1665 项，1642 通过、23 跳过、0 失败/错误；机器可读结果见 `history-shutdown-results-20260924.json`。
 
 - 运行时服务：显式开启、不追溯旧查询、重建服务后读取及删除、损坏文件保留并向浏览器传播错误。

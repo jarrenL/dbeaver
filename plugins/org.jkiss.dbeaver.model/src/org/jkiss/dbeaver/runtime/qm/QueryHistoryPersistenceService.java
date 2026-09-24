@@ -36,6 +36,7 @@ public class QueryHistoryPersistenceService implements QMMetaListener, DBPPrefer
     private final QMEventFilter filter;
     private PersistentQueryHistory history;
     private boolean enabled;
+    private boolean disposed;
     private long enabledSince;
     private IOException failure;
 
@@ -52,6 +53,9 @@ public class QueryHistoryPersistenceService implements QMMetaListener, DBPPrefer
 
     @Override
     public synchronized void preferenceChange(PreferenceChangeEvent event) {
+        if (disposed) {
+            return;
+        }
         if (filter instanceof DefaultEventFilter defaultFilter) {
             defaultFilter.reloadPreferences();
         }
@@ -104,6 +108,10 @@ public class QueryHistoryPersistenceService implements QMMetaListener, DBPPrefer
     }
 
     public synchronized void dispose() {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
         preferences.removePropertyChangeListener(this);
         enabled = false;
     }
