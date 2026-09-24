@@ -54,6 +54,12 @@ class GaussDBNativeLiveTest {
         try (Statement s = connection.createStatement()) { s.setQueryTimeout(15); s.execute(sql); }
     }
 
+    private static byte[] largeBinaryPayload() {
+        byte[] bytes = new byte[1024 * 1024 + 3];
+        new Random(240924L).nextBytes(bytes);
+        return bytes;
+    }
+
     private static void verifyPayload(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement();
              ResultSet rows = statement.executeQuery("SELECT id,label,amount,occurred,raw_bytes,enabled,disabled FROM review_native.payload ORDER BY id")) {
@@ -77,6 +83,18 @@ class GaussDBNativeLiveTest {
             assertTrue(rows.wasNull(), "SQL NULL must not become boolean false during restore");
             assertFalse(rows.getBoolean(7));
             assertTrue(rows.wasNull());
+            assertTrue(rows.next());
+            assertEquals(3, rows.getInt(1));
+            assertArrayEquals(new byte[0], rows.getBytes(5));
+            assertFalse(rows.wasNull(), "Empty bytea must remain distinct from SQL NULL");
+            assertTrue(rows.next());
+            assertEquals(4, rows.getInt(1));
+            byte[] actual = rows.getBytes(5);
+            assertNotNull(actual);
+            byte[] expected = largeBinaryPayload();
+            assertEquals(expected.length, actual.length);
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            assertArrayEquals(digest.digest(expected), digest.digest(actual), "Large binary payload must not be truncated or changed");
             assertFalse(rows.next());
         }
     }
@@ -138,6 +156,14 @@ class GaussDBNativeLiveTest {
                         assertEquals(1, insert.executeUpdate());
                     }
                     exec(c, "INSERT INTO review_native.payload VALUES(2,NULL,NULL,NULL,NULL,NULL,NULL)");
+                    // Generate a genuinely empty bytea on the server, independent of JDBC's empty-string binding semantics.
+                    exec(c, "INSERT INTO review_native.payload(id,raw_bytes) VALUES(3,substring(decode('00','hex') from 1 for 0))");
+                    try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload(id,raw_bytes) VALUES(?,?)")) {
+                        insert.setInt(1, 4);
+                        insert.setBytes(2, largeBinaryPayload());
+                        assertEquals(1, insert.executeUpdate());
+                    }
+                    verifyPayload(c); // Establish the exact pre-backup baseline before attributing a failure to restore.
                     var backup = new ProcessBuilder(tool("gs_dump", database, user, "-n", "review_native", "-f", remote))
                         .redirectOutput(ProcessBuilder.Redirect.DISCARD);
                     run(backup, errors, settings);

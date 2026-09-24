@@ -17,6 +17,14 @@ GaussDB 507集中式隔离测试库，厂商gs_dump/gsql/gs_restore实际进程�
 
 ## 新增数据断言
 
+### 空二进制和较大二进制增补
+
+多类型表现为4行：在原2行之外增加非NULL的零长度bytea，以及固定种子生成的1 MiB+3字节伪随机bytea。后者同时校验长度与SHA-256，覆盖普通SQL、归档、仅结构/数据组合以及错误拒绝/合法重试的所有既有恢复检查点。避免只核对长度漏掉内容破坏，也不将整块二进制写入日志。
+
+先执行 `verifyPayload` 建立备份前基线，再调用实际工具。零长度夹具由服务端 `substring(decode('00','hex') from 1 for 0)` 生成，不依赖JDBC空字节绑定。新增后 `run-MzXhjh` 全部通过：1870项、1854通过、16跳过、0失败错误，见 [较大二进制结果](native-large-binary-results-20260924.json)。方法数未增加。结束后独立检查review_native及临时调试角色成员均0。
+
+**同时发现的独立缺口，未修复：** 初次 `run-Qhs9Ux` 空bytea断言失败。独立厂商JDBC实验在同一集中式测试连接中创建临时表，对照服务端表达式写入与 `PreparedStatement.setBytes(new byte[0])` 写入。前者 `v IS NULL=false, octet_length(v)=0, getBytes长度=0`；后者 `v IS NULL=true, octet_length(v)=NULL, getBytes=NULL`。连接关闭删除临时表。因此失败发生在备份前的JDBC写入，而非恢复造成；不能以调整恢复夹具宣称空二进制写入兼容性已经解决。需继续核对DBeaver值处理器、厂商驱动绑定格式及各兼容模式，并补专门回归。
+
 2026-09-24 后续增补：多类型表新增 bytea、TRUE/FALSE 两个布尔列。二进制逐字节验证 `00 01 7F 80 FF`；第二行 NULL bytea 必须仍为 NULL。布尔不仅检查 `getBoolean` 返回值，还立即检查 `wasNull`，明确区分 FALSE 与 NULL。相同断言在普通 SQL、自定义归档、结构/数据分离恢复、损坏归档拒绝后的保留数据及合法重试之后执行。
 
 原用例重新启用回归 `run-U8JtU5` 通过；增加上述断言后 `run-myQeSn`：1,870 项执行、1,854 通过、16 跳过、0 失败错误，见 [二进制与布尔恢复结果](native-binary-results-20260924.json)。扩充同一测试方法不增加方法计数。该批次同时显式启用六项包/调试真库测试；临时调试角色最终撤销。
