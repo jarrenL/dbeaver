@@ -110,6 +110,32 @@ class SQLQueryQualityDiagnosticTest {
     })
     void escapedLiteralPrefixesAndUnknownPatternsAreNotReported(String sql) { check(sql, "LIKE ", 0); }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t)",
+        "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM t)",
+        "SELECT 1 WHERE EXISTS (SELECT 1)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t /* WHERE a=1 */)",
+        "SELECT 1 WHERE EXISTS (SELECT 'WHERE a=1' FROM t)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM (SELECT a FROM t WHERE a=1) s)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t UNION SELECT 1 FROM s WHERE a=1)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t WHERE a=1 UNION SELECT 1 FROM s)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t WHERE EXISTS (SELECT 1 FROM s))"
+    })
+    void existsChecksEachSelectScope(String sql) { check(sql, "EXISTS ", 1); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t WHERE a=1)",
+        "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM t WHERE a=1)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 WHERE 1=2)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM (SELECT a FROM t) s WHERE a=1)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t WHERE a=1 UNION SELECT 1 FROM s WHERE a=2)",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM t WHERE EXISTS (SELECT 1 FROM s WHERE a=1))",
+        "SELECT 'EXISTS (SELECT 1)'", "SELECT 1 -- EXISTS (SELECT 1)"
+    })
+    void filteredExistsAndNonSqlTextAreNotReported(String sql) { check(sql, "EXISTS ", 0); }
+
     private void check(String sql, String messagePrefix, int expected) {
         var syntax = new SQLSyntaxManager();
         syntax.init(BasicSQLDialect.INSTANCE, mock(DBPPreferenceStore.class));

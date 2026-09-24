@@ -1027,6 +1027,12 @@ public class SQLQueryModelRecognizer {
         pending.push(root);
         while (!pending.isEmpty()) {
             var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_existsPredicate) {
+                var subquery = node.findFirstChildOfName("tableSubquery");
+                if (subquery != null && hasQueryWithoutWhere(subquery)) {
+                    this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_exists_without_where);
+                }
+            }
             if (node.getNodeKindId() == SQLStandardParser.RULE_simpleCase
                 || node.getNodeKindId() == SQLStandardParser.RULE_searchedCase) {
                 var conditions = new HashSet<List<String>>();
@@ -1089,6 +1095,26 @@ public class SQLQueryModelRecognizer {
                 pending.push(node.getChildNode(i));
             }
         }
+    }
+
+    private static boolean hasQueryWithoutWhere(@NotNull STMTreeNode root) {
+        var pending = new ArrayDeque<STMTreeNode>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_querySpecification) {
+                var table = node.findFirstChildOfName("tableExpression");
+                if (table == null || table.findFirstChildOfName("whereClause") == null) {
+                    return true;
+                }
+                // Nested queries cannot provide a WHERE clause for this SELECT.
+                continue;
+            }
+            for (int i = node.getChildCount() - 1; i >= 0; i--) {
+                pending.push(node.getChildNode(i));
+            }
+        }
+        return false;
     }
 
     private static boolean isNullLiteral(@NotNull STMTreeNode operand) {
