@@ -36,9 +36,23 @@ SELECT 'nested_row' WHERE EXISTS (SELECT 1 WHERE 1 IS NOT NULL);
 
 ## 明确保留的边界
 
+### 麒麟 Linux GUI 补验
+
+隔离麒麟V10 x86_64客户端安装 model.lsm 1.0.80、model.sql 1.0.175、model 2.0.45（均为202609240410构建），正常退出旧进程后启动，连接现有507分布式验收库。
+
+1. 队列1201输入 `SELECT 1 WHERE 1 = NULL;`。首次1202尚未完成后台分析，1203实际编辑器annotation模型出现一条中文WARNING，offset=15、length=8，恰好指向 `1 = NULL`。
+2. 1204改为 `SELECT 1 WHERE 1 IS NOT NULL;`，1205/1206诊断数变为0，没有遗留原告警。
+3. 1207改为中文注释、SELECT和WHERE三行脚本，1208告警offset=27、length=8，仍准确覆盖 `1 = NULL`。截图实际第三行有告警图标和下划线。
+
+![麒麟客户端多行 NULL 比较告警](null-diagnostic-gui-20260924.png)
+
+测试专用 `diagnostics` 命令只读取已存在的编辑器标记，不调用解析器或构造标记，不进入产品包。`verify-null-diagnostic-gui.mjs` 对三份实际输出和原SQL验证通过，其5项正反例验证通过（单独计数，不加入1710项JUnit）。本轮编辑器仅改验收脚本文本，未执行这些SQL或改业务数据；服务端只读验证见上节。
+
+这证明现有GaussDB连接下的编辑器告警文本、级别、位置及编辑后清除。鼠标悬停操作、英文界面、更多复杂语法和交付整包仍另验。
+
 最终完整回归 `run-6LRM2D`：1693 项，1670 通过、23 跳过、0 失败/错误。上述25个新增执行全部通过。脱敏机器结果见 `sql-null-diagnostic-results-20260924.json`；仅记录实际完成的组件断言，不扩大为 GUI 通过。
 
 - 无FROM的WHERE边界已按上节修复与补验；仅GROUP BY/HAVING/ORDER BY/LIMIT而不带WHERE的无FROM组合不在本轮结论内。
 - CAST(NULL AS …)、复合表达式的空值传播、元数据可空性分析与 NOT IN 子查询规则未由此实现。
 - 其他静态质量规则仍需逐条接入与验证；本项不代表全部251条历史静态测试迁移完成。
-- 真实 GaussDB 方言、GUI 提示和客户版本尚未以本组组件测试证明。
+- GaussDB连接下上述GUI场景已有单独证据；客户金融版本、其他界面语言及完整交付包尚未以此证明。

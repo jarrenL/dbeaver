@@ -47,7 +47,11 @@ collapsed state and count) on the UI thread. It does not trigger reconciliation 
 create annotations; inspect after the background reconciler has settled. A successful
 command alone does not prove the expected folding ranges.
 
-Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
+`diagnostics` reads existing semantic annotations from the active editor's document annotation model,
+including offsets, lengths, severity and text. It does not invoke parsing or manufacture markers.
+Use isolated test SQL; diagnostic text may include identifiers. No annotations is not proof of successful parsing.
+
+Other operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 `text ID VALUE`, `secret ID /absolute/password-file`, `focus ID`,
 `key ID F7` (or `SHIFT+F7`), `combo ID VALUE`, `cell TABLE_ID ROW COLUMN`,
 `line STYLED_TEXT_ID ZERO_BASED_LINE`, `context TREE_ITEM_ID MENU_TEXT`, `close ID`.

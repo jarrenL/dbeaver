@@ -77,6 +77,40 @@ public final class Bot implements IStartup {
     }
 
     private void execute(String[] args, PrintWriter out) throws Exception {
+        if (args[0].equals("diagnostics")) {
+            display.syncExec(() -> {
+                try {
+                    Object editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
+                    Object provider = editor.getClass().getMethod("getDocumentProvider").invoke(editor);
+                    Object input = editor.getClass().getMethod("getEditorInput").invoke(editor);
+                    var modelMethod = Arrays.stream(provider.getClass().getMethods())
+                        .filter(m -> m.getName().equals("getAnnotationModel") && m.getParameterCount() == 1)
+                        .findFirst().orElseThrow();
+                    Object model = modelMethod.invoke(provider, input);
+                    Iterator<?> annotations = (Iterator<?>) model.getClass().getMethod("getAnnotationIterator").invoke(model);
+                    int count = 0;
+                    while (annotations.hasNext()) {
+                        Object annotation = annotations.next();
+                        if (!annotation.getClass().getSimpleName().equals("SQLSemanticErrorAnnotation")) {
+                            continue;
+                        }
+                        var positionMethod = Arrays.stream(model.getClass().getMethods())
+                            .filter(m -> m.getName().equals("getPosition") && m.getParameterCount() == 1)
+                            .findFirst().orElseThrow();
+                        Object position = positionMethod.invoke(model, annotation);
+                        out.println("diagnostic offset=" + position.getClass().getMethod("getOffset").invoke(position)
+                            + " length=" + position.getClass().getMethod("getLength").invoke(position)
+                            + " severity=" + annotation.getClass().getMethod("getProblemMarkerSeverity").invoke(annotation)
+                            + " text=" + annotation.getClass().getMethod("getText").invoke(annotation));
+                        count++;
+                    }
+                    out.println("diagnostic-count=" + count);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            return;
+        }
         if (args[0].equals("folding")) {
             display.syncExec(() -> {
                 try {
