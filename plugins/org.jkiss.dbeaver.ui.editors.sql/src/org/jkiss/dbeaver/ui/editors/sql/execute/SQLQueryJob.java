@@ -16,11 +16,6 @@
  */
 package org.jkiss.dbeaver.ui.editors.sql.execute;
 
-import net.sf.jsqlparser.statement.Statement;
-import net.sf.jsqlparser.statement.delete.Delete;
-import net.sf.jsqlparser.statement.insert.Insert;
-import net.sf.jsqlparser.statement.select.PlainSelect;
-import net.sf.jsqlparser.statement.update.Update;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.dialogs.IDialogConstants;
@@ -615,7 +610,7 @@ public class SQLQueryJob extends DataSourceJob {
                 }
             };
 
-            if (shouldRecoverQuery(execStatement)) {
+            if (SQLQueryRecoveryPolicy.mayReplay(execStatement)) {
                 DBExecUtils.tryExecuteRecover(session, session.getDataSource(), executor);
             } else {
                 try {
@@ -663,17 +658,6 @@ public class SQLQueryJob extends DataSourceJob {
             return false;
         }
         // Success
-        return true;
-    }
-
-    private boolean shouldRecoverQuery(SQLQuery query) {
-        Statement statement = query.getStatement();
-        if (statement instanceof Insert ||
-            statement instanceof Delete ||
-            statement instanceof Update ||
-            (statement instanceof PlainSelect select && !CommonUtils.isEmpty(select.getIntoTables()))) {
-            return false;
-        }
         return true;
     }
 
