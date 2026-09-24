@@ -389,8 +389,12 @@ public class QueryLogViewer extends Viewer implements QMMetaListener, DBPPrefere
         logTable.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetDefaultSelected(SelectionEvent e) {
-                //TableItem item = (TableItem)e.item;
-                showEventDetails((QMEvent) e.item.getData());
+                // Keyboard/default-selection events may omit item (including an empty table).
+                TableItem item = e.item instanceof TableItem selected ? selected
+                    : logTable.getSelectionCount() == 1 ? logTable.getSelection()[0] : null;
+                if (item != null && !item.isDisposed() && item.getData() instanceof QMEvent event) {
+                    showEventDetails(event);
+                }
             }
         });
 
