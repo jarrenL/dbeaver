@@ -9,6 +9,7 @@ Bundle-RequiredExecutionEnvironment: JavaSE-21
 Bundle-ActivationPolicy: lazy
 Export-Package: org.jkiss.junit
 Require-Bundle: org.jkiss.dbeaver.headless,
+ org.antlr.antlr4-runtime,
  org.jkiss.dbeaver.model,
  org.jkiss.dbeaver.model.sql,
  org.jkiss.dbeaver.data.transfer,

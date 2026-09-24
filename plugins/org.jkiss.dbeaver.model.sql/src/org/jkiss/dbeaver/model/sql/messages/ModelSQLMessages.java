@@ -19,6 +19,7 @@ package org.jkiss.dbeaver.model.sql.messages;
 import org.eclipse.osgi.util.NLS;
 
 public class ModelSQLMessages extends NLS {
+    public static String model_sql_semantic_null_comparison;
     static final String BUNDLE_NAME = "org.jkiss.dbeaver.model.sql.messages.ModelSQLResources"; //$NON-NLS-1$
 
     public static String model_sql_semantic_symbolClass_UNKNOWN;

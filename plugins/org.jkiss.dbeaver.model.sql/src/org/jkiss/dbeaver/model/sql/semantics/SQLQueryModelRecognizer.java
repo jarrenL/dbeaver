@@ -36,6 +36,7 @@ import org.jkiss.dbeaver.model.lsm.sql.impl.syntax.SQLStandardParser;
 import org.jkiss.dbeaver.model.sql.SQLConstants;
 import org.jkiss.dbeaver.model.sql.SQLDialect;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
+import org.jkiss.dbeaver.model.sql.messages.ModelSQLMessages;
 import org.jkiss.dbeaver.model.sql.parser.SQLIdentifierDetector;
 import org.jkiss.dbeaver.model.sql.semantics.context.*;
 import org.jkiss.dbeaver.model.sql.semantics.model.SQLQueryMemberAccessEntry;
@@ -150,6 +151,7 @@ public class SQLQueryModelRecognizer {
         };
 
         if (contents != null) {
+            this.checkNullComparisons(tree);
             SQLQueryModel model = new SQLQueryModel(tree, contents, this.symbolEntries, this.lexicalItems.values().stream().toList());
             model.resolveRelations(rootRowsContext, this.recognitionContext);
 
@@ -1018,6 +1020,33 @@ public class SQLQueryModelRecognizer {
 
     public LexicalScopeHolder openScope() {
         return new LexicalScopeHolder(this.beginScope());
+    }
+
+    private void checkNullComparisons(@NotNull STMTreeNode root) {
+        var pending = new ArrayDeque<STMTreeNode>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_rowValuePredicate && !node.hasErrorChildren()) {
+                var comparison = node.findFirstChildOfName("comparisonPredicate");
+                var left = node.findFirstChildOfName("rowValueConstructor");
+                var right = comparison == null ? null : comparison.findFirstChildOfName("rowValueConstructor");
+                var operator = comparison == null ? null : comparison.findFirstChildOfName("compOp");
+                if (left != null && right != null && operator != null
+                    && Set.of("=", "<>", "!=", "<", ">", "<=", ">=").contains(operator.getText())
+                    && (isNullLiteral(left) || isNullLiteral(right))) {
+                    this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_null_comparison);
+                }
+            }
+            for (int i = node.getChildCount() - 1; i >= 0; i--) {
+                pending.push(node.getChildNode(i));
+            }
+        }
+    }
+
+    private static boolean isNullLiteral(@NotNull STMTreeNode operand) {
+        // Parser text excludes comments; quotes, casts, functions and compound expressions do not match.
+        return operand.getText().replace("(", "").replace(")", "").equalsIgnoreCase("NULL");
     }
 
     @Nullable
