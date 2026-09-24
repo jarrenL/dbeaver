@@ -51,6 +51,25 @@ SELECT '𠀀' WHERE 1 = NULL;
 
 ## 尚待验证
 
-- 跨 token 导航、其他语义规则的范围矩阵、无引号补充平面标识符仍需继续补充。
+### 跨规则补充（2026-09-24）
+
+`SQLQueryQualityDiagnosticTest.allQualityRulesPreserveUtf16Ranges` 新增 9 项，覆盖 SELECT 星号、INSERT 隐式列、ORDER BY 序号、LIKE 含扩展汉字模式、相同比较、EXISTS、NOT IN、简单/搜索 CASE。所有输入在告警前或告警内部包含补充平面字符；逐项断言 WARNING 数量、等级、精确 UTF-16 起点及原文截取。重复 CASE 必须匹配后一次分支，而不是首次分支。
+
+完整回归 `run-0Hjcqq`：1,870 项，1,847 通过、23 跳过、0 失败错误，见 [跨规则结果](unicode-quality-results-20260924.json)。
+
+麒麟 GUI 队列 1275 输入同一多语句脚本：
+
+```sql
+-- 中文😀🧪
+SELECT '🧪' WHERE '中文' LIKE '%𠀀';
+SELECT '😀' WHERE 1=1;
+SELECT '😀' WHERE EXISTS (SELECT '🧪');
+SELECT '😀' WHERE 1 NOT IN (2,NULL);
+SELECT CASE WHEN '😀'='🧪' THEN 1 WHEN '😀'='🧪' THEN 2 END;
+```
+
+1276 读取实际 5 条语义标记。`verify-unicode-rules-gui.mjs` 对每个中文提示类别逐一断言唯一性、WARNING 等级、全脚本 UTF-16 偏移和精确原文，全部通过。未执行这些 SQL，不增加 JUnit 用例数量；GUI 验证不覆盖同批 SELECT/INSERT/ORDER BY 三条规则。
+
+- 跨 token 导航、更多语义错误类别、无引号补充平面标识符仍需继续补充。
 - 字体缺字及实际客户字体配置不能按源码定位结果宣称已解决。
 - 该修复影响共享解析器，不能只凭 GaussDB 真库结果宣称全部方言通过。

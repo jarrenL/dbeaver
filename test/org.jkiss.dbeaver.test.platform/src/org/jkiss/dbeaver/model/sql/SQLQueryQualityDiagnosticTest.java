@@ -25,10 +25,38 @@ import org.jkiss.dbeaver.model.sql.semantics.SQLQueryRecognitionContext;
 import org.jkiss.dbeaver.model.sql.semantics.SQLQueryRecognitionProblemInfo;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class SQLQueryQualityDiagnosticTest {
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', quoteCharacter = '`', value = {
+        "SELECT '😀', * FROM t|SELECT *|*",
+        "/* 🧪 */ INSERT INTO t VALUES('😀')|INSERT |VALUES('😀')",
+        "SELECT '😀' FROM t ORDER BY 1|ORDER BY |1",
+        "SELECT '😀' WHERE '中文' LIKE '%𠀀'|LIKE |'%𠀀'",
+        "SELECT '😀' WHERE 1=1|Comparison|1=1",
+        "SELECT '😀' WHERE EXISTS (SELECT '🧪')|EXISTS |EXISTS (SELECT '🧪')",
+        "SELECT '😀' WHERE 1 NOT IN (2,NULL)|NOT IN |NOT IN (2,NULL)",
+        "SELECT CASE WHEN '😀'='🧪' THEN 1 WHEN '😀'='🧪' THEN 2 END|CASE |'😀'='🧪'",
+        "/* 𠀀 */ SELECT CASE '😀' WHEN '🧪' THEN 1 WHEN '🧪' THEN 2 END|CASE |'🧪'"
+    })
+    void allQualityRulesPreserveUtf16Ranges(String sql, String prefix, String markedText) {
+        var syntax = new SQLSyntaxManager();
+        syntax.init(BasicSQLDialect.INSTANCE, mock(DBPPreferenceStore.class));
+        var context = new SQLQueryRecognitionContext(new VoidProgressMonitor(), null, false, false,
+            syntax, BasicSQLDialect.INSTANCE);
+        assertNotNull(SQLQueryModelRecognizer.recognizeQuery(context, sql));
+        var warnings = context.getProblems().stream().filter(p -> p.getMessage().startsWith(prefix)).toList();
+        assertEquals(1, warnings.size(), sql);
+        var warning = warnings.getFirst();
+        assertEquals(SQLQueryRecognitionProblemInfo.Severity.WARNING, warning.getSeverity());
+        var range = warning.getInterval();
+        assertEquals(sql.lastIndexOf(markedText), range.a, sql);
+        assertEquals(markedText, sql.substring(range.a, range.b + 1));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "SELECT 1 WHERE 1 NOT IN (NULL)",
