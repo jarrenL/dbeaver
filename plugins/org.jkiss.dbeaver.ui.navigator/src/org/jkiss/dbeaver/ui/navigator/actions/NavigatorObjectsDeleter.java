@@ -280,8 +280,7 @@ public class NavigatorObjectsDeleter {
                 } catch (DBException e) {
                     // Do not offer per-object Skip/Retry for an atomic batch.
                     var failure = new DBException(UINavigatorMessages.actions_navigator_atomic_delete_failed, e);
-                    UIUtils.asyncExec(() -> DBWorkbench.getPlatformUI().showError(
-                        UINavigatorMessages.actions_navigator_error_dialog_delete_object_title, failure.getMessage(), failure));
+                    // User jobs present their error status; a separate dialog would report the same failure twice.
                     return org.jkiss.dbeaver.utils.GeneralUtils.makeExceptionStatus(failure);
                 }
             }
