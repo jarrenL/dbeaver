@@ -33,8 +33,31 @@ class SQLQueryRecoveryPolicyTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"SELECT 42", "SELECT id FROM t WHERE id=7", "SELECT pg_sleep(1)"})
+    @ValueSource(strings = {"SELECT 42", "SELECT id FROM t WHERE id=7", "SELECT 'function()' AS label /* ignored() */",
+        "SELECT id FROM t ORDER BY id LIMIT 10 OFFSET 2", "SELECT DISTINCT id FROM t"})
     void plainSelectRetainsExistingRecovery(String sql) {
         assertTrue(SQLQueryRecoveryPolicy.mayReplay(new SQLQuery(null, sql)), sql);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT pg_sleep(1)", "SELECT change_data(1)", "SELECT public.change_data(1)",
+        "SELECT nextval('seq')", "SELECT NEXT VALUE FOR seq", "SELECT * FROM change_data(1)",
+        "SELECT id FROM t WHERE change_data(id)=1", "SELECT id FROM t ORDER BY change_data(id)",
+        "SELECT change_data(id) FROM t GROUP BY change_data(id)",
+        "SELECT id FROM t GROUP BY id HAVING change_data(id)=1",
+        "SELECT (SELECT change_data(1))", "SELECT * FROM (SELECT change_data(1)) nested",
+        "SELECT a.id FROM a JOIN b ON change_data(a.id)=b.id",
+        "SELECT sum(id) OVER () FROM t", "SELECT * FROM t FOR UPDATE",
+        "SELECT * FROM t FOR SHARE", "SELECT * FROM t FOR UPDATE SKIP LOCKED",
+        "SELECT * FROM (SELECT * FROM t FOR UPDATE) nested",
+        "SELECT id FROM t LIMIT change_data(1)", "SELECT id FROM t OFFSET change_data(1)",
+        "SELECT id FROM t QUALIFY change_data(id)=1",
+        "SELECT DISTINCT ON (change_data(id)) id FROM t",
+        "SELECT id FROM t FETCH FIRST change_data(1) ROWS ONLY",
+        "SELECT id FROM t WINDOW w AS (PARTITION BY change_data(id))"
+    })
+    void functionSequenceAndLockingQueriesAreNotAutomaticallyReplayed(String sql) {
+        assertFalse(SQLQueryRecoveryPolicy.mayReplay(new SQLQuery(null, sql)), sql);
     }
 }
