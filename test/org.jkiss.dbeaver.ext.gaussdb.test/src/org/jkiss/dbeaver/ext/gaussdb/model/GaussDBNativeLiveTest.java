@@ -126,6 +126,7 @@ class GaussDBNativeLiveTest {
         Path directory = Files.createTempDirectory("gaussdb-native-live-");
         Path dump = directory.resolve("dump.sql"), errors = directory.resolve("stderr.log");
         Path dataArchive = directory.resolve("data-only.backup");
+        Path emptyImport = directory.resolve("empty-import.bin");
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(jar).toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
             Driver driver = (Driver) loader.loadClass(props.getProperty("review.driverClass", props.getProperty("driverClass")))
                 .getConstructor().newInstance();
@@ -156,8 +157,9 @@ class GaussDBNativeLiveTest {
                         assertEquals(1, insert.executeUpdate());
                     }
                     exec(c, "INSERT INTO review_native.payload VALUES(2,NULL,NULL,NULL,NULL,NULL,NULL)");
+                    exec(c, "INSERT INTO review_native.payload(id) VALUES(3)");
                     // Exercise the production GaussDB binding, not a server-side fixture workaround.
-                    try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload(id,raw_bytes) VALUES(3,?)")) {
+                    try (PreparedStatement insert = c.prepareStatement("UPDATE review_native.payload SET raw_bytes=? WHERE id=3")) {
                         var jdbc = (org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
                             getClass().getClassLoader(), new Class<?>[]{org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class},
                             (proxy, method, args) -> {
@@ -171,9 +173,32 @@ class GaussDBNativeLiveTest {
                         var handler = new org.jkiss.dbeaver.ext.gaussdb.model.data.GaussDBValueHandlerProvider()
                             .getValueHandler(source, mock(org.jkiss.dbeaver.model.data.DBDFormatSettings.class), type);
                         assertNotNull(handler);
-                        handler.bindValueObject(session, jdbc, type, 0, new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBytes(
-                            mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), new byte[0]));
-                        assertEquals(1, insert.executeUpdate());
+                        var context = mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class);
+                        Files.createFile(emptyImport);
+                        var fileContent = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(context, null);
+                        fileContent.updateContents(new VoidProgressMonitor(),
+                            new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(
+                                mock(org.jkiss.dbeaver.model.app.DBPPlatform.class), emptyImport, "UTF-8", false));
+                        var contents = List.of(
+                            new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBytes(context, new byte[0]),
+                            new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(context, new javax.sql.rowset.serial.SerialBlob(new byte[0])),
+                            fileContent);
+                        for (var content : contents) {
+                            try {
+                                handler.bindValueObject(session, jdbc, type, 0, content);
+                                assertEquals(1, insert.executeUpdate());
+                                try (Statement query = c.createStatement(); ResultSet result = query.executeQuery(
+                                    "SELECT raw_bytes IS NULL,octet_length(raw_bytes),raw_bytes FROM review_native.payload WHERE id=3")) {
+                                    assertTrue(result.next());
+                                    assertFalse(result.getBoolean(1), content.getClass().getSimpleName());
+                                    assertEquals(0, result.getInt(2));
+                                    assertFalse(result.wasNull());
+                                    assertArrayEquals(new byte[0], result.getBytes(3));
+                                    assertFalse(result.next());
+                                }
+                            } finally { content.release(); }
+                        }
+                        assertTrue(Files.exists(emptyImport), "Imported source file must not be deleted by binding");
                     }
                     try (PreparedStatement insert = c.prepareStatement("INSERT INTO review_native.payload(id,raw_bytes) VALUES(?,?)")) {
                         insert.setInt(1, 4);
@@ -286,7 +311,8 @@ class GaussDBNativeLiveTest {
             // Exact randomly generated test artifact; never delete a user backup.
             run(new ProcessBuilder("docker", "exec", "-u", "0", "gaussdb-507-ha-lab", "rm", "-f", remote)
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD), errors);
-            Files.deleteIfExists(dump); Files.deleteIfExists(dataArchive); Files.deleteIfExists(errors); Files.delete(directory);
+            Files.deleteIfExists(dump); Files.deleteIfExists(dataArchive); Files.deleteIfExists(errors);
+            Files.deleteIfExists(emptyImport); Files.delete(directory);
         }
     }
 

@@ -28,6 +28,14 @@ GaussDBValueHandlerProvider 仅为 bytea 选择新的 GaussDBBinaryValueHandler�
 
 ## 仍需覆盖
 
+### 三类内容容器真库回归
+
+后续 `GaussDBNativeLiveTest` 通过生产provider/handler分别绑定 JDBCContentBytes、包装真实SerialBlob的JDBCContentBLOB、包装实际零字节文件TemporaryContentStorage的JDBCContentBLOB。JDBC接口桥接转发到真实厂商PreparedStatement，不使用伪造查询结果。三次UPDATE后分别立即查询同一测试行，断言 `IS NULL=false`、`octet_length=0`（且wasNull=false）和getBytes空数组。释放内容对象后，原导入文件仍存在；最终才由测试finally清理自己的临时文件。
+
+随后沿用所有原生备份/恢复检查点，确认写入后的空bytea能被备份并正确恢复。run-ZwEbec：1882项、1866通过、16跳过、0失败错误，见 [Blob和文件真库结果](blob-file-live-results-20260924.json)。本轮扩充既有方法，不虚增方法计数。独立查询review_native与临时调试成员关系均0。
+
+该证据闭环集中式507的三类空内容参数绑定与恢复，不代替文件选择对话框、结果集保存、导入向导或其他兼容模式。
+
 ### BLOB 与文件内容容器补充
 
 处理器现同时识别 JDBCContentBytes 和 JDBCContentBLOB，但必须先确认 `isNull=false` 且 `getContentLength()==0` 才使用十六进制空bytea参数。未知长度(-1)、非空值继续委托原内容绑定；读取长度异常直接传播，不把失败当空值。检查零长度BLOB不打开内容流。
@@ -38,7 +46,7 @@ GaussDBValueHandlerProvider 仅为 bytea 选择新的 GaussDBBinaryValueHandler�
 
 - GUI结果集编辑、导入空二进制后的保存/再读取。
 - 其他兼容模式与目标金融版本。
-- JDBCContentBLOB真实数据库端到端；其他内容容器和全部LOB路径不能由上述组件测试推断通过。
+- 三类空内容真库路径已验证；其他内容容器、非空BLOB大流及全部LOB路径仍不能一概推断通过。
 - 分布式当前仅验证绑定协议对照，生产handler真库桥接回归在集中式执行。
 
 禁止把没有使用GaussDB provider的任意JDBC应用也标为已修复；厂商驱动直接setBytes(empty)行为仍存在。
