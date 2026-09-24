@@ -20,7 +20,6 @@ package org.jkiss.dbeaver.ext.postgresql.edit;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
-import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTablespace;
 import org.jkiss.dbeaver.model.DBPDataSource;
@@ -41,7 +40,6 @@ public class PostgreTablespaceManager extends SQLObjectEditor<PostgreTablespace,
 
     private final static Set<String> systemTablespaces = new HashSet<>(Arrays.asList("pg_default", "pg_global"));
 
-    private static final Log log = Log.getLog(PostgreTablespaceManager.class);
 
     @Override
     public long getMakerOptions(@NotNull DBPDataSource dataSource) {
@@ -79,16 +77,11 @@ public class PostgreTablespaceManager extends SQLObjectEditor<PostgreTablespace,
         @NotNull DBRProgressMonitor monitor,
         @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions,
         @NotNull ObjectCreateCommand command,
-        @NotNull Map<String, Object> options) {
+        @NotNull Map<String, Object> options) throws DBException {
         final PostgreTablespace tablespace = command.getObject();
-
-        try {
-            actions.add(
-                new SQLDatabasePersistActionAtomic("Create tablespace", tablespace.getObjectDefinitionText(monitor, options)) //$NON-NLS-2$
-            );
-        } catch (DBException e) {
-            log.error(e);
-        }
+        actions.add(
+            new SQLDatabasePersistActionAtomic("Create tablespace", tablespace.getObjectDefinitionText(monitor, options)) //$NON-NLS-2$
+        );
     }
 
     @Override

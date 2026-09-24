@@ -23,6 +23,7 @@ import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.ResultSet;
@@ -103,7 +104,7 @@ public class PostgreTablespace extends PostgreInformation implements PostgreScri
         StringBuilder sb = new StringBuilder("CREATE TABLESPACE ");
         sb.append(DBUtils.getQuotedIdentifier(this)).append(" OWNER ").append(DBUtils.getQuotedIdentifier(getOwner(monitor)));
         if (CommonUtils.isNotEmpty(getLoc())) {
-            sb.append(" LOCATION '").append(getLoc()).append("'");
+            sb.append(" LOCATION ").append(SQLUtils.quoteString(this, getLoc()));
         }
         if (CommonUtils.isNotEmpty(getOptions())) {
             sb.append("\nWITH (").append(getOptions()).append(")");
@@ -130,4 +131,3 @@ public class PostgreTablespace extends PostgreInformation implements PostgreScri
 
 
 }
-
