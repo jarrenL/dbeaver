@@ -31,6 +31,35 @@ import static org.mockito.Mockito.mock;
 class SQLQueryQualityDiagnosticTest {
     @ParameterizedTest
     @ValueSource(strings = {
+        "SELECT 1 WHERE 1 NOT IN (NULL)",
+        "SELECT 1 WHERE 1 NOT IN (2, NULL)",
+        "SELECT 1 WHERE 1 NOT IN (/* candidate */ NULL, 2)",
+        "SELECT 1 WHERE 1 NOT IN ((NULL))",
+        "SELECT 1 WHERE 1 NOT IN (SELECT NULL)",
+        "SELECT 1 WHERE 1 NOT IN (SELECT NULL AS candidate FROM t)",
+        "SELECT 1 WHERE 1 NOT IN (SELECT 2 UNION SELECT NULL)",
+        "SELECT 1 WHERE 1 NOT IN (SELECT NULL FROM t WHERE a=1)",
+        "SELECT a FROM t WHERE a NOT IN (SELECT NULL FROM s WHERE 1=2)"
+    })
+    void explicitNullCandidatesInNotInAreReported(String sql) { check(sql, "NOT IN ", 1); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT 1 WHERE 1 IN (NULL)",
+        "SELECT 1 WHERE 1 NOT IN (2,3)",
+        "SELECT 1 WHERE 1 NOT IN (SELECT a FROM t)",
+        "SELECT 1 WHERE 1 NOT IN (SELECT 2 FROM t WHERE a IS NULL)",
+        "SELECT 1 WHERE 1 NOT IN (SELECT 2 FROM (SELECT NULL AS a) s)",
+        "SELECT 1 WHERE 1 NOT IN (COALESCE(NULL, 2))",
+        "SELECT 1 WHERE 1 NOT IN (SELECT COALESCE(NULL, 2))",
+        "SELECT 1 WHERE 1 NOT IN (CASE WHEN 1=2 THEN NULL ELSE 2 END)",
+        "SELECT 1 WHERE 'a' NOT IN ('NULL')",
+        "SELECT 'NOT IN (NULL)'", "SELECT 1 -- NOT IN (NULL)"
+    })
+    void nonliteralNullResultsAreNotClaimed(String sql) { check(sql, "NOT IN ", 0); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
         "SELECT CASE WHEN a=1 THEN 1 WHEN a=1 THEN 2 END FROM t",
         "SELECT CASE WHEN a = 1 THEN 1 WHEN a/*same*/=1 THEN 2 END FROM t",
         "SELECT CASE a WHEN 1 THEN 'a' WHEN 1 THEN 'b' END FROM t",

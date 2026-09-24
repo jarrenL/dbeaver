@@ -27,6 +27,7 @@ public class ModelSQLMessages extends NLS {
     public static String model_sql_semantic_case_duplicate;
     public static String model_sql_semantic_comparison_duplicate;
     public static String model_sql_semantic_exists_without_where;
+    public static String model_sql_semantic_not_in_null;
     static final String BUNDLE_NAME = "org.jkiss.dbeaver.model.sql.messages.ModelSQLResources"; //$NON-NLS-1$
 
     public static String model_sql_semantic_symbolClass_UNKNOWN;

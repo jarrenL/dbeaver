@@ -1033,6 +1033,13 @@ public class SQLQueryModelRecognizer {
                     this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_exists_without_where);
                 }
             }
+            if (node.getNodeKindId() == SQLStandardParser.RULE_inPredicate
+                && node.findFirstChildOfName("NOT") != null) {
+                var values = node.findFirstChildOfName("inPredicateValue");
+                if (values != null && containsExplicitNullCandidate(values)) {
+                    this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_not_in_null);
+                }
+            }
             if (node.getNodeKindId() == SQLStandardParser.RULE_simpleCase
                 || node.getNodeKindId() == SQLStandardParser.RULE_searchedCase) {
                 var conditions = new HashSet<List<String>>();
@@ -1095,6 +1102,33 @@ public class SQLQueryModelRecognizer {
                 pending.push(node.getChildNode(i));
             }
         }
+    }
+
+    private static boolean containsExplicitNullCandidate(@NotNull STMTreeNode root) {
+        var pending = new ArrayDeque<STMTreeNode>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_valueExpression) {
+                if (isNullLiteral(node)) {
+                    return true;
+                }
+                // NULL inside COALESCE/CASE or a nested scalar query is not a proven NULL result.
+                continue;
+            }
+            if (node.getNodeKindId() == SQLStandardParser.RULE_querySpecification) {
+                var projection = node.findFirstChildOfName("selectList");
+                if (projection != null) {
+                    pending.push(projection);
+                }
+                // WHERE, FROM and inner queries do not describe this SELECT's result values.
+                continue;
+            }
+            for (int i = node.getChildCount() - 1; i >= 0; i--) {
+                pending.push(node.getChildNode(i));
+            }
+        }
+        return false;
     }
 
     private static boolean hasQueryWithoutWhere(@NotNull STMTreeNode root) {
