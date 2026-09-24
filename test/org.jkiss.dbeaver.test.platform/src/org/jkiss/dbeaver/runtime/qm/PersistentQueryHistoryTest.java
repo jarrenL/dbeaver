@@ -25,6 +25,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -107,5 +110,96 @@ class PersistentQueryHistoryTest {
         history.purgeBefore(300);
         assertEquals(1, history.getEvents().size());
         assertEquals("new", reopen().getEvents().getFirst().getObject().getText());
+    }
+
+    @Test
+    void concurrentDeleteWaitsForRecordingAndDoesNotResurrectSelectedEvent() throws Exception {
+        var history = reopen();
+        var removed = event(100, "remove");
+        var retained = event(200, "retain");
+        history.record(true, candidate -> true, List.of(retained));
+        var recording = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var deleting = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var writer = executor.submit(() -> {
+                history.record(true, candidate -> {
+                    recording.countDown();
+                    await(release);
+                    return true;
+                }, List.of(removed));
+                return null;
+            });
+            await(recording);
+            var deleter = executor.submit(() -> {
+                deleting.countDown();
+                history.delete(List.of(removed));
+                return null;
+            });
+            await(deleting);
+            release.countDown();
+            writer.get(10, TimeUnit.SECONDS);
+            deleter.get(10, TimeUnit.SECONDS);
+            history.record(true, candidate -> true, List.of(removed));
+            assertEquals(List.of(retained), history.getEvents());
+            assertTrue(removed.getObject().isHistoryDeleted());
+            assertFalse(retained.getObject().isHistoryDeleted());
+            assertEquals(List.of("retain"), reopen().getEvents().stream().map(e -> e.getObject().getText()).toList());
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void independentViewsCanDeleteSameSelectionWhileLateEventsArrive() throws Exception {
+        var history = reopen();
+        var removed = event(100, "remove");
+        var retained = event(200, "retain");
+        history.record(true, candidate -> true, List.of(removed, retained));
+        var firstView = history.getEvents();
+        var secondView = history.getEvents();
+        var start = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(3);
+        try {
+            var first = executor.submit(() -> {
+                await(start);
+                history.delete(List.of(firstView.getFirst()));
+                return null;
+            });
+            var second = executor.submit(() -> {
+                await(start);
+                history.delete(List.of(secondView.getFirst()));
+                return null;
+            });
+            var writer = executor.submit(() -> {
+                await(start);
+                for (int i = 0; i < 20; i++) {
+                    history.record(true, candidate -> true, List.of(removed, retained));
+                }
+                return null;
+            });
+            start.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+            writer.get(10, TimeUnit.SECONDS);
+            assertEquals(List.of(retained), history.getEvents());
+            assertEquals(List.of("retain"), reopen().getEvents().stream().map(e -> e.getObject().getText()).toList());
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            assertTrue(latch.await(10, TimeUnit.SECONDS), "History operation did not reach its synchronization point");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("History operation was interrupted", e);
+        }
     }
 }
