@@ -28,9 +28,17 @@ GaussDBValueHandlerProvider 仅为 bytea 选择新的 GaussDBBinaryValueHandler�
 
 ## 仍需覆盖
 
+### BLOB 与文件内容容器补充
+
+处理器现同时识别 JDBCContentBytes 和 JDBCContentBLOB，但必须先确认 `isNull=false` 且 `getContentLength()==0` 才使用十六进制空bytea参数。未知长度(-1)、非空值继续委托原内容绑定；读取长度异常直接传播，不把失败当空值。检查零长度BLOB不打开内容流。
+
+新增7项组件测试：空Blob不读取流、未知长度委托、非空Blob委托、长度失败不绑定、NULL Blob不查询长度、真实零字节临时文件绑定且文件仍存在、真实缺失文件失败且没有执行任何参数绑定。文件测试使用实际TemporaryContentStorage与JDBCContentBLOB，但JDBCStatement是替身，因此不是文件导入GUI或真库Blob端到端证据。
+
+中间5项回归run-Htewgj通过；加入真实文件2项后run-Gketea：1882项、1866通过、16跳过、0失败错误，见 [文件绑定回归](empty-file-binding-results-20260924.json)。同时启用缓存bytea真库备份恢复回归仍通过，临时调试授权独立查询为0。
+
 - GUI结果集编辑、导入空二进制后的保存/再读取。
 - 其他兼容模式与目标金融版本。
-- JDBCContentBLOB等其他内容容器；本修复直接处理缓存的JDBCContentBytes，不把所有LOB路径算作已验证。
+- JDBCContentBLOB真实数据库端到端；其他内容容器和全部LOB路径不能由上述组件测试推断通过。
 - 分布式当前仅验证绑定协议对照，生产handler真库桥接回归在集中式执行。
 
 禁止把没有使用GaussDB provider的任意JDBC应用也标为已修复；厂商驱动直接setBytes(empty)行为仍存在。

@@ -22,6 +22,8 @@ import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBytes;
+import org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB;
+import org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentAbstract;
 import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCContentValueHandler;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
 import java.sql.SQLException;
@@ -36,8 +38,9 @@ public class GaussDBBinaryValueHandler extends JDBCContentValueHandler {
         @NotNull JDBCSession session, @NotNull JDBCPreparedStatement statement,
         @NotNull DBSTypedObject paramType, int paramIndex, @Nullable Object value
     ) throws DBCException, SQLException {
-        if (value instanceof JDBCContentBytes content
-            && content.getRawValue() != null && content.getRawValue().length == 0) {
+        if (value instanceof JDBCContentAbstract content
+            && (content instanceof JDBCContentBytes || content instanceof JDBCContentBLOB)
+            && !content.isNull() && content.getContentLength() == 0) {
             // Nonempty hex input represents zero bytes without triggering ORA empty-string semantics.
             statement.setObject(paramIndex, "\\x", Types.OTHER);
         } else {

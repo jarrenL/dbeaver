@@ -68,4 +68,71 @@ class GaussDBBinaryValueHandlerTest {
         assertSame(GaussDBBinaryValueHandler.INSTANCE, new GaussDBValueHandlerProvider().getValueHandler(
             mock(org.jkiss.dbeaver.model.DBPDataSource.class), mock(org.jkiss.dbeaver.model.data.DBDFormatSettings.class), type));
     }
+
+    @Test void emptyBlobUsesHexWithoutOpeningStream() throws Exception {
+        var blob = mock(java.sql.Blob.class);
+        when(blob.length()).thenReturn(0L);
+        var content = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(mock(DBCExecutionContext.class), blob);
+        GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+        verify(statement).setObject(1, "\\x", Types.OTHER);
+        verify(blob, never()).getBinaryStream();
+        verifyNoMoreInteractions(statement);
+    }
+
+    @Test void unknownLengthIsNotTreatedAsEmpty() throws Exception {
+        var content = mock(org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB.class);
+        when(content.isNull()).thenReturn(false);
+        when(content.getContentLength()).thenReturn(-1L);
+        GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+        verify(content).bindParameter(session, statement, type, 1);
+        verifyNoInteractions(statement);
+    }
+
+    @Test void nonemptyBlobKeepsOriginalBinding() throws Exception {
+        var content = mock(org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB.class);
+        when(content.getContentLength()).thenReturn(1024L);
+        GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+        verify(content).bindParameter(session, statement, type, 1);
+        verifyNoInteractions(statement);
+    }
+
+    @Test void lengthReadFailureDoesNotBindNullOrEmpty() throws Exception {
+        var content = mock(org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB.class);
+        when(content.getContentLength()).thenThrow(new DBCException("synthetic length failure"));
+        assertThrows(DBCException.class, () -> GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content));
+        verifyNoInteractions(statement);
+    }
+
+    @Test void nullBlobDoesNotReadLength() throws Exception {
+        when(type.getTypeID()).thenReturn(Types.BINARY);
+        when(type.getTypeName()).thenReturn("bytea");
+        var content = mock(org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB.class);
+        when(content.isNull()).thenReturn(true);
+        GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+        verify(statement).setNull(1, Types.BINARY, "bytea");
+        verify(content, never()).getContentLength();
+    }
+
+    @Test void actualEmptyFileRemainsNonNull(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        var file = java.nio.file.Files.createFile(directory.resolve("empty.bin"));
+        var storage = new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(
+            mock(org.jkiss.dbeaver.model.app.DBPPlatform.class), file, "UTF-8", false);
+        var content = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(mock(DBCExecutionContext.class), null);
+        content.updateContents(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), storage);
+        assertFalse(content.isNull());
+        GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+        verify(statement).setObject(1, "\\x", Types.OTHER);
+        verifyNoMoreInteractions(statement);
+        assertTrue(java.nio.file.Files.exists(file), "Binding must not remove the imported file");
+        assertEquals(0, java.nio.file.Files.size(file));
+    }
+
+    @Test void missingImportFileIsNotSilentlyEmpty(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        var storage = new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(
+            mock(org.jkiss.dbeaver.model.app.DBPPlatform.class), directory.resolve("missing.bin"), "UTF-8", false);
+        var content = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(mock(DBCExecutionContext.class), null);
+        content.updateContents(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), storage);
+        assertThrows(DBCException.class, () -> GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content));
+        verifyNoInteractions(statement);
+    }
 }
