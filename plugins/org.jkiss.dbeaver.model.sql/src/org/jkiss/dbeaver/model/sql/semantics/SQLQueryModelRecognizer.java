@@ -1029,7 +1029,7 @@ public class SQLQueryModelRecognizer {
             var node = pending.pop();
             if (node.getNodeKindId() == SQLStandardParser.RULE_simpleCase
                 || node.getNodeKindId() == SQLStandardParser.RULE_searchedCase) {
-                var conditions = new HashSet<String>();
+                var conditions = new HashSet<List<String>>();
                 for (int i = 0; i < node.getChildCount(); i++) {
                     var clause = node.getChildNode(i);
                     if (clause.getNodeKindId() == SQLStandardParser.RULE_simpleWhenClause
@@ -1038,7 +1038,7 @@ public class SQLQueryModelRecognizer {
                         if (condition == null) {
                             condition = clause.findFirstChildOfName("valueExpression");
                         }
-                        if (condition != null && !condition.hasErrorChildren() && !conditions.add(condition.getText())) {
+                        if (condition != null && !condition.hasErrorChildren() && !conditions.add(expressionTokens(condition))) {
                             this.recognitionContext.appendWarning(condition, ModelSQLMessages.model_sql_semantic_case_duplicate);
                         }
                     }
@@ -1076,7 +1076,7 @@ public class SQLQueryModelRecognizer {
                 var operator = comparison == null ? null : comparison.findFirstChildOfName("compOp");
                 if (left != null && right != null && operator != null
                     && Set.of("=", "<>", "!=", "<", ">", "<=", ">=").contains(operator.getText())
-                    && !left.hasErrorChildren() && !right.hasErrorChildren() && left.getText().equals(right.getText())) {
+                    && !left.hasErrorChildren() && !right.hasErrorChildren() && expressionTokens(left).equals(expressionTokens(right))) {
                     this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_comparison_duplicate);
                 }
                 if (left != null && right != null && operator != null
@@ -1094,6 +1094,27 @@ public class SQLQueryModelRecognizer {
     private static boolean isNullLiteral(@NotNull STMTreeNode operand) {
         // Parser text excludes comments; quotes, casts, functions and compound expressions do not match.
         return operand.getText().replace("(", "").replace(")", "").equalsIgnoreCase("NULL");
+    }
+
+    @NotNull
+    private static List<String> expressionTokens(@NotNull STMTreeNode root) {
+        // Concatenated parser text would confuse "a AND b" with the identifier "aANDb".
+        var result = new ArrayList<String>();
+        var pending = new ArrayDeque<STMTreeNode>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            var node = pending.pop();
+            if (node.getChildCount() == 0) {
+                if (!node.getText().isEmpty()) {
+                    result.add(node.getText());
+                }
+            } else {
+                for (int i = node.getChildCount() - 1; i >= 0; i--) {
+                    pending.push(node.getChildNode(i));
+                }
+            }
+        }
+        return result;
     }
 
     @Nullable

@@ -47,7 +47,10 @@ class SQLQueryQualityDiagnosticTest {
         "SELECT CASE WHEN a=1 THEN CASE WHEN a=1 THEN 1 ELSE 2 END ELSE 0 END FROM t",
         "SELECT CASE a WHEN 1 THEN 1 END, CASE a WHEN 1 THEN 2 END FROM t",
         "SELECT 'CASE WHEN a=1 THEN 1 WHEN a=1 THEN 2 END' FROM t",
-        "SELECT CASE WHEN a=1 THEN 1 /* WHEN a=1 THEN 2 */ ELSE 2 END FROM t"
+        "SELECT CASE WHEN a=1 THEN 1 /* WHEN a=1 THEN 2 */ ELSE 2 END FROM t",
+        "SELECT CASE WHEN a AND b THEN 1 WHEN aANDb THEN 2 END FROM t",
+        "SELECT CASE WHEN a IS NULL THEN 1 WHEN aISNULL THEN 2 END FROM t",
+        "SELECT CASE WHEN NOT a THEN 1 WHEN NOTa THEN 2 END FROM t"
     })
     void separateCasesAndDifferentConditionsDoNotCollide(String sql) { check(sql, "CASE ", 0); }
 
