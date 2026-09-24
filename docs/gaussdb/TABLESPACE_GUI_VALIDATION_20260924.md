@@ -18,4 +18,14 @@ OWNER省略时，执行创建SQL会使用执行账号作为所有者，因此这
 
 run-came2H完整回归1575项：1552通过、23跳过、0失败/错误，新增空所有者测试通过。安全结果清单为test-results-tablespace-null-owner-20260924.json。
 
-当前GUI运行副本尚未部署此修复；需要重建插件、正常退出并更新测试副本后重新打开对象，验证源码区不再报错。新建/删除自定义表空间、目录权限及刷新变更仍未由本记录覆盖。
+## 更新后的GUI复验
+
+1038–1041正常退出客户端，确认原启动器/Java进程消失；只更新专用测试副本PostgreSQL模型插件到2.1.258.202609240113及bundles.info，然后用原专用工作区重新启动，没有替换客户发行包。1042–1048关闭每日提示、重新连接并逐层展开表空间，显示pg_default/pg_global。
+
+- 1049：双击pg_default，名称字段可见，源码区可见内容为CREATE TABLESPACE pg_default，没有ERROR WHILE READING SOURCE。
+- 1050–1051：回到导航，对表空间目录执行刷新，两项仍存在。
+- 1052：双击pg_global，新对象名称字段及CREATE TABLESPACE pg_global源码可见；pg_default旧源码为不可见，避免将旧编辑器内容当新结果。
+
+独立测试仓verify-tablespace-preview.mjs对1049、1052真实dump验证通过。验证器另有5项测试全部通过，包括拒绝隐藏旧源码、错误对象、源码错误与截断输出；这些5项是验证器测试，不加入JUnit1575统计。至此两系统对象的导航、目录刷新及空所有者预览崩溃修复GUI复验通过。
+
+没有执行CREATE TABLESPACE pg_default/pg_global，这些是系统对象，不能拿预览SQL直接重建。未知OWNER的迁移限制仍存在。自定义表空间创建/删除GUI、目录权限以及目录内容发生变化后的刷新仍未由本记录覆盖。
