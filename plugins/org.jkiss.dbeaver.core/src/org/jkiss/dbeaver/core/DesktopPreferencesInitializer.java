@@ -82,6 +82,7 @@ public class DesktopPreferencesInitializer extends AbstractPreferenceInitializer
         PrefUtils.setDefaultPreferenceValue(store, QMConstants.PROP_QUERY_TYPES,
             DBCExecutionPurpose.USER + "," + DBCExecutionPurpose.USER_FILTERED + "," + DBCExecutionPurpose.USER_SCRIPT);
         PrefUtils.setDefaultPreferenceValue(store, QMConstants.PROP_STORE_LOG_FILE, false);
+        PrefUtils.setDefaultPreferenceValue(store, QMConstants.PROP_STORE_HISTORY, false);
 
         // Logs
         PrefUtils.setDefaultPreferenceValue(store, DBeaverPreferences.LOGS_DEBUG_ENABLED, true);

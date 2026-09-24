@@ -18,6 +18,9 @@ package org.jkiss.dbeaver.runtime.qm;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.model.messages.ModelMessages;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.model.qm.*;
 import org.jkiss.dbeaver.model.qm.filters.QMCursorFilter;
 import org.jkiss.dbeaver.model.qm.meta.*;
@@ -43,6 +46,7 @@ public class QMRegistryImpl implements QMRegistry {
     private static final Log log = Log.getLog(QMRegistryImpl.class);
 
     private QMLogFileWriter logWriter;
+    private QueryHistoryPersistenceService historyPersistence;
     private QMExecutionHandler defaultHandler;
     private QMMCollectorImpl metaHandler;
     private final List<QMExecutionHandler> handlers = new ArrayList<>();
@@ -61,10 +65,21 @@ public class QMRegistryImpl implements QMRegistry {
         if (useLogWriter) {
             this.logWriter = new QMLogFileWriter();
             this.registerMetaListener(logWriter);
+            historyPersistence = new QueryHistoryPersistenceService(
+                DBWorkbench.getPlatform().getPreferenceStore(),
+                GeneralUtils.getMetadataFolder().resolve("query-history.json"), new DefaultEventFilter());
+            registerMetaListener(historyPersistence);
         }
     }
 
     public void dispose() {
+        if (historyPersistence != null) {
+            unregisterMetaListener(historyPersistence);
+            historyPersistence.metaInfoChanged(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(),
+                metaHandler.getPersistenceSnapshot());
+            historyPersistence.dispose();
+            historyPersistence = null;
+        }
         if (this.logWriter != null) {
             this.unregisterMetaListener(logWriter);
             this.logWriter.dispose();
@@ -109,7 +124,7 @@ public class QMRegistryImpl implements QMRegistry {
             eventBrowser = GeneralUtils.adapt(this, QMEventBrowser.class);
             if (eventBrowser == null) {
                 // Default browser
-                this.eventBrowser = defaultEventBrowser;
+                this.eventBrowser = new DefaultEventBrowser(true);
             }
         }
 
@@ -187,15 +202,46 @@ public class QMRegistryImpl implements QMRegistry {
     }
 
     private class DefaultEventBrowser implements QMEventBrowser {
+        private final boolean includePersisted;
+
+        private DefaultEventBrowser() {
+            this(false);
+        }
+
+        private DefaultEventBrowser(boolean includePersisted) {
+            this.includePersisted = includePersisted;
+        }
+
         @Override
-        public void deleteHistoryEvents(@NotNull java.util.Collection<? extends QMEvent> events) {
+        public void deleteHistoryEvents(@NotNull java.util.Collection<? extends QMEvent> events) throws DBException {
+            if (historyPersistence != null) {
+                try {
+                    historyPersistence.delete(events);
+                } catch (java.io.IOException e) {
+                    throw new DBException(ModelMessages.query_history_persistence_delete_error, e);
+                }
+            }
             metaHandler.deleteHistoryObjects(events.stream().map(QMEvent::getObject).toList());
         }
 
         @NotNull
         @Override
-        public QMEventCursor getQueryHistoryCursor(@NotNull QMCursorFilter cursorFilter) {
+        public QMEventCursor getQueryHistoryCursor(@NotNull QMCursorFilter cursorFilter) throws DBException {
             List<QMMetaEvent> pastEvents = metaHandler.getPastEvents();
+            if (includePersisted && historyPersistence != null) {
+                try {
+                    var existing = new java.util.HashSet<QMMObject>();
+                    pastEvents.forEach(event -> existing.add(event.getObject()));
+                    for (var event : historyPersistence.getEvents()) {
+                        if (existing.add(event.getObject())) {
+                            pastEvents.add(event);
+                        }
+                    }
+                    pastEvents.sort(java.util.Comparator.comparingLong(event -> event.getObject().getOpenTime()));
+                } catch (java.io.IOException e) {
+                    throw new DBException(ModelMessages.query_history_persistence_read_error, e);
+                }
+            }
             Collections.reverse(pastEvents);
             var criteria = cursorFilter.getCriteria();
             var filter = cursorFilter.getFilter();

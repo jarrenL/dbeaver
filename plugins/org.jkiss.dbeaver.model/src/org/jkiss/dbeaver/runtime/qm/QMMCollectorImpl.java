@@ -62,6 +62,7 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
     private final Object historySync = new Object();
     // History (may be purged when limit reached)
     private List<QMMetaEvent> pastEvents = new ArrayList<>();
+    private List<QMMetaEvent> dispatchingEvents = List.of();
     private boolean running = true;
     private long eventDispatchPeriod = 250;
 
@@ -216,6 +217,16 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
             pastEvents.removeIf(event -> event.getObject().isHistoryDeleted());
             return new ArrayList<>(pastEvents);
         }
+    }
+
+    /** Includes completed events awaiting or currently undergoing notification at shutdown. */
+    public synchronized List<QMMetaEvent> getPersistenceSnapshot() {
+        var snapshot = new ArrayList<>(getPastEvents());
+        snapshot.addAll(dispatchingEvents);
+        synchronized (eventPool) {
+            snapshot.addAll(eventPool);
+        }
+        return snapshot;
     }
 
     public void deleteHistoryObjects(@NotNull Collection<? extends QMMObject> objects) {
@@ -421,6 +432,7 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
             List<Long> sessionsToClose;
             synchronized (QMMCollectorImpl.this) {
                 events = obtainEvents();
+                dispatchingEvents = events;
                 sessionsToClose = new ArrayList<>(closedConnections);
                 closedConnections.clear();
             }
@@ -449,6 +461,9 @@ public class QMMCollectorImpl extends DefaultExecutionHandler implements QMMColl
                             size));
                     }
                 }
+            }
+            synchronized (QMMCollectorImpl.this) {
+                dispatchingEvents = List.of();
             }
             // Cleanup closed sessions
             synchronized (connectionMap) {

@@ -343,6 +343,8 @@ public class CoreMessages extends NLS {
     public static String pref_page_query_manager_group_settings;
     public static String pref_page_query_manager_group_storage;
     public static String pref_page_query_manager_checkbox_store_log_file;
+    public static String pref_page_query_manager_checkbox_store_history;
+    public static String pref_page_query_manager_history_warning;
     public static String pref_page_query_manager_logs_folder;
     public static String pref_page_query_manager_label_days_to_store_log;
     public static String pref_page_query_manager_label_entries_per_page;

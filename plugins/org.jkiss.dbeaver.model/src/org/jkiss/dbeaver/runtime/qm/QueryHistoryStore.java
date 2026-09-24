@@ -95,8 +95,9 @@ public final class QueryHistoryStore {
 
     public synchronized void purgeBefore(long cutoff) throws IOException {
         var updated = new ArrayList<>(entries);
-        updated.removeIf(entry -> entry.startTime() < cutoff);
-        save(updated);
+        if (updated.removeIf(entry -> entry.startTime() < cutoff)) {
+            save(updated);
+        }
     }
 
     @NotNull

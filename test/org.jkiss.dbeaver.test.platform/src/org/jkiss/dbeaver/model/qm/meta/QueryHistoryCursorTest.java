@@ -185,15 +185,68 @@ class QueryHistoryCursorTest {
     }
 
     private QMEventBrowser browser(QMMCollectorImpl collector) throws Exception {
+        return browser(collector, null, false);
+    }
+
+    private QMEventBrowser browser(QMMCollectorImpl collector,
+        org.jkiss.dbeaver.runtime.qm.QueryHistoryPersistenceService persistence, boolean includeHistory) throws Exception {
         var registry = mock(QMRegistryImpl.class);
         var field = QMRegistryImpl.class.getDeclaredField("metaHandler");
         field.setAccessible(true);
         field.set(registry, collector);
+        var persistenceField = QMRegistryImpl.class.getDeclaredField("historyPersistence");
+        persistenceField.setAccessible(true);
+        persistenceField.set(registry, persistence);
         var type = Class.forName(QMRegistryImpl.class.getName() + "$DefaultEventBrowser", true,
             QMRegistryImpl.class.getClassLoader());
-        var constructor = type.getDeclaredConstructor(QMRegistryImpl.class);
+        var constructor = type.getDeclaredConstructor(QMRegistryImpl.class, boolean.class);
         constructor.setAccessible(true);
-        return (QMEventBrowser) constructor.newInstance(registry);
+        return (QMEventBrowser) constructor.newInstance(registry, includeHistory);
+    }
+
+    @Test
+    void persistentBrowserMergesWithoutDuplicatingCurrentObjectsAndCurrentOnlyStaysIsolated() throws Exception {
+        var current = event("current", DBCExecutionPurpose.USER);
+        var old = event("old", DBCExecutionPurpose.USER);
+        when(current.getObject().getOpenTime()).thenReturn(200L);
+        when(old.getObject().getOpenTime()).thenReturn(100L);
+        var collector = mock(QMMCollectorImpl.class);
+        when(collector.getPastEvents()).thenAnswer(invocation -> new ArrayList<>(List.of(current)));
+        var persistence = mock(org.jkiss.dbeaver.runtime.qm.QueryHistoryPersistenceService.class);
+        when(persistence.getEvents()).thenReturn(List.of(old, current));
+        var criteria = new QMEventCriteria();
+        criteria.setObjectTypes(null);
+        criteria.setQueryTypes(null);
+        var filter = new QMCursorFilter(null, criteria, null);
+        try (var cursor = browser(collector, persistence, false).getQueryHistoryCursor(filter)) {
+            assertEquals(1, cursor.getTotalSize());
+        }
+        verifyNoInteractions(persistence);
+        try (var cursor = browser(collector, persistence, true).getQueryHistoryCursor(filter)) {
+            assertEquals(2, cursor.getTotalSize());
+            assertSame(current.getObject(), cursor.nextEvent(monitor).getObject());
+            assertSame(old.getObject(), cursor.nextEvent(monitor).getObject());
+        }
+    }
+
+    @Test
+    void persistentReadFailureIsNotMisrepresentedAsEmptyHistory() throws Exception {
+        var collector = mock(QMMCollectorImpl.class);
+        when(collector.getPastEvents()).thenReturn(new ArrayList<>());
+        var persistence = mock(org.jkiss.dbeaver.runtime.qm.QueryHistoryPersistenceService.class);
+        when(persistence.getEvents()).thenThrow(new java.io.IOException("fixture"));
+        assertThrows(DBException.class, () -> browser(collector, persistence, true).getQueryHistoryCursor(
+            new QMCursorFilter(null, new QMEventCriteria(), null)));
+    }
+
+    @Test
+    void failedPersistentDeletionDoesNotDeleteCurrentMemoryHistory() throws Exception {
+        var collector = mock(QMMCollectorImpl.class);
+        var persistence = mock(org.jkiss.dbeaver.runtime.qm.QueryHistoryPersistenceService.class);
+        var events = List.of(event("retained", DBCExecutionPurpose.USER));
+        doThrow(new java.io.IOException("fixture")).when(persistence).delete(events);
+        assertThrows(DBException.class, () -> browser(collector, persistence, false).deleteHistoryEvents(events));
+        verifyNoInteractions(collector);
     }
 
     @Test

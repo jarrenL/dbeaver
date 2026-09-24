@@ -277,6 +277,9 @@ public class ModelMessages extends NLS {
     public static String shell_cmd_manager_add_command_error_message;
     public static String shell_cmd_manager_add_command_error_message_te_specific;
 
+    public static String query_history_persistence_delete_error;
+    public static String query_history_persistence_read_error;
+
     static {
         // initialize resource bundle
         NLS.initializeMessages(BUNDLE_NAME, ModelMessages.class);

@@ -64,6 +64,7 @@ public class PrefPageQueryManager extends AbstractPrefPage implements IWorkbench
     private Text textHistoryDays;
     private Text textEntriesPerPage;
     private Button checkStoreLog;
+    private Button checkStoreHistory;
     private Text textOutputFolder;
 
 
@@ -123,6 +124,17 @@ public class PrefPageQueryManager extends AbstractPrefPage implements IWorkbench
                 CoreMessages.pref_page_query_manager_group_storage,
                 2,
                 GridData.FILL_HORIZONTAL | GridData.VERTICAL_ALIGN_BEGINNING);
+            checkStoreHistory = UIUtils.createCheckbox(storageSettings,
+                CoreMessages.pref_page_query_manager_checkbox_store_history,
+                store.getBoolean(QMConstants.PROP_STORE_HISTORY));
+            checkStoreHistory.setLayoutData(new GridData(SWT.BEGINNING, SWT.CENTER, false, false, 2, 1));
+            checkStoreHistory.setToolTipText(CoreMessages.pref_page_query_manager_history_warning);
+            checkStoreHistory.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent event) {
+                    UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection() || checkStoreHistory.getSelection());
+                }
+            });
             checkStoreLog = UIUtils.createCheckbox(
                 storageSettings,
                 CoreMessages.pref_page_query_manager_checkbox_store_log_file,
@@ -135,7 +147,7 @@ public class PrefPageQueryManager extends AbstractPrefPage implements IWorkbench
                 public void widgetSelected(SelectionEvent e)
                 {
                     UIUtils.enableWithChildren(textOutputFolder.getParent(), checkStoreLog.getSelection());
-                    UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection());
+                    UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection() || checkStoreHistory.getSelection());
                 }
             });
             textOutputFolder = DialogUtils.createOutputFolderChooser(storageSettings, CoreMessages.pref_page_query_manager_logs_folder, null, false, null);
@@ -163,7 +175,7 @@ public class PrefPageQueryManager extends AbstractPrefPage implements IWorkbench
         checkObjectTypes(objectTypes);
         checkQueryTypes(queryTypes);
         UIUtils.enableWithChildren(textOutputFolder.getParent(), checkStoreLog.getSelection());
-        UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection());
+        UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection() || checkStoreHistory.getSelection());
     }
 
     private void checkObjectTypes(Collection<QMObjectType> objectTypes) {
@@ -197,9 +209,10 @@ public class PrefPageQueryManager extends AbstractPrefPage implements IWorkbench
         textEntriesPerPage.setText(store.getDefaultString(QMConstants.PROP_ENTRIES_PER_PAGE));
 
         checkStoreLog.setSelection(store.getDefaultBoolean(QMConstants.PROP_STORE_LOG_FILE));
+        checkStoreHistory.setSelection(store.getDefaultBoolean(QMConstants.PROP_STORE_HISTORY));
         textOutputFolder.setText(store.getDefaultString(QMConstants.PROP_LOG_DIRECTORY));
         UIUtils.enableWithChildren(textOutputFolder.getParent(), checkStoreLog.getSelection());
-        UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection());
+        UIUtils.enableWithChildren(textHistoryDays, checkStoreLog.getSelection() || checkStoreHistory.getSelection());
 
         super.performDefaults();
     }
@@ -233,6 +246,7 @@ public class PrefPageQueryManager extends AbstractPrefPage implements IWorkbench
             store.setValue(QMConstants.PROP_ENTRIES_PER_PAGE, Math.max(1, entriesPerPage));
         }
         store.setValue(QMConstants.PROP_STORE_LOG_FILE, checkStoreLog.getSelection());
+        store.setValue(QMConstants.PROP_STORE_HISTORY, checkStoreHistory.getSelection());
         store.setValue(QMConstants.PROP_LOG_DIRECTORY, textOutputFolder.getText());
         PrefUtils.savePreferenceStore(store);
 

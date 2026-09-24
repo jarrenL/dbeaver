@@ -45,6 +45,7 @@ class QueryHistoryCollectorTest extends DBeaverUnitTest {
         field(collector, "listeners", new ArrayList<>());
         field(collector, "historySync", new Object());
         field(collector, "pastEvents", new ArrayList<>());
+        field(collector, "dispatchingEvents", List.of());
         field(collector, "running", false); // Run one production dispatch cycle, never schedule a background job.
         return collector;
     }
@@ -81,6 +82,26 @@ class QueryHistoryCollectorTest extends DBeaverUnitTest {
         collector.deleteHistoryObjects(List.of(removed));
         assertEquals(List.of(keep), collector.getPastEvents());
         assertFalse(retained.isHistoryDeleted());
+    }
+
+    @Test
+    void shutdownSnapshotIncludesPendingAndInFlightWithoutConsumingNotifications() throws Exception {
+        var collector = collector();
+        var event = new QMMetaEvent(mock(QMMStatementExecuteInfo.class), QMEventAction.END, 123, "fixture");
+        pending.add(event);
+        assertEquals(List.of(event), collector.getPersistenceSnapshot());
+        assertEquals(List.of(event), pending);
+        var listener = mock(org.jkiss.dbeaver.model.qm.QMMetaListener.class);
+        doAnswer(invocation -> {
+            assertTrue(pending.isEmpty());
+            assertEquals(List.of(event), collector.getPersistenceSnapshot());
+            return null;
+        }).when(listener).metaInfoChanged(any(), any());
+        collector.addListener(listener);
+        dispatch(collector);
+        verify(listener).metaInfoChanged(any(), eq(List.of(event)));
+        assertEquals(List.of(event), collector.getPersistenceSnapshot());
+        assertEquals(List.of(event), collector.getPastEvents());
     }
 
     @Test

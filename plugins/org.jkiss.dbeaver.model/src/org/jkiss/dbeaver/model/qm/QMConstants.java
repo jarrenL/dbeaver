@@ -36,6 +36,7 @@ public class QMConstants {
     public static final String PROP_ENTRIES_PER_PAGE = PROP_PREFIX + "maxEntries";
     public static final String PROP_HISTORY_DAYS = PROP_PREFIX + "historyDays";
     public static final String PROP_STORE_LOG_FILE = PROP_PREFIX + "storeLogs";
+    public static final String PROP_STORE_HISTORY = PROP_PREFIX + "storeHistory";
     public static final String PROP_LOG_DIRECTORY = PROP_PREFIX + "logDirectory";
 
     public static final int EVENT_TYPE_SESSION = 1;
