@@ -22,9 +22,26 @@
 
 初次临时夹具的ON COMMIT DROP被分布式拒绝（仅支持PRESERVE ROWS/DELETE ROWS），该次不算通过。后续使用普通会话临时表并回滚，没有改服务端配置来绕过限制。集中式首次`-c`批量调用仅展示最后ROLLBACK，未作为结果证据；重新按逐条stdin执行取得上述完整结果。
 
+## 麒麟 Linux GUI 验证
+
+隔离麒麟V10 x86_64客户端正常退出后，安装202609240431的model.lsm及model.sql插件并重启。为避免不存在对象的错误干扰，管理员新建专用schema `dbv_sql_quality_gui` 及空表 `probe(a integer DEFAULT 7)`，只给验收连接角色所需USAGE、SELECT、INSERT权限。
+
+队列1214在编辑器输入以下文本，不点击执行：
+
+```sql
+INSERT INTO dbv_sql_quality_gui.probe VALUES (1);
+SELECT * FROM dbv_sql_quality_gui.probe ORDER BY 1;
+```
+
+1215尚在后台解析，1216实际annotation模型得到三条中文WARNING：INSERT offset38/length10对应 `VALUES (1)`，SELECT offset57/length1对应 `*`，ORDER BY offset99/length1对应 `1`。截图同时显示两行告警图标与三处下划线。
+
+![麒麟三条SQL质量告警](query-quality-gui-20260924.png)
+
+1217补上INSERT目标列 `(a)`、改为 `SELECT a ... ORDER BY a`，1218及1219实际诊断均为0。`verify-query-quality-gui.mjs` 对两份真实输出及原SQL验证通过；其6项正反例通过（单独计数，不并入JUnit）。编辑期间独立查询表始终0行，结束后精确删除该表及空schema，目录复核0；权限随对象删除，不保留测试夹具。编辑器最后换回无夹具依赖的只读文本。
+
 ## 尚待验证（本组仍为部分覆盖）
 
-- GaussDB连接下三条规则的GUI显示、编辑后清除和多告警共存。
+- 本次中文GaussDB连接下的三条告警共存、范围及编辑后清除已验证；鼠标悬停、英文界面及客户实际桌面云仍需单独验收。
 - 星号展开/EXCEPT等方言扩展、更多窗口语法、不完整输入与补全交互。
 - 本次修改作用于共享语义识别器，需关注其他数据库方言的编辑体验；并非仅GaussDB独有入口。
 - LIKE前导通配符、重复表达式/CASE、EXISTS筛选、NOT IN可空性等历史规则仍独立待补。
