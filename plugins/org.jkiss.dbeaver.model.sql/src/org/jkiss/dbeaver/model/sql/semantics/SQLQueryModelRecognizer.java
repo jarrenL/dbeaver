@@ -1027,6 +1027,18 @@ public class SQLQueryModelRecognizer {
         pending.push(root);
         while (!pending.isEmpty()) {
             var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_likePredicate) {
+                var pattern = node.findFirstChildOfName("pattern");
+                var escape = node.findFirstChildOfName("escapeCharacter");
+                String value = pattern == null ? null : readSimpleStringLiteral(pattern);
+                String escapeValue = escape == null ? "\\" : readSimpleStringLiteral(escape);
+                if (value != null && !value.isEmpty() && escapeValue != null
+                    && escapeValue.codePointCount(0, escapeValue.length()) <= 1
+                    && (value.charAt(0) == '%' || value.charAt(0) == '_')
+                    && (escapeValue.isEmpty() || value.charAt(0) != escapeValue.codePointAt(0))) {
+                    this.recognitionContext.appendWarning(pattern, ModelSQLMessages.model_sql_semantic_like_prefix);
+                }
+            }
             if (node.getNodeKindId() == SQLStandardParser.RULE_selectSublist
                 && (node.getText().equals("*") || node.getText().endsWith(".*"))) {
                 this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_select_star);
@@ -1060,6 +1072,26 @@ public class SQLQueryModelRecognizer {
     private static boolean isNullLiteral(@NotNull STMTreeNode operand) {
         // Parser text excludes comments; quotes, casts, functions and compound expressions do not match.
         return operand.getText().replace("(", "").replace(")", "").equalsIgnoreCase("NULL");
+    }
+
+    @Nullable
+    private static String readSimpleStringLiteral(@NotNull STMTreeNode node) {
+        String text = node.getText();
+        if (text.length() < 2 || text.charAt(0) != '\'' || text.charAt(text.length() - 1) != '\'') {
+            return null;
+        }
+        var value = new StringBuilder();
+        for (int i = 1; i < text.length() - 1; i++) {
+            char c = text.charAt(i);
+            if (c == '\'') {
+                if (i + 1 >= text.length() - 1 || text.charAt(i + 1) != '\'') {
+                    return null;
+                }
+                i++;
+            }
+            value.append(c);
+        }
+        return value.toString();
     }
 
     private static boolean isWindowSort(@NotNull STMTreeNode node) {

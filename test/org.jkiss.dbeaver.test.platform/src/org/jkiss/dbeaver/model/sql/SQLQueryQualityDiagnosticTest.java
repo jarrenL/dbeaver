@@ -29,6 +29,42 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class SQLQueryQualityDiagnosticTest {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT a FROM t WHERE a LIKE '%tail'",
+        "SELECT a FROM t WHERE a LIKE '_tail'",
+        "SELECT a FROM t WHERE a ILIKE '%中文'",
+        "SELECT a FROM t WHERE a NOT LIKE '%tail'",
+        "SELECT a FROM t WHERE a LIKE /* pattern */ '%tail'",
+        "SELECT a FROM t WHERE a LIKE '%a''b'",
+        "SELECT a FROM t WHERE a LIKE '%tail' ESCAPE '!'",
+        "SELECT a FROM t WHERE a LIKE '%tail' ESCAPE ''",
+        "SELECT a FROM t WHERE a LIKE '%tail' ESCAPE '_'",
+        "SELECT a FROM t WHERE a LIKE '_tail' ESCAPE '%'",
+        "SELECT 1 WHERE 'abc' LIKE '%c'",
+        "SELECT a FROM t WHERE EXISTS (SELECT 1 FROM s WHERE s.a LIKE '%x')"
+    })
+    void leadingLikeWildcardsProduceAdvisory(String sql) { check(sql, "LIKE ", 1); }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT a FROM t WHERE a LIKE 'prefix%'",
+        "SELECT a FROM t WHERE a LIKE 'prefix_'",
+        "SELECT a FROM t WHERE a LIKE ''",
+        "SELECT a FROM t WHERE a LIKE '!%tail' ESCAPE '!'",
+        "SELECT a FROM t WHERE a LIKE '!_tail' ESCAPE '!'",
+        "SELECT a FROM t WHERE a LIKE '%%tail' ESCAPE '%'",
+        "SELECT a FROM t WHERE a LIKE '__tail' ESCAPE '_'",
+        "SELECT a FROM t WHERE a LIKE pattern_column",
+        "SELECT a FROM t WHERE a LIKE '%tail' ESCAPE escape_column",
+        "SELECT a FROM t WHERE a LIKE '%tail' ESCAPE 'ab'",
+        "SELECT a FROM t WHERE a LIKE concat('%', a)",
+        "SELECT a FROM t WHERE a LIKE '%a' || 'b'",
+        "SELECT 'LIKE ''%tail''' FROM t",
+        "SELECT a FROM t -- LIKE '%tail'"
+    })
+    void escapedLiteralPrefixesAndUnknownPatternsAreNotReported(String sql) { check(sql, "LIKE ", 0); }
+
     private void check(String sql, String messagePrefix, int expected) {
         var syntax = new SQLSyntaxManager();
         syntax.init(BasicSQLDialect.INSTANCE, mock(DBPPreferenceStore.class));
@@ -92,4 +128,3 @@ class SQLQueryQualityDiagnosticTest {
     })
     void namedOrderingAndWindowConstantsAreNotOrdinalSort(String sql) { check(sql, "ORDER BY ", 0); }
 }
-
