@@ -17,11 +17,28 @@ SQL 编辑器启用语义分析时，`SQLQueryModelRecognizer` 遍历已识别�
 
 首次 `run-bZKDmQ` 失败：测试直接访问未导出的消息类，且标准解析器未完整识别无 FROM 的 WHERE 查询。改用消息中的共同 SQL 术语识别此规则，并以带 FROM 的合法标准语法验证实现。第二轮 `run-81brD2` 告警数断言通过，但13个源码范围断言因测试插件未声明 ANTLR 依赖报错；已补显式测试依赖。失败轮不算通过。
 
+## 无 FROM 的 WHERE 补验与修复
+
+标准语法的 `tableExpression` 原先必须以 FROM 开始，导致无 FROM 的 WHERE 未进入语义模型。现增加以 WHERE 开始的非空分支，保留原有 FROM 分支，不引入可匹配空文本的 tableExpression。
+
+新增17项：12个无FROM正例覆盖七种比较符、括号/注释、嵌套EXISTS、ORDER BY/LIMIT及UNION；5个反例覆盖IS NULL、IS NOT NULL、字符串、COALESCE与嵌套正确空值判断。最终 `run-7ibMBk` 完整回归1710项、1687通过、23跳过、0失败/错误；新增项与原25项均通过，脱敏结果见 `sql-null-no-from-results-20260924.json`。这补上此前明确保留的无FROM WHERE边界，不代表所有无FROM子句组合已验。
+
+集中式与分布式507分别通过gsql执行以下只读语句（未创建或修改数据库对象）：
+
+```sql
+SELECT 'null_is_unknown', (1 = NULL) IS NULL;
+SELECT 'filtered_row' WHERE 1 = NULL;
+SELECT 'is_not_null_row' WHERE 1 IS NOT NULL;
+SELECT 'nested_row' WHERE EXISTS (SELECT 1 WHERE 1 IS NOT NULL);
+```
+
+两套环境均正常退出，结果依次为 `null_is_unknown|t`、零行、`is_not_null_row`、`nested_row`。这证明测试SQL在现有服务器有效及其结果，不替代客户端JDBC、GUI标记或其他金融版本验收。
+
 ## 明确保留的边界
 
 最终完整回归 `run-6LRM2D`：1693 项，1670 通过、23 跳过、0 失败/错误。上述25个新增执行全部通过。脱敏机器结果见 `sql-null-diagnostic-results-20260924.json`；仅记录实际完成的组件断言，不扩大为 GUI 通过。
 
-- `SELECT 1 WHERE 1 = NULL` 等无 FROM 的 WHERE 语句是已发现的解析覆盖缺口，不因替换为带 FROM 用例而算通过，仍待补。
+- 无FROM的WHERE边界已按上节修复与补验；仅GROUP BY/HAVING/ORDER BY/LIMIT而不带WHERE的无FROM组合不在本轮结论内。
 - CAST(NULL AS …)、复合表达式的空值传播、元数据可空性分析与 NOT IN 子查询规则未由此实现。
 - 其他静态质量规则仍需逐条接入与验证；本项不代表全部251条历史静态测试迁移完成。
 - 真实 GaussDB 方言、GUI 提示和客户版本尚未以本组组件测试证明。

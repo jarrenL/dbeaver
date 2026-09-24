@@ -49,7 +49,15 @@ class SQLNullComparisonDiagnosticTest {
         "SELECT 1 FROM t WHERE 1 = /* comment */ null",
         "SELECT CASE WHEN 1 = NULL THEN 1 ELSE 2 END FROM t",
         "SELECT 1 FROM t WHERE EXISTS (SELECT 1 FROM s WHERE 1 = NULL)",
-        "UPDATE t SET a=2 WHERE a=NULL", "DELETE FROM t WHERE NULL=a"
+        "UPDATE t SET a=2 WHERE a=NULL", "DELETE FROM t WHERE NULL=a",
+        "SELECT 1 WHERE 1 = NULL", "SELECT 1 WHERE NULL <> 1",
+        "SELECT 1 WHERE 1 != NULL", "SELECT 1 WHERE NULL < 1",
+        "SELECT 1 WHERE 1 > NULL", "SELECT 1 WHERE NULL <= 1",
+        "SELECT 1 WHERE 1 >= NULL", "SELECT 1 WHERE 1 = (NULL)",
+        "SELECT 1 WHERE 1 = /* comment */ null",
+        "SELECT 1 WHERE EXISTS (SELECT 1 WHERE 1 = NULL)",
+        "SELECT 1 WHERE 1 = NULL ORDER BY 1 LIMIT 2",
+        "SELECT 1 WHERE 1 = NULL UNION ALL SELECT 2 WHERE 2 = 2"
     })
     void directNullComparisonProducesOneWarningWithSourceRange(String sql) {
         var warnings = warnings(sql);
@@ -68,7 +76,10 @@ class SQLNullComparisonDiagnosticTest {
         "SELECT 1 FROM t /* WHERE a=NULL */", "SELECT 1 FROM t WHERE a=b",
         "SELECT 1 FROM t WHERE a=coalesce(NULL, 1)", "SELECT 1 FROM t WHERE a=(SELECT NULL)",
         "SELECT 1 FROM t WHERE a=NULLIF(b, 1)", "SELECT 1 FROM t WHERE a IN (NULL, 1)",
-        "SELECT 1 FROM t WHERE a=1 -- =NULL", "SELECT 1 FROM t WHERE \"NULL\"=1"
+        "SELECT 1 FROM t WHERE a=1 -- =NULL", "SELECT 1 FROM t WHERE \"NULL\"=1",
+        "SELECT 1 WHERE 1 IS NULL", "SELECT 1 WHERE 1 IS NOT NULL",
+        "SELECT 1 WHERE 'NULL' = 'NULL'", "SELECT 1 WHERE coalesce(NULL, 1)=1",
+        "SELECT 1 WHERE EXISTS (SELECT 1 WHERE 1 IS NOT NULL)"
     })
     void nullTestsStringsCommentsAndNonliteralOperandsDoNotTriggerRule(String sql) {
         assertTrue(warnings(sql).isEmpty(), sql);

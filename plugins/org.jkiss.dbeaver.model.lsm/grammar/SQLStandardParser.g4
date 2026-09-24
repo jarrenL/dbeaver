@@ -217,7 +217,8 @@ selectList: selectSublist (Comma selectSublist)*; // (Comma selectSublist)* cont
 selectSublist: (Asterisk|derivedColumn)? anyUnexpected??;
 derivedColumn: valueExpression (asClause)?;
 asClause: (AS)? columnName;
-tableExpression: fromClause whereClause? groupByClause? havingClause? orderByClause? limitClause?;
+tableExpression: fromClause whereClause? groupByClause? havingClause? orderByClause? limitClause?
+    | whereClause groupByClause? havingClause? orderByClause? limitClause?;
 queryPrimary: (nonJoinQueryPrimary|joinedTable);
 queryTerm: (nonJoinQueryTerm|joinedTable);
 queryExpression: (joinedTable|nonJoinQueryTerm) (unionTerm|exceptTerm)*;
