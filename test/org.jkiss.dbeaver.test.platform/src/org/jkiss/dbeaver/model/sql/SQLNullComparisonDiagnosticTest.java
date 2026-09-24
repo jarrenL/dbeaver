@@ -30,6 +30,23 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class SQLNullComparisonDiagnosticTest {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT '中文' WHERE 1 = NULL",
+        "SELECT '😀' WHERE 1 = NULL",
+        "SELECT '😀🧪' WHERE 1 = NULL",
+        "/* 😀 */ SELECT 1 WHERE 1 = NULL",
+        "-- 😀\r\nSELECT 1 WHERE 1 = NULL",
+        "SELECT 'é😀' WHERE 1 = NULL"
+    })
+    void diagnosticRangeUsesJavaDocumentOffsets(String sql) {
+        var warnings = warnings(sql);
+        assertEquals(1, warnings.size());
+        var range = warnings.getFirst().getInterval();
+        assertEquals(sql.indexOf("1 = NULL"), range.a);
+        assertEquals("1 = NULL", sql.substring(range.a, range.b + 1));
+    }
+
     private List<SQLQueryRecognitionProblemInfo> warnings(String sql) {
         var syntax = new SQLSyntaxManager();
         syntax.init(BasicSQLDialect.INSTANCE, mock(DBPPreferenceStore.class));

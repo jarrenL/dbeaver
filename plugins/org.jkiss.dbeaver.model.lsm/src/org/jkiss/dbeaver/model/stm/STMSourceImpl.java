@@ -17,7 +17,7 @@
 package org.jkiss.dbeaver.model.stm;
 
 import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.ANTLRInputStream;
 import org.jkiss.code.NotNull;
 
 import java.io.IOException;
@@ -28,8 +28,9 @@ public class STMSourceImpl implements STMSource {
     
     private final CharStream stream;
     
+    @SuppressWarnings("deprecation") // Keep reader and string sources in the same UTF-16 coordinate system.
     public STMSourceImpl(@NotNull Reader reader) throws IOException {
-        this.stream = CharStreams.fromReader(reader);
+        this.stream = new ANTLRInputStream(reader);
     }
 
     @NotNull

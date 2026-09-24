@@ -17,7 +17,7 @@
 package org.jkiss.dbeaver.model.stm;
 
 import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.ANTLRInputStream;
 import org.jkiss.code.NotNull;
 
 import java.io.IOException;
@@ -44,7 +44,9 @@ public interface STMSource {
     /**
      * Prepare source based on text string
      */
+    @SuppressWarnings("deprecation") // UTF-16 indices must match Java String and Eclipse document offsets.
     public static STMSource fromString(String string) {
-        return () -> CharStreams.fromString(string);
+        // CodePointCharStream counts supplementary characters once, shifting every later source range.
+        return () -> new ANTLRInputStream(string);
     }
 }
