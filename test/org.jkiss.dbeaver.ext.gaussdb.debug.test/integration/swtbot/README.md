@@ -56,6 +56,12 @@ Operations: `click ID`, `expand ID`, `double ID`, `check ID`, `uncheck ID`,
 StyledText dumps include the one-based caret line and selection offsets.
 All separators in actual command files are tabs, not spaces.
 
+`check`, `uncheck`, and `double` target tree items, not checkboxes or tables. Use
+`click` for a checkbox and observe its resulting state. `table-select TABLE_ID ROW`
+selects a zero-based table row; `table-context TABLE_ID MENU_TEXT` opens that table's
+context menu while retaining selection. `cell` double-clicks a table cell, but a
+successful command alone does not prove that a row was selected or a dialog opened.
+
 `context-selection TREE_ID MENU_TEXT` preserves a multi-selection when opening its menu.
 `dropdown TOOL_ITEM_ID MENU_TEXT` operates a toolbar drop-down; `view VIEW_ID` opens a workbench view.
 `model TREE_ITEM_ID` reads the actual model and, for GaussDB routines, calls the production eligibility

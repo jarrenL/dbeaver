@@ -214,6 +214,8 @@ public final class Bot implements IStartup {
             case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], out);
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
+            case "table-select" -> new SWTBotTable((Table) widget).select(Integer.parseInt(args[2]));
+            case "table-context" -> new SWTBotTable((Table) widget).contextMenu(args[2]).click();
             case "focus" -> display.syncExec(() -> ((Control) widget).setFocus());
             default -> throw new IllegalArgumentException(args[0]);
         }
