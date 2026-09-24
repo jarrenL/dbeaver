@@ -151,7 +151,7 @@ public class SQLQueryModelRecognizer {
         };
 
         if (contents != null) {
-            this.checkNullComparisons(tree);
+            this.checkQueryQuality(tree);
             SQLQueryModel model = new SQLQueryModel(tree, contents, this.symbolEntries, this.lexicalItems.values().stream().toList());
             model.resolveRelations(rootRowsContext, this.recognitionContext);
 
@@ -1022,11 +1022,24 @@ public class SQLQueryModelRecognizer {
         return new LexicalScopeHolder(this.beginScope());
     }
 
-    private void checkNullComparisons(@NotNull STMTreeNode root) {
+    private void checkQueryQuality(@NotNull STMTreeNode root) {
         var pending = new ArrayDeque<STMTreeNode>();
         pending.push(root);
         while (!pending.isEmpty()) {
             var node = pending.pop();
+            if (node.getNodeKindId() == SQLStandardParser.RULE_selectSublist
+                && (node.getText().equals("*") || node.getText().endsWith(".*"))) {
+                this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_select_star);
+            }
+            if (node.getNodeKindId() == SQLStandardParser.RULE_insertColumnsAndSource
+                && node.findFirstChildOfName("insertColumnList") == null
+                && (node.findFirstChildOfName("queryExpression") != null || node.getText().equalsIgnoreCase("DEFAULTVALUES"))) {
+                this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_insert_columns);
+            }
+            if (node.getNodeKindId() == SQLStandardParser.RULE_sortKey
+                && node.findFirstChildOfName("columnIndex") != null && !isWindowSort(node)) {
+                this.recognitionContext.appendWarning(node, ModelSQLMessages.model_sql_semantic_order_ordinal);
+            }
             if (node.getNodeKindId() == SQLStandardParser.RULE_rowValuePredicate && !node.hasErrorChildren()) {
                 var comparison = node.findFirstChildOfName("comparisonPredicate");
                 var left = node.findFirstChildOfName("rowValueConstructor");
@@ -1047,6 +1060,18 @@ public class SQLQueryModelRecognizer {
     private static boolean isNullLiteral(@NotNull STMTreeNode operand) {
         // Parser text excludes comments; quotes, casts, functions and compound expressions do not match.
         return operand.getText().replace("(", "").replace(")", "").equalsIgnoreCase("NULL");
+    }
+
+    private static boolean isWindowSort(@NotNull STMTreeNode node) {
+        for (var parent = node.getParentNode(); parent != null; parent = parent.getParentNode()) {
+            if (parent.getNodeKindId() == SQLStandardParser.RULE_overClause) {
+                return true;
+            }
+            if (parent.getNodeKindId() == SQLStandardParser.RULE_querySpecification) {
+                return false;
+            }
+        }
+        return false;
     }
 
     @Nullable

@@ -20,6 +20,9 @@ import org.eclipse.osgi.util.NLS;
 
 public class ModelSQLMessages extends NLS {
     public static String model_sql_semantic_null_comparison;
+    public static String model_sql_semantic_select_star;
+    public static String model_sql_semantic_insert_columns;
+    public static String model_sql_semantic_order_ordinal;
     static final String BUNDLE_NAME = "org.jkiss.dbeaver.model.sql.messages.ModelSQLResources"; //$NON-NLS-1$
 
     public static String model_sql_semantic_symbolClass_UNKNOWN;

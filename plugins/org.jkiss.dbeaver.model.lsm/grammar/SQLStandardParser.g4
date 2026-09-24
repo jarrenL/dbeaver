@@ -403,7 +403,8 @@ selectTargetList: selectTargetItem (Comma selectTargetItem)* Comma*;
 selectTargetItem: parameterSpecification|tableName|anyUnexpected??;
 deleteStatement: DELETE FROM tableName? ((AS)? correlationName)? whereClause?;
 insertStatement: INSERT INTO (tableName insertColumnsAndSource?)?;
-insertColumnsAndSource: LeftParen (insertColumnList | Asterisk)? (RightParen (queryExpression | DEFAULT VALUES)?)?;
+insertColumnsAndSource: LeftParen (insertColumnList | Asterisk)? (RightParen (queryExpression | DEFAULT VALUES)?)?
+    | queryExpression | DEFAULT VALUES;
 insertColumnList: columnNameList;
 topExpression: TOP anyValue PERCENT? (WITH TIES)?;
 
