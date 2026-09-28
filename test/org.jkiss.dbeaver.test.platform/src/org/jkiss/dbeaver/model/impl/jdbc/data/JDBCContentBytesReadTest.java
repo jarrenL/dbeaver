@@ -29,7 +29,36 @@ import static org.mockito.Mockito.*;
 
 public class JDBCContentBytesReadTest {
     @ParameterizedTest
-    @ValueSource(ints = {0, 1, 128})
+    @ValueSource(ints = {0, 1, 256})
+    void streamLongerThanDeclaredLengthFailsWithoutSilentTruncation(int declaredLength) throws Exception {
+        var original = new byte[] {9, 8, 7};
+        var content = new JDBCContentBytes(mock(DBCExecutionContext.class), original);
+        var actual = new byte[declaredLength + 1];
+        for (int i = 0; i < actual.length; i++) {
+            actual[i] = (byte) i;
+        }
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var stream = new java.io.ByteArrayInputStream(actual) {
+            @Override public void close() { closed.set(true); }
+        };
+        var storage = mock(DBDContentStorage.class);
+        when(storage.getContentStream()).thenReturn(stream);
+        when(storage.getContentLength()).thenReturn((long) declaredLength);
+        var failure = assertThrows(DBException.class,
+            () -> content.updateContents(new VoidProgressMonitor(), storage));
+        assertInstanceOf(java.io.IOException.class, failure.getCause());
+        assertTrue(closed.get());
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+        when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(actual));
+        when(storage.getContentLength()).thenReturn((long) actual.length);
+        content.updateContents(new VoidProgressMonitor(), storage);
+        assertArrayEquals(actual, content.getContentStream().readAllBytes());
+        content.resetContents();
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 128, 257})
     void readFailureClosesStreamPreservesValueAndAllowsRetry(int failAfter) throws Exception {
         var original = new byte[] {9, 8, 7};
         var content = new JDBCContentBytes(mock(DBCExecutionContext.class), original);

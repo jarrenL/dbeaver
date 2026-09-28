@@ -142,6 +142,9 @@ public class JDBCContentBytes extends JDBCContentAbstract implements DBDContentS
                     if (newData.length != length) {
                         throw new EOFException("Content ended before its declared length");
                     }
+                    if (is.read() != -1) {
+                        throw new IOException("Content exceeds its declared length");
+                    }
                     if (data != null && Arrays.equals(data, newData)) {
                         return false;
                     }
