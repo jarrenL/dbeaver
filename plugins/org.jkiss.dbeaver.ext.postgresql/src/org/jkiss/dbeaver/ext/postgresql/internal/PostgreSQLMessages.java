@@ -38,6 +38,8 @@ public class PostgreSQLMessages extends NLS {
     public static String sequence_restart_not_supported;
     public static String sequence_rename_not_supported;
     public static String session_operation_not_confirmed;
+    public static String session_invalid_identifier;
+    public static String session_identifier_null;
 
     static {
         // initialize resource bundle

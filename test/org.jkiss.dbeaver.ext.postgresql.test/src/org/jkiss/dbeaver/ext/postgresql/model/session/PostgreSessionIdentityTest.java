@@ -29,8 +29,10 @@ class PostgreSessionIdentityTest {
         when(connection.createStatement()).thenReturn(statement);
         var manager = new PostgreSessionManager(mock(PostgreDataSource.class));
         for (boolean cancel : new boolean[] {true, false}) {
-            assertThrows(org.jkiss.dbeaver.DBException.class,
+            var failure = assertThrows(org.jkiss.dbeaver.DBException.class,
                 () -> manager.alterSession(connection, id, Map.of(PostgreSessionManager.OPTION_QUERY_CANCEL, cancel)));
+            assertEquals(org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages.session_invalid_identifier,
+                failure.getMessage());
         }
         verify(connection, never()).createStatement();
         verifyNoInteractions(statement);

@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.ext.postgresql.model.session;
 
 import org.jkiss.dbeaver.model.admin.sessions.AbstractServerSession;
+import org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.utils.CommonUtils;
@@ -50,7 +51,7 @@ public class PostgreSession extends AbstractServerSession {
         // PostgreSQL uses int PIDs; compatible servers can expose 64-bit thread identifiers.
         this.pid = dbResult.getLong("pid");
         if (dbResult.wasNull()) {
-            throw new SQLException("Server session identifier is NULL", "22004");
+            throw new SQLException(PostgreSQLMessages.session_identifier_null, "22004");
         }
         this.user = JDBCUtils.safeGetStringTrimmed(dbResult, "usename");
         this.clientHost = JDBCUtils.safeGetStringTrimmed(dbResult, "client_hostname");

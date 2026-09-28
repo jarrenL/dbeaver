@@ -93,7 +93,7 @@ public class PostgreSessionManager implements DBAServerSessionManager<PostgreSes
                 throw new NumberFormatException("Expected a positive session identifier");
             }
         } catch (NumberFormatException e) {
-            throw new DBException("Invalid server session identifier", e);
+            throw new DBException(PostgreSQLMessages.session_invalid_identifier, e);
         }
         try {
             try (Statement dbStat = ((JDBCSession) session).createStatement()) {
