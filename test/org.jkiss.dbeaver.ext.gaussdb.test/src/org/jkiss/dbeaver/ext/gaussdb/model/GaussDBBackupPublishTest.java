@@ -24,18 +24,30 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
-    @ValueSource(strings = {"stderr-only", "stderr-dual", "stdout-dual"})
+    @ValueSource(strings = {"stderr-only", "stderr-dual", "stdout-dual", "both-distinct", "both-same", "read-and-close"})
     void logReadFailureCannotBecomeSuccessfulTask(String stream) throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));
         var failure = new IOException("synthetic pipe read failure");
+        var secondary = new IOException("synthetic secondary failure");
         var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var secondClosed = new java.util.concurrent.atomic.AtomicBoolean();
         var broken = new java.io.InputStream() {
             @Override public int read() throws IOException { throw failure; }
-            @Override public void close() { closed.set(true); }
+            @Override public void close() throws IOException {
+                closed.set(true);
+                if (stream.equals("read-and-close")) throw secondary;
+            }
+        };
+        var secondBroken = new java.io.InputStream() {
+            @Override public int read() throws IOException { throw stream.equals("both-same") ? failure : secondary; }
+            @Override public void close() { secondClosed.set(true); }
         };
         var loggedProcess = mock(Process.class);
-        when(loggedProcess.getInputStream()).thenReturn(stream.equals("stdout-dual") ? broken : java.io.InputStream.nullInputStream());
-        when(loggedProcess.getErrorStream()).thenReturn(stream.equals("stdout-dual") ? java.io.InputStream.nullInputStream() : broken);
+        boolean both = stream.startsWith("both-");
+        when(loggedProcess.getInputStream()).thenReturn(stream.equals("stdout-dual") || both
+            ? broken : java.io.InputStream.nullInputStream());
+        when(loggedProcess.getErrorStream()).thenReturn(both ? secondBroken
+            : stream.equals("stdout-dual") ? java.io.InputStream.nullInputStream() : broken);
         var settings = mock(PostgreDatabaseBackupSettings.class, RETURNS_DEEP_STUBS);
         var writer = new java.io.PrintStream(new java.io.ByteArrayOutputStream());
         when(settings.getLogWriter()).thenReturn(writer);
@@ -62,6 +74,12 @@ class GaussDBBackupPublishTest {
                 mock(DBTTask.class, RETURNS_DEEP_STUBS), settings, info, mock(Log.class)));
             assertSame(failure, actual.getCause());
             assertTrue(closed.get());
+            if (both) assertTrue(secondClosed.get());
+            if (stream.equals("both-distinct") || stream.equals("read-and-close")) {
+                assertArrayEquals(new Throwable[] {secondary}, failure.getSuppressed());
+            } else {
+                assertEquals(0, failure.getSuppressed().length, "No duplicate or self-suppressed failure");
+            }
             verify(monitor).done();
         } finally {
             writer.close();
