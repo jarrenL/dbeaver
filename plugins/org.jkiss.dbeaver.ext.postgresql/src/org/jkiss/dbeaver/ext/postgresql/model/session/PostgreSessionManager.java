@@ -20,6 +20,7 @@ import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBDatabaseException;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
+import org.jkiss.dbeaver.ext.postgresql.internal.PostgreSQLMessages;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.admin.sessions.DBAServerSessionManager;
 import org.jkiss.dbeaver.model.admin.sessions.DBAServerSessionManagerSQL;
@@ -30,6 +31,7 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.SQLException;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,10 +97,12 @@ public class PostgreSessionManager implements DBAServerSessionManager<PostgreSes
         }
         try {
             try (Statement dbStat = ((JDBCSession) session).createStatement()) {
-                if (options != null && CommonUtils.toBoolean(options.get(OPTION_QUERY_CANCEL))) {
-                    dbStat.execute("SELECT pg_catalog.pg_cancel_backend(" + pid + ")");
-                } else {
-                    dbStat.execute("SELECT pg_catalog.pg_terminate_backend(" + pid + ")");
+                String function = options != null && CommonUtils.toBoolean(options.get(OPTION_QUERY_CANCEL))
+                    ? "pg_cancel_backend" : "pg_terminate_backend";
+                try (ResultSet result = dbStat.executeQuery("SELECT pg_catalog." + function + "(" + pid + ")")) {
+                    if (!result.next() || !result.getBoolean(1) || result.wasNull()) {
+                        throw new DBException(PostgreSQLMessages.session_operation_not_confirmed);
+                    }
                 }
             }
         }

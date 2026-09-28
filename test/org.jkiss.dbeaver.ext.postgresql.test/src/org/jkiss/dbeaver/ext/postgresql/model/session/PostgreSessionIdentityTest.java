@@ -56,11 +56,15 @@ class PostgreSessionIdentityTest {
         var connection = mock(JDBCSession.class);
         var statement = mock(JDBCStatement.class);
         when(connection.createStatement()).thenReturn(statement);
+        var acknowledgement = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        when(statement.executeQuery(anyString())).thenReturn(acknowledgement);
+        when(acknowledgement.next()).thenReturn(true);
+        when(acknowledgement.getBoolean(1)).thenReturn(true);
         var manager = new PostgreSessionManager(mock(PostgreDataSource.class));
         manager.alterSession(connection, object.getSessionId(), Map.of(PostgreSessionManager.OPTION_QUERY_CANCEL, true));
         manager.alterSession(connection, object.getSessionId(), Map.of(PostgreSessionManager.OPTION_QUERY_CANCEL, false));
-        verify(statement).execute("SELECT pg_catalog.pg_cancel_backend(" + pid + ")");
-        verify(statement).execute("SELECT pg_catalog.pg_terminate_backend(" + pid + ")");
+        verify(statement).executeQuery("SELECT pg_catalog.pg_cancel_backend(" + pid + ")");
+        verify(statement).executeQuery("SELECT pg_catalog.pg_terminate_backend(" + pid + ")");
         verify(statement, times(2)).close();
         verify(connection, never()).close();
     }
