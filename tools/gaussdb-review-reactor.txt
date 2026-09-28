@@ -70,3 +70,4 @@
 :org.jkiss.dbeaver.ext.gaussdb.test
 :org.jkiss.dbeaver.ext.gaussdb.debug.test
 :org.jkiss.dbeaver.ext.postgresql.test
+:org.jkiss.dbeaver.ui.editors.data.test

@@ -9,7 +9,8 @@ assert(output, 'Specify an output JSON file');
 const since = process.argv[3] === undefined ? null : Date.parse(process.argv[3]);
 assert(since === null || Number.isFinite(since), 'Invalid report start timestamp');
 const modules = ['org.jkiss.dbeaver.test.platform', 'org.jkiss.dbeaver.ext.gaussdb.test',
-    'org.jkiss.dbeaver.ext.gaussdb.debug.test', 'org.jkiss.dbeaver.ext.postgresql.test'];
+    'org.jkiss.dbeaver.ext.gaussdb.debug.test', 'org.jkiss.dbeaver.ext.postgresql.test',
+    'org.jkiss.dbeaver.ui.editors.data.test'];
 const decode = s => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 const attributes = s => Object.fromEntries([...s.matchAll(/([\w.-]+)="([^"]*)"/g)].map(m => [m[1], decode(m[2])]));

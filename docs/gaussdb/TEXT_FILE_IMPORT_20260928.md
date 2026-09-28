@@ -2,6 +2,14 @@
 
 日期：2026-09-28。关联历史清单9.1导入、9.8值编辑、11.1字符类型。本记录分别列出组件及限定环境下的界面/数据库验收，不代表完整产品验收。
 
+## UI测试模块迁移：已编译，正式运行待验证
+
+三个编辑器测试类31项迁入新模块 `test/org.jkiss.dbeaver.ui.editors.data.test`，使用数据编辑器测试fragment承载包级调用；依赖明确指向UI编辑器、JDBC及测试框架，不修改生产可见性。原独立测试仓中的三个Java副本和inline配置已删除，专项运行器只引用主仓正式源码/配置。
+
+已加入父模块、GaussDB回归reactor、结果汇总工具以及必需模块/三类门控。缺失任何类或模块的执行结果不能通过正式回归检查；校验器7项正反例通过。
+
+迁移后专项40/40、0跳过、退出0（`/tmp/editor-module-migration-20260928.log`），数量未增加。JDK25目标Java21的正式构建 `results/run-Ncu1z1/maven.log` 已识别新模块，但在 `p2-artifacts.properties.tycholock` 10000ms锁超时退出1，测试模块全部SKIPPED，未进入测试。本轮不改动缓存锁，也不将SKIPPED当通过。新fragment的OSGi类加载、inline instrumentation及完整Tycho执行仍待验证。
+
 ## 导入后变为只读：保存拒绝与后续处置
 
 新增4项组件测试，分别为文本/二进制 × 放弃修改/恢复可写后重试。通过实际输入层导入文件，再使值控制器返回只读，调用实际 `updateContentFromFile` 必须抛出DBException；文本控制器没有更新调用，真实JDBCContentBytes没有内容更新且原字节保持，二进制待发布标志仍为true。
