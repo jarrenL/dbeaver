@@ -34,6 +34,55 @@ class AuthProfileSecretStorageTest {
     private static final String KEY = "fixture/auth-profile";
 
     @ParameterizedTest
+    @ValueSource(strings = {"mutable", "immutable", "self", "readonly-self"})
+    void profilePropertyReplacementOwnsAnEditableSnapshot(String inputKind) {
+        var source = profile(true);
+        var mutable = new java.util.LinkedHashMap<>(Map.of("realm", "original"));
+        source.setProperties(mutable);
+        Map<String, String> supplied = switch (inputKind) {
+            case "immutable" -> Map.of("realm", "original");
+            case "self" -> source.getProperties();
+            case "readonly-self" -> java.util.Collections.unmodifiableMap(source.getProperties());
+            default -> mutable;
+        };
+        source.setProperties(supplied);
+        source.getProperties().put("realm", "edited");
+        assertEquals("original", supplied.get("realm"), "Editing the profile must not mutate the supplied map or view");
+        assertEquals("edited", source.getProperties().get("realm"));
+        mutable.clear();
+        assertEquals("edited", source.getProperties().get("realm"));
+    }
+
+    @Test
+    void copiedAuthenticationProfileRetainsMetadataAndSeparatesEdits() {
+        var source = profile(true);
+        source.setProfileId("fixture-profile");
+        source.setProfileName("中文配置");
+        source.setProfileDescription("fixture-description");
+        source.setAuthModelId("native");
+        var copy = new DBAAuthProfile(source);
+        assertEquals(source.getProfileId(), copy.getProfileId());
+        assertEquals(source.getProfileName(), copy.getProfileName());
+        assertEquals(source.getProfileDescription(), copy.getProfileDescription());
+        assertEquals(source.getAuthModelId(), copy.getAuthModelId());
+        assertEquals(source.getUserName(), copy.getUserName());
+        assertEquals(source.getUserPassword(), copy.getUserPassword());
+        assertTrue(copy.isSavePassword());
+        copy.setProfileName("修改副本");
+        copy.setAuthModelId("other-fixture-model");
+        copy.setUserName(null);
+        copy.setUserPassword(null);
+        copy.setSavePassword(false);
+        copy.getProperties().clear();
+        assertEquals("中文配置", source.getProfileName());
+        assertEquals("native", source.getAuthModelId());
+        assertEquals("中文用户", source.getUserName());
+        assertEquals("synthetic-profile-secret", source.getUserPassword());
+        assertTrue(source.isSavePassword());
+        assertEquals(Map.of("realm", "fixture-domain"), source.getProperties());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"{}", "{\"user\":null,\"password\":null,\"properties\":null}"})
     void explicitEmptySecretObjectStillClearsCredentials(String json) throws Exception {
         var controller = mock(DBSSecretController.class);

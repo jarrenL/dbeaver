@@ -105,7 +105,7 @@ public abstract class DBPConfigurationProfile implements DBPSecretHolder {
     }
 
     public void setProperties(@NotNull Map<String, String> properties) {
-        this.properties = properties;
+        this.properties = new LinkedHashMap<>(properties);
     }
 
     @Override
