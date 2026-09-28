@@ -19,6 +19,9 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
 
 import org.jkiss.dbeaver.tools.transfer.stream.IStreamDataExporter;
 import org.jkiss.dbeaver.tools.transfer.stream.StreamTransferConsumer;
+import org.jkiss.dbeaver.tools.transfer.IDataTransferEventProcessor;
+import org.jkiss.dbeaver.tools.transfer.registry.DataTransferRegistry;
+import org.jkiss.dbeaver.tools.transfer.registry.DataTransferEventProcessorDescriptor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -32,6 +35,46 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 public class GaussDBStreamExportFailureTest {
+    @Test
+    public void successEventIsSentOnlyOnFinalSummaryAfterFileIsClosed() throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var exporter = mock(IStreamDataExporter.class);
+        var output = mock(OutputStream.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        var eventSettings = java.util.Map.<String, Object>of("tag", "success");
+        when(settings.getEventProcessors()).thenReturn(java.util.Map.of("test", eventSettings));
+        var registry = mock(DataTransferRegistry.class);
+        var descriptor = mock(DataTransferEventProcessorDescriptor.class);
+        @SuppressWarnings("unchecked")
+        IDataTransferEventProcessor<StreamTransferConsumer> events = mock(IDataTransferEventProcessor.class);
+        when(registry.getEventProcessorById("test")).thenReturn(descriptor);
+        when(descriptor.<StreamTransferConsumer>create()).thenReturn(events);
+        set(consumer, "settings", settings);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
+        set(consumer, "processor", exporter);
+        set(consumer, "outputStream", output);
+        Field singleton = DataTransferRegistry.class.getDeclaredField("instance");
+        singleton.setAccessible(true);
+        Object previous = singleton.get(null);
+        try {
+            singleton.set(null, registry);
+            consumer.finishTransfer(monitor, null, null, false);
+            verifyNoInteractions(events);
+            consumer.finishTransfer(monitor, null, null, true);
+            var order = inOrder(exporter, output, events);
+            order.verify(exporter).exportFooter(monitor);
+            order.verify(exporter).dispose();
+            order.verify(output).close();
+            order.verify(events).processEvent(monitor, IDataTransferEventProcessor.Event.FINISH,
+                consumer, null, eventSettings);
+            verifyNoMoreInteractions(events);
+            verify(output, times(1)).close();
+        } finally {
+            singleton.set(null, previous);
+        }
+    }
+
     @ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"false,false", "false,true", "true,false", "true,true"})
     public void failedTransferClosesOutputWithoutWritingSuccessFooter(boolean cancelled, boolean closeFails) throws Exception {
@@ -40,7 +83,14 @@ public class GaussDBStreamExportFailureTest {
         var output = mock(OutputStream.class);
         var monitor = mock(DBRProgressMonitor.class);
         var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
-        when(settings.getEventProcessors()).thenReturn(java.util.Collections.emptyMap());
+        var eventSettings = java.util.Map.<String, Object>of("tag", "synthetic failure");
+        when(settings.getEventProcessors()).thenReturn(java.util.Map.of("test", eventSettings));
+        var registry = mock(DataTransferRegistry.class);
+        var descriptor = mock(DataTransferEventProcessorDescriptor.class);
+        @SuppressWarnings("unchecked")
+        IDataTransferEventProcessor<StreamTransferConsumer> events = mock(IDataTransferEventProcessor.class);
+        when(registry.getEventProcessorById("test")).thenReturn(descriptor);
+        when(descriptor.<StreamTransferConsumer>create()).thenReturn(events);
         set(consumer, "settings", settings);
         set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
         set(consumer, "processor", processor);
@@ -56,7 +106,7 @@ public class GaussDBStreamExportFailureTest {
         singleton.setAccessible(true);
         Object previous = singleton.get(null);
         try {
-            singleton.set(null, mock(registryType));
+            singleton.set(null, registry);
             consumer.finishTransfer(monitor, original, null, false);
             verify(processor).dispose();
             verify(processor, never()).exportFooter(any());
@@ -64,8 +114,60 @@ public class GaussDBStreamExportFailureTest {
             assertArrayEquals(closeFails ? new Throwable[]{shutdown} : new Throwable[0], original.getSuppressed());
             assertNull(get(consumer, "processor"));
             assertNull(get(consumer, "outputStream"));
+            var order = inOrder(output, events);
+            order.verify(output).close();
+            order.verify(events).processError(monitor, original, consumer, null, eventSettings);
+            verify(events, never()).processEvent(any(), any(), any(), any(), any());
             consumer.finishTransfer(monitor, original, null, false);
             verify(output, times(1)).close();
+        } finally {
+            singleton.set(null, previous);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"footer", "dispose", "zip"})
+    public void finalizationFailureNotifiesErrorInsteadOfSuccess(String stage) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var exporter = mock(IStreamDataExporter.class);
+        var output = mock(java.util.zip.ZipOutputStream.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        var eventSettings = java.util.Map.<String, Object>of("stage", stage);
+        when(settings.getEventProcessors()).thenReturn(java.util.Map.of("test", eventSettings));
+        var registry = mock(DataTransferRegistry.class);
+        var descriptor = mock(DataTransferEventProcessorDescriptor.class);
+        @SuppressWarnings("unchecked")
+        IDataTransferEventProcessor<StreamTransferConsumer> events = mock(IDataTransferEventProcessor.class);
+        when(registry.getEventProcessorById("test")).thenReturn(descriptor);
+        when(descriptor.<StreamTransferConsumer>create()).thenReturn(events);
+        set(consumer, "settings", settings);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
+        set(consumer, "processor", exporter);
+        set(consumer, "outputStream", output);
+        set(consumer, "zipStream", output);
+        IOException cause = new IOException("synthetic " + stage);
+        switch (stage) {
+            case "footer" -> doThrow(cause).when(exporter).exportFooter(monitor);
+            case "dispose" -> doThrow(cause).when(exporter).dispose();
+            default -> doThrow(cause).when(output).finish();
+        }
+        Field singleton = DataTransferRegistry.class.getDeclaredField("instance");
+        singleton.setAccessible(true);
+        Object previous = singleton.get(null);
+        try {
+            singleton.set(null, registry);
+            DBException actual = assertThrows(DBException.class,
+                () -> consumer.finishTransfer(monitor, null, null, false));
+            assertEquals(1, actual.getSuppressed().length);
+            Throwable reported = actual.getSuppressed()[0];
+            assertSame(cause, reported.getCause());
+            var order = inOrder(output, events);
+            order.verify(output).close();
+            order.verify(events).processError(monitor, reported, consumer, null, eventSettings);
+            verify(events, never()).processEvent(any(), any(), any(), any(), any());
+            assertNull(get(consumer, "processor"));
+            assertNull(get(consumer, "outputStream"));
         } finally {
             singleton.set(null, previous);
         }

@@ -47,3 +47,11 @@
 新增测试直接调用公开finishTransfer，分别传入读取IOException或DBInterruptedException，并组合输出流关闭成功/失败，共4项。首轮读取错误的2项均失败，processor.dispose未被调用（`/tmp/stream-existing-error-red.log`）。修复后，已有错误且非最终汇总回调时调用closeExporter，不调用成功表尾；清理IOException附加到原错误，不替换原错误。重复回调不再次关闭流。
 
 最新 `/tmp/stream-existing-error-cancel-green.log`：22/22通过、0跳过、0失败，包含此前18项。测试替换事件注册表为模拟对象并在finally恢复，配置为空事件列表；不覆盖实际事件扩展、完整DataTransferJob重新抛错、GUI点击取消或文件系统故障。取消异常为人工注入，不声称真实运行中取消已通过。
+
+## 公开结束入口的事件分派补验
+
+在此前4项已有错误测试中配置模拟事件处理器，验证processError收到同一个原始异常、相同事件设置，输出关闭尝试先于通知，且不调用成功processEvent。重复结束只验证清理幂等，不宣称通知去重。
+
+新增4项：表尾、dispose、ZIP finish失败分别经公开finishTransfer返回DBException，抑制列表中的错误与事件收到的错误一致，cause为注入的原始IOException；成功对照在非最终回调完成表尾和关闭但不通知，在最终汇总回调发送一次FINISH且不再次关闭。
+
+最新 `/tmp/stream-event-routing-final.log`：26/26通过、0跳过、0失败。此轮无新增生产修改。使用生产分派代码和模拟注册表/描述符/事件处理器，不是OSGi扩展实例、脚本通知、系统弹窗或完整DataTransferJob调度验证；这些验收边界保持未完成。
