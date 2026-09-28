@@ -13,6 +13,24 @@ import static org.junit.jupiter.api.Assertions.*;
 class SQLQueryRecoveryPolicyTest {
     @ParameterizedTest
     @ValueSource(strings = {
+        "UPDATE t SET id=2 WHERE id=1",
+        "SELECT change_data(1)",
+        "SELECT id FROM t FOR UPDATE",
+        "SELECT id FROM t UNION ALL SELECT id FROM s",
+        "WITH changed AS (DELETE FROM t RETURNING id) SELECT * FROM changed",
+        "SELECT ("
+    })
+    void replacementMustNotReuseEarlierReplayApproval(String replacement) {
+        var query = new SQLQuery(null, "SELECT id FROM t WHERE id=7");
+        assertTrue(SQLQueryRecoveryPolicy.mayReplay(query));
+        query.setText(replacement);
+        assertFalse(SQLQueryRecoveryPolicy.mayReplay(query), replacement);
+        query.reset();
+        assertTrue(SQLQueryRecoveryPolicy.mayReplay(query));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
         "INSERT INTO t(id) VALUES (7)",
         "INSERT INTO t(id) SELECT 7 FROM pg_sleep(120)",
         "INSERT INTO t VALUES(1) ON DUPLICATE KEY UPDATE id=2",

@@ -1,5 +1,13 @@
 # SQL别名及DML目标识别回归
 
+## 后续：自动重试策略及既有SQL安全测试联合回归
+
+新增6项在同一SQLQuery上先批准简单SELECT重试，再替换为UPDATE、有副作用风险函数、FOR UPDATE、集合查询、写入CTE、损坏SQL；均拒绝重试，reset恢复原简单查询后重新允许。调用实际SQLQueryRecoveryPolicy，不模拟判断结果。
+
+联合脚本另接入原45项恢复策略测试及51项GaussDB SQL安全测试；显式编译当前SQLSemanticProcessor与SQLQueryRecoveryPolicy。重试类现51项，安全类51项，加之前528项，共630/630通过、0跳过、0失败。日志`/tmp/shared-replay-safety-20260928.log`。新增仅6项，96项既有测试首次纳入此联合脚本。两类加入正式门控，验证器自测7项通过。
+
+覆盖了参数之外的函数、锁、写入、CTE、未知语法拒绝自动重试，以及注释/字符串伪WHERE、外层WHERE、ONLY、DROP等既有场景。无新增生产修复。不是实际断线重连或写入结果未知时的端到端验证，也没有操作确认对话框。不声称已运行全部上游SQL/补全测试或验证全部数据库方言。
+
 ## 后续：安全检查及修改语句分类影响
 
 新增6项SELECT→UPDATE/DELETE（有无WHERE）、DROP、SELECT→reset的危险/修改判断；新增2项FOR UPDATE和SELECT INTO保持修改标记。原8项集合查询加强isModifying/isMutatingStatement断言。
