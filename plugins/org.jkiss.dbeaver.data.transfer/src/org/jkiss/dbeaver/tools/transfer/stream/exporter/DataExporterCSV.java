@@ -45,6 +45,7 @@ import java.nio.file.Path;
 import java.util.Date;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * CSV Exporter
@@ -328,8 +329,8 @@ public class DataExporterCSV extends StreamExporterAbstract implements IAppendab
         boolean isNeedQuote = isQuote;
         String preparedValue = value;
         if (CommonUtils.isNotEmpty(lineFeedEscapeString) && LINE_BREAK_REGEX.matcher(value).find()) {
-                preparedValue = LINE_BREAK_REGEX.matcher(value).replaceAll(lineFeedEscapeString);
-                isNeedQuote = true;
+            preparedValue = LINE_BREAK_REGEX.matcher(value).replaceAll(Matcher.quoteReplacement(lineFeedEscapeString));
+            isNeedQuote = true;
         }
 
         // we decided to escape only one char quotes. Multichar quotes will NOT be escaped
