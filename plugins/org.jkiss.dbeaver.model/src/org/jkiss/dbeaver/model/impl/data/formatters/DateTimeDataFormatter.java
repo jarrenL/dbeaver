@@ -105,6 +105,13 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
     @Override
     public String formatValue(Object value)
     {
+        // JDBC DATE/TIME are local calendar values; their toInstant() is unsupported.
+        if (zone != null && value instanceof java.sql.Date date) {
+            return dateTimeFormatter.format(date.toLocalDate());
+        }
+        if (zone != null && value instanceof java.sql.Time time) {
+            return dateTimeFormatter.format(time.toLocalTime());
+        }
         if (value instanceof Date && zone != null) {
             return dateTimeFormatter.format(ZonedDateTime.ofInstant(((Date) value).toInstant(), zone));
         }

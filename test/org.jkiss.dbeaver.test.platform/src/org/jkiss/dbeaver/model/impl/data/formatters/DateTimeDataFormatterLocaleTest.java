@@ -29,6 +29,38 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DateTimeDataFormatterLocaleTest {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "UTC,date", "Asia/Shanghai,date", "America/New_York,date",
+        "UTC,time", "Asia/Shanghai,time", "America/New_York,time"
+    })
+    void jdbcDateAndTimeWithoutInstantRemainWallClockValues(String zone, String kind) {
+        boolean date = kind.equals("date");
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", date ? "yyyy-MM-dd" : "HH:mm:ss", "timezone", zone));
+        Object value = date ? java.sql.Date.valueOf("2024-02-29") : java.sql.Time.valueOf("23:59:58");
+        assertEquals(date ? "2024-02-29" : "23:59:58", formatter.formatValue(value));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "2024-03-10T06:59:59.123456Z,2024-03-10 01:59:59.123456 -05:00",
+        "2024-03-10T07:00:00.123456Z,2024-03-10 03:00:00.123456 -04:00",
+        "2024-11-03T05:30:00.123456Z,2024-11-03 01:30:00.123456 -04:00",
+        "2024-11-03T06:30:00.123456Z,2024-11-03 01:30:00.123456 -05:00"
+    })
+    void instantFormattingAcrossDstRetainsOffsetAndMicroseconds(String instantText, String expected) throws Exception {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH,
+            Map.of("pattern", "yyyy-MM-dd HH:mm:ss.ffffff XXX", "timezone", "America/New_York"));
+        var instant = java.time.Instant.parse(instantText);
+        assertEquals(expected, formatter.formatValue(Timestamp.from(instant)));
+        assertEquals(expected, formatter.formatValue(instant.atOffset(ZoneOffset.UTC)));
+        assertEquals(expected, formatter.formatValue(instant.atZone(java.time.ZoneId.of("Asia/Shanghai"))));
+        var parsed = assertInstanceOf(java.time.OffsetDateTime.class, formatter.parseValue(expected, null));
+        assertEquals(instant, parsed.toInstant());
+    }
+
     private DateTimeDataFormatter formatter(Locale locale, String zone) {
         var formatter = new DateTimeDataFormatter();
         formatter.init(null, locale, Map.of("pattern", "dd MMMM yyyy HH:mm:ss", "timezone", zone));
