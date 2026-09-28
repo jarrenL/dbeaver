@@ -23,6 +23,48 @@ import static org.mockito.Mockito.*;
 
 class GaussDBSessionManagerTest {
     @ParameterizedTest
+    @ValueSource(strings = {"08006", "42501", "22003", "null"})
+    void unreadableIdentifierCannotPublishAPartialOrZeroPidSnapshot(String failureKind) throws Exception {
+        var dataSource = mock(GaussDBDataSource.class);
+        when(dataSource.getContainer()).thenReturn(mock(DBPDataSourceContainer.class));
+        var session = mock(JDBCSession.class);
+        when(session.getDataSource()).thenReturn(dataSource);
+        var statement = mock(JDBCPreparedStatement.class);
+        var result = mock(JDBCResultSet.class);
+        when(result.getSession()).thenReturn(session);
+        when(session.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(result);
+        when(result.next()).thenReturn(true, true, false);
+        SQLException failure = new SQLException("PID unavailable", failureKind);
+        if (failureKind.equals("null")) {
+            when(result.getLong("pid")).thenReturn(42L, 0L);
+            when(result.wasNull()).thenReturn(false, true);
+        } else {
+            when(result.getLong("pid")).thenReturn(42L).thenThrow(failure);
+        }
+        var manager = new PostgreSessionManager(dataSource);
+        var actual = assertThrows(DBException.class, () -> manager.getSessions(session, Map.of()));
+        if (failureKind.equals("null")) {
+            assertEquals("22004", assertInstanceOf(SQLException.class, actual.getCause()).getSQLState());
+        } else {
+            assertSame(failure, actual.getCause());
+        }
+        verify(result).close();
+        verify(statement).close();
+        verify(session, never()).close();
+        verify(session, never()).createStatement();
+        // A subsequent explicit refresh can recover without retaining the incomplete snapshot.
+        doReturn(43L).when(result).getLong("pid");
+        when(result.wasNull()).thenReturn(false);
+        when(result.next()).thenReturn(true, false);
+        var recovered = manager.getSessions(session, Map.of());
+        assertEquals(1, recovered.size());
+        assertEquals("43", recovered.get(0).getSessionId());
+        verify(result, times(2)).close();
+        verify(statement, times(2)).close();
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void inheritedAdapterReadsSessionsAndHonorsIdleFilter(boolean showIdle) throws Exception {
         var dataSource = mock(GaussDBDataSource.class);
