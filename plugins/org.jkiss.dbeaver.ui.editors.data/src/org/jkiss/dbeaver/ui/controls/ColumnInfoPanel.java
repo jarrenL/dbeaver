@@ -54,6 +54,16 @@ public class ColumnInfoPanel extends Composite {
 
     protected void createPanel(IAttributeController valueController)
     {
+        this.setLayout(new FillLayout());
+        propViewer = new PropertyTreeViewer(this, SWT.H_SCROLL | SWT.V_SCROLL);
+        refreshProperties(valueController);
+    }
+
+    /** Recollect value-derived properties after the controller's content has changed. Runs on the UI thread. */
+    public void refreshProperties(@Nullable IValueController controller) {
+        if (isDisposed() || propViewer == null || !(controller instanceof IAttributeController valueController)) {
+            return;
+        }
         PropertyCollector infoItem = new PropertyCollector(valueController.getBinding().getMetaAttribute(), false);
         infoItem.collectProperties();
         valueController.getValueManager().contributeProperties(infoItem, valueController);
@@ -67,16 +77,14 @@ public class ColumnInfoPanel extends Composite {
             );
         }
 
-        this.setLayout(new FillLayout());
-        {
-            propViewer = new PropertyTreeViewer(this, SWT.H_SCROLL | SWT.V_SCROLL);
-            propViewer.loadProperties(infoItem);
-        }
+        propViewer.loadProperties(infoItem);
     }
 
     public void layoutProperties() {
         getParent().layout();
-        propViewer.repackColumns();
+        if (propViewer != null) {
+            propViewer.repackColumns();
+        }
     }
 
     public static class KeyColumnValue implements DBPNamedObject {

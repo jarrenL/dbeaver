@@ -4,6 +4,16 @@
 
 ## 后续进展（优先于下方早期状态）
 
+### 属性长度刷新补丁：编译通过，GUI 尚待部署
+
+确认属性树使用 `ColumnInfoPanel` 创建时收集的 `PropertyCollector`，`ContentValueManager.contributeProperties` 写入当时的内容长度。后续导入更新内容，但 `ContentEditor.fireContentChanged` 原先仅发送 dirty 通知，没有重新收集这些值。
+
+新增 `ColumnInfoPanel.refreshProperties`，复用已有 PropertyTreeViewer 并从当前控制器重新收集属性；未创建属性树或已释放控件时不访问它。`ContentEditor.fireContentChanged` 在 UI 线程刷新信息面板，并在 finally 保留 dirty 通知，避免属性收集异常吞掉原来的状态通知。对没有属性树的面板，布局操作也不再无条件调用空 viewer。
+
+两类显式 Java21 目标编译通过，最终日志 `/tmp/content-info-final-compile-20260928.log`，输出 `/tmp/content-info-compile-FdNuEa`。待验证 data 插件 `/tmp/content-info-ui-20260928.jar` 的 SHA-256 为 `90a50b977b44b7f63e8c082d9c5b5b4f41e02f1190e21b6a57303f78b0119953`。
+
+停止独立验收进程的请求被 Docker API 权限拒绝，随后只读复查确认原进程18377及独立副本19641均仍在运行；未把新 data 插件覆盖到运行副本。没有新增行为测试通过结果。下一步先安全停止独立副本，安装并核对插件，再启动验证属性长度0→4→0和内容区同步变化。原验收副本仍不得覆盖。这里的 PID 只记录当时状态，后续操作必须重新确认进程身份。
+
 ### 独立 Linux 副本的内容区刷新已验证
 
 建立 `/opt/hex-refresh-gui-20260928` 独立产品和工作区副本，保留原 `/opt/history-gui-20260923` 进程及现场。仅替换新副本中的 hex 插件类，补丁 JAR SHA-256 为 `129228a41f4c8a1cd87ed252edfe12f5be84a40474539a69561ff6e65093359f`，与本地一致；不是最新全量产品构建。

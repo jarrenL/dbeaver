@@ -569,7 +569,15 @@ public class ContentEditor extends MultiPageAbstractEditor implements IValueEdit
     }
 
     public void fireContentChanged() {
-        firePropertyChange(ContentEditor.PROP_DIRTY);
+        UIUtils.syncExec(() -> {
+            try {
+                if (infoPanel != null && !infoPanel.isDisposed()) {
+                    infoPanel.refreshProperties(getValueController());
+                }
+            } finally {
+                firePropertyChange(ContentEditor.PROP_DIRTY);
+            }
+        });
     }
 
 /*
