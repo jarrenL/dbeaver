@@ -99,13 +99,15 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
                         storage = new JDBCContentChars(executionContext, subString);
                     } catch (Exception e) {
                         log.debug("Can't get CLOB as substring", e);
-                        try {
-                            storage = StringContentStorage.createFromReader(clob.getCharacterStream(), contentLength);
+                        final DBDContentStorage newStorage;
+                        try (Reader reader = clob.getCharacterStream()) {
+                            newStorage = StringContentStorage.createFromReader(reader, contentLength);
                         } catch (IOException e1) {
-                            throw new DBCException("IO error while reading content", e);
+                            throw new DBCException("IO error while reading content", e1);
                         } catch (Throwable e1) {
-                            throw new DBCException(e, executionContext);
+                            throw new DBCException(e1, executionContext);
                         }
+                        storage = newStorage;
                     }
                 } else {
                     // Create new local storage
