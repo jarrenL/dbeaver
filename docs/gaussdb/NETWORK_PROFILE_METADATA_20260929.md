@@ -1,5 +1,17 @@
 # 网络配置显示信息与身份加载回归
 
+## 后续：保存器与独立解析入口往返
+
+扩展至生产 `saveNetworkProfiles → JSON → parseProfiles → DBWNetworkProfileManager.getProfile`，空属性/非空属性两组分别连续保存和加载两轮。检查稳定 ID、中文扩展汉字名称、多行描述、引号/反斜杠属性及空字符串，使用真实管理器方法按名称查找。
+
+修复前两组均失败：独立 `parseProfiles` 入口仍以 ID 覆盖名称且丢失描述，按原名称查询返回空；非空属性组另复现保存器未序列化顶层属性。修复该解析入口的 ID/名称/描述，并让保存器保存已有的普通属性字段，允许空字符串值。没有把 SSH 密码或 handler 安全属性迁移到普通属性。
+
+新增两项通过，该配置测试类现为 **38/38、零跳过**。此前通过的 `parseDataSources` 加密/普通项目四组测试继续执行。本项采用真实 JSON 写入器、解析器和管理器方法，但输入输出为内存文本、没有配置 handler，**不证明 SSH/SSL 连接、handler 凭据引用、磁盘导出或 GUI 向导通过**。
+
+修复前日志 `/tmp/network-profile-roundtrip-red-20260929.log`，复验日志 `/tmp/network-profile-roundtrip-green-20260929.log`。
+
+本轮完整 73 模块诊断：2,497 项中 2,327 通过、169 跳过、1 项本地网络权限错误，独立门控仍拒绝通过；不与历史批次累加。逐项证据：[NETWORK_PROFILE_ROUNDTRIP_REACTOR_20260929.json](evidence/NETWORK_PROFILE_ROUNDTRIP_REACTOR_20260929.json)。辅助审核在日志目录初始化时因权限失败，未产生报告。
+
 ## 场景与问题
 
 对应历史清单 3.12（连接配置导入/加载、名称与属性）。保存器 `DataSourceParser.saveNetworkProfiles` 已将配置 ID 作为 JSON 键，另保存 `name` 和 `description`。加载器却连续两次将 JSON 键设置为名称，没有设置 ID 或读取显示信息。

@@ -29,6 +29,10 @@ import org.jkiss.dbeaver.registry.DataSourceConfigurationManager;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
 import org.jkiss.dbeaver.registry.DataSourceSerializerModern;
 import org.jkiss.dbeaver.registry.DataSourceParseResults;
+import org.jkiss.dbeaver.registry.DataSourceParser;
+import org.jkiss.dbeaver.model.data.json.JSONUtils;
+import com.google.gson.Gson;
+import com.google.gson.stream.JsonWriter;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,6 +42,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -385,6 +391,43 @@ class ConfigurationReadFailureTest {
 
     private String credentialsName() {
         return DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_PREFIX + DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_EXT;
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void networkProfileWriterParserAndNameLookupRoundTrip(boolean withProperties) throws Exception {
+        var profile = new DBWNetworkProfile(mock(DBPProject.class));
+        profile.setProfileId("stable-id");
+        profile.setProfileName("中文隧道𠀀");
+        profile.setProfileDescription("第一行\n第二行");
+        Map<String, String> properties = withProperties ? Map.of("label", "值\"\\", "empty", "") : Map.of();
+        profile.setProperties(properties);
+        var parameters = new DataSourceParser.ContextParameters(profile.getProject(), null, new HashMap<>());
+        var writerMethod = DataSourceParser.class.getDeclaredMethod("saveNetworkProfiles",
+            DataSourceParser.ContextParameters.class, JsonWriter.class, List.class);
+        writerMethod.setAccessible(true);
+        for (int round = 0; round < 2; round++) {
+            var output = new StringWriter();
+            try (var writer = new JsonWriter(output)) {
+                writer.beginObject();
+                writerMethod.invoke(null, parameters, writer, List.of(profile));
+                writer.endObject();
+            }
+            var json = JSONUtils.parseMap(new Gson(), new StringReader(output.toString()));
+            var loaded = DataSourceParser.parseProfiles(parameters, json);
+            assertEquals(1, loaded.size());
+            var restored = loaded.getFirst();
+            var manager = mock(DBWNetworkProfileManager.class, withSettings().useConstructor().defaultAnswer(CALLS_REAL_METHODS));
+            manager.addOrUpdateProfile(restored);
+            assertAll(
+                () -> assertEquals("stable-id", restored.getProfileId()),
+                () -> assertEquals("中文隧道𠀀", restored.getProfileName()),
+                () -> assertEquals("第一行\n第二行", restored.getProfileDescription()),
+                () -> assertEquals(properties, restored.getProperties()),
+                () -> assertSame(restored, manager.getProfile(null, "中文隧道𠀀"))
+            );
+            profile = restored;
+        }
     }
 
     private void parse(DataSourceParseResults results) throws Exception {

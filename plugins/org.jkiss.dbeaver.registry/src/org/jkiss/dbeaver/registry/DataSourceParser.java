@@ -82,6 +82,7 @@ public class DataSourceParser {
             jsonWriter.beginObject();
             JSONUtils.fieldNE(jsonWriter, RegistryConstants.ATTR_NAME, np.getProfileName());
             JSONUtils.fieldNE(jsonWriter, RegistryConstants.ATTR_DESCRIPTION, np.getProfileDescription());
+            JSONUtils.serializeProperties(jsonWriter, RegistryConstants.TAG_PROPERTIES, np.getProperties(), true);
             jsonWriter.name("handlers");
             jsonWriter.beginObject();
             for (DBWHandlerConfiguration configuration : np.getConfigurations()) {
@@ -172,8 +173,10 @@ public class DataSourceParser {
             String profileId = vmMap.getKey();
             Map<String, Object> profileMap = vmMap.getValue();
             DBWNetworkProfile profile = new DBWNetworkProfile(parameters.project);
-            profile.setProfileName(profileId);
-            profile.setProfileName(profileId);
+            profile.setProfileId(profileId);
+            String profileName = JSONUtils.getString(profileMap, RegistryConstants.ATTR_NAME);
+            profile.setProfileName(CommonUtils.isEmpty(profileName) ? profileId : profileName);
+            profile.setProfileDescription(JSONUtils.getString(profileMap, RegistryConstants.ATTR_DESCRIPTION));
             profile.setProperties(JSONUtils.deserializeStringMap(profileMap, "properties"));
 
             for (Map.Entry<String, Map<String, Object>> handlerMap : JSONUtils.getNestedObjects(profileMap, "handlers")) {
