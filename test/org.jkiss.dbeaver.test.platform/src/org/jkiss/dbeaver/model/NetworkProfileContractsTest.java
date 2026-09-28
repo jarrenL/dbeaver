@@ -33,6 +33,56 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class NetworkProfileContractsTest {
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"handlers\":null}", "{\"handlers\":[]}"})
+    void emptyHandlerRecordsPreserveExistingCredentials(String record) throws Exception {
+        var profile = new DBWNetworkProfile();
+        profile.setProfileId("fixture");
+        var ssh = handler("ssh");
+        profile.updateConfiguration(ssh);
+        var controller = mock(DBSSecretController.class);
+        when(controller.getPrivateSecretValue(profile.getSecretKeyId())).thenReturn(record);
+        profile.resolveSecrets(controller);
+        assertEquals("synthetic-ssh", ssh.getPassword());
+        assertEquals("synthetic-key-ssh", ssh.getSecureProperty("fixture-key"));
+        assertEquals("中文-ssh", ssh.getUserName());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "null", "[]", "{\"handlers\":{}}", "{\"handlers\":[null]}",
+        "{\"handlers\":[{\"id\":[]}]}",
+        "{\"handlers\":[{\"id\":\"ssh\",\"user\":[]}]}",
+        "{\"handlers\":[{\"id\":\"ssh\",\"password\":{}}]}",
+        "{\"handlers\":[{\"id\":\"ssh\",\"properties\":[]}]}",
+        "{\"handlers\":[{\"id\":\"ssh\",\"password\":\"changed\"},{\"id\":\"ssl\",\"properties\":{\"key\":{}}}]}",
+        "{\"handlers\":[{\"id\":\"ssh\",\"password\":\"SYNTHETIC_PRIVATE_MARKER"
+    })
+    void malformedRecordPreservesAllHandlersAndAllowsRetry(String record) throws Exception {
+        var profile = new DBWNetworkProfile();
+        profile.setProfileId("fixture");
+        var ssh = handler("ssh");
+        var ssl = handler("ssl");
+        profile.updateConfiguration(ssh);
+        profile.updateConfiguration(ssl);
+        var controller = mock(DBSSecretController.class);
+        when(controller.getPrivateSecretValue(profile.getSecretKeyId())).thenReturn(record,
+            "{\"handlers\":[{\"id\":\"ssh\",\"user\":\"新用户\",\"password\":\"synthetic-new\"}]}");
+        var error = assertThrows(DBException.class, () -> profile.resolveSecrets(controller));
+        var trace = new java.io.StringWriter();
+        error.printStackTrace(new java.io.PrintWriter(trace));
+        assertFalse(trace.toString().contains("SYNTHETIC_PRIVATE_MARKER"));
+        assertEquals("synthetic-ssh", ssh.getPassword());
+        assertEquals("中文-ssh", ssh.getUserName());
+        assertEquals("synthetic-key-ssh", ssh.getSecureProperty("fixture-key"));
+        assertEquals("synthetic-ssl", ssl.getPassword());
+        assertEquals("synthetic-key-ssl", ssl.getSecureProperty("fixture-key"));
+        profile.resolveSecrets(controller);
+        assertEquals("新用户", ssh.getUserName());
+        assertEquals("synthetic-new", ssh.getPassword());
+        assertEquals("synthetic-ssl", ssl.getPassword());
+    }
+
     private DBWHandlerConfiguration handler(String id) {
         var descriptor = mock(DBWHandlerDescriptor.class);
         when(descriptor.getId()).thenReturn(id);

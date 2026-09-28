@@ -1,5 +1,15 @@
 # 网络配置共享基类回归
 
+## 后续：损坏凭据记录保护
+
+新增13项：10种非法记录（非对象根、错误handlers容器/成员、错误ID/用户名/密码类型、错误properties容器/嵌套值及截断JSON），3种合法空记录（无handlers、null、空数组）。非法记录测试还验证全部既有handler凭据不变、异常堆栈不含模拟私密标记、同实例读取修正记录后可重试。
+
+红测日志`/tmp/shared-network-malformed-red-20260928.log`：431项中原421通过，新增10项失败，体现接受错误结构或异常类型不符合预期。生产DBWNetworkProfile现在先解析并验证所有handler字段，完成校验后才修改运行时凭据；解析异常转换为不携带原文和解析cause的DBException，凭据控制器本身的DBException保持原样。
+
+绿测日志`/tmp/shared-network-malformed-green-20260928.log`：434/434通过，0跳过、0失败、0中止。该类现19项，其余415项复跑。合法空记录仍不改变既有凭据；未知handler不创建的原有测试继续通过。
+
+保护针对当前JSON记录，不证明旧版逐键凭据加载的事务性，也不证明并发更新、重复JSON键或实际密钥库损坏恢复。不是SSH/TLS或GUI验收。
+
 ## 范围与方法
 
 对应历史清单3.12连接配置、3.13凭据。验证DBPConfigurationProfile属性集合复制修复对DBWNetworkProfile的影响；使用真实网络配置及handler模型，模拟描述符和凭据控制器，不建立SSH/TLS连接。

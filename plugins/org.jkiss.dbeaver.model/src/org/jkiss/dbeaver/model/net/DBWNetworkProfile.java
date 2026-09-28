@@ -16,6 +16,8 @@
  */
 package org.jkiss.dbeaver.model.net;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
@@ -30,7 +32,6 @@ import org.jkiss.dbeaver.model.secret.DBSSecretController;
 import org.jkiss.dbeaver.model.secret.DBSSecretSubject;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 
-import java.io.StringReader;
 import java.util.*;
 
 /**
@@ -151,7 +152,40 @@ public class DBWNetworkProfile extends DBPConfigurationProfile {
             return;
         }
 
-        Map<String, Object> props = JSONUtils.parseMap(DBInfoUtils.SECRET_GSON, new StringReader(secretValue));
+        Map<String, Object> props;
+        try {
+            JsonElement json = DBInfoUtils.SECRET_GSON.fromJson(secretValue, JsonElement.class);
+            if (json == null || !json.isJsonObject()) {
+                throw new DBException("Invalid network profile secret");
+            }
+            props = DBInfoUtils.SECRET_GSON.fromJson(json, JSONUtils.MAP_TYPE_TOKEN);
+        } catch (JsonParseException e) {
+            // Parser diagnostics can contain credentials. Do not retain the payload or parser cause.
+            throw new DBException("Invalid network profile secret");
+        }
+
+        // Validate every handler before changing any of the current runtime credentials.
+        Object handlers = props.get("handlers");
+        if (handlers != null) {
+            if (!(handlers instanceof List<?> entries)) {
+                throw new DBException("Invalid network profile secret");
+            }
+            for (Object entry : entries) {
+                if (!(entry instanceof Map<?, ?> fields)) {
+                    throw new DBException("Invalid network profile secret");
+                }
+                for (String key : List.of("id", "user", "password")) {
+                    if (fields.get(key) != null && !(fields.get(key) instanceof String)) {
+                        throw new DBException("Invalid network profile secret");
+                    }
+                }
+                Object properties = fields.get("properties");
+                if (properties != null && (!(properties instanceof Map<?, ?> values)
+                    || values.values().stream().anyMatch(value -> value != null && !(value instanceof String)))) {
+                    throw new DBException("Invalid network profile secret");
+                }
+            }
+        }
 
         List<Map<String, Object>> handlerConfigs = JSONUtils.getObjectList(props, "handlers");
         for (Map<String, Object> hc : handlerConfigs) {

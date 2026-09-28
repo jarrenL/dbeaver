@@ -2,13 +2,13 @@
 
 ## 执行范围
 
-生产代码基线：主仓b15ed6bf06，另含本轮网络配置回归六项测试。测试仓`scripts/run-shared-focused.mjs`同一次javac与同一次JUnit进程运行18个类，避免仅凭各专项独立进程的历史成功结果推断组合运行也成功。显式编译过滤器相关类及DBAAuthProfile、DBPConfigurationProfile、DBWNetworkProfile、DBWHandlerConfiguration。
+生产代码基线：主仓bb33310afd，另含本轮网络凭据损坏输入保护及13项测试。测试仓`scripts/run-shared-focused.mjs`同一次javac与同一次JUnit进程运行18个类，避免仅凭各专项独立进程的历史成功结果推断组合运行也成功。显式编译过滤器相关类及DBAAuthProfile、DBPConfigurationProfile、DBWNetworkProfile、DBWHandlerConfiguration。
 
 显式编译当前执行计划解析/保存、日期时间格式、版本选择、三类数据库异常、三类进度监视器、XLSX/CSV导出器、流式消费器和DataTransferJob源码，以及对应测试。其他依赖仍使用已有target/classes和只读依赖jar，不是完整Tycho/OSGi重新构建。
 
 ## 最新结果
 
-`/tmp/shared-network-profile-20260928.log`：421项全部通过，0跳过、0失败、0中止。下方分组表已更新为本次结果。历史增量记录仅供追溯，不应累加。
+`/tmp/shared-network-malformed-green-20260928.log`：434项全部通过，0跳过、0失败、0中止。下方分组表已更新为本次结果。历史增量记录仅供追溯，不应累加。
 
 ### 历史增量（非当前总数）
 
@@ -44,9 +44,9 @@
 | 连接过滤器序列化与输入校验 | 36 |
 | 用户/默认过滤器导出往返 | 8 |
 | 认证配置凭据记录与复制隔离 | 24 |
-| 网络配置作用域、替换与凭据往返 | 6 |
+| 网络配置作用域、替换、凭据往返及损坏保护 | 19 |
 
-上述为最新本次不重叠分组计数，合计421；本轮新增六项网络配置场景，其余均复跑。历次159至415项结果均被本次覆盖，不叠加，也不能与历史1882完整回归累计。
+上述为最新本次不重叠分组计数，合计434；本轮新增13项网络配置场景，其余均复跑。历次159至421项结果均被本次覆盖，不叠加，也不能与历史1882完整回归累计。
 
 脚本使用独立临时输出目录，JUnit XML报告写入该目录reports中；报告可能包含运行环境元数据，不直接发布原始XML。完整回归入口继续通过脱敏导出器仅输出测试身份和结果，并要求16个关键类确实运行通过，不能以缺失/跳过代替通过。依赖Unix可执行文件的BackupPublish测试未作为Windows必需门控，但本次确实执行且无跳过。
 
