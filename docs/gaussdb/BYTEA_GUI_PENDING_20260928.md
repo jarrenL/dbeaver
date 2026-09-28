@@ -4,6 +4,28 @@
 
 ## 后续进展（优先于下方早期状态）
 
+### 独立 Linux 副本的内容区刷新已验证
+
+建立 `/opt/hex-refresh-gui-20260928` 独立产品和工作区副本，保留原 `/opt/history-gui-20260923` 进程及现场。仅替换新副本中的 hex 插件类，补丁 JAR SHA-256 为 `129228a41f4c8a1cd87ed252edfe12f5be84a40474539a69561ff6e65093359f`，与本地一致；不是最新全量产品构建。
+
+启动中修正过 JVM 参数位置及运行账号：使用原验收账号 tester、DISPLAY=:99、`--launcher.appendVmargs -vmargs -Dgaussdb.swtbot.queue=.../refresh-queue`；错误启动的新进程已停止，原进程未停止。首次复制补丁失败时检查仍为旧文件，重试后才确认安装完成。
+
+从 payload 表选中 raw_bytes，点击“编辑单元格”，在独立 LOB 编辑器通过实际系统文件选择器导入文件：
+
+| 操作 | 观测与结果 |
+| --- | --- |
+| 空内容导入 4 字节文件 abc 加换行 | Binary 页显示 `61 62 63 0A`，字符区显示对应内容；通过 |
+| 再导入零字节文件 | Binary 数据区与字符区都变空，不再显示前一文件；通过 |
+| 属性树内容长度 | 导入 4 字节后仍为 0；发现独立刷新遗漏，未通过 |
+
+![非空文件导入后内容区刷新](images/bytea-refresh-nonempty-20260928.png)
+
+![再导入空文件后内容区清空](images/bytea-refresh-empty-20260928.png)
+
+证据队列为新副本 `refresh-queue/08.cmd.result`（稳定非空状态）及 `11.cmd.result`（稳定空状态）。对实际快照的可见 458/461 StyledText 分别断言非空字节与空内容通过。控件编号只适用于这次快照，不应跨运行复用。较早的07/10快照捕获在异步刷新前，不能拿来替代稳定状态或直接判失败。
+
+目前新副本仍保留导入后未保存状态，本轮没有点击 LOB/表格保存。数据库最终值、NULL与空字节区分、重新查询结果、属性长度刷新、取消未保存修改及文件读取错误GUI仍待验证。此次仅确认内容区刷新，不宣称整个 bytea GUI 场景闭环；无新增JUnit计数。
+
 ### 生产加载方法组件回归
 
 新增独立测试仓 `fixtures/java/BinaryEditorContentReloadTest.java`，通过 `node scripts/run-hex-content-focused.mjs` 运行。显式编译当前 `BinaryEditor` 和 `BinaryContent`，真实临时文件、模拟编辑器输入和 HexManager，通过反射调用生产私有加载方法，不调用数据库或启动 SWT 窗口。
