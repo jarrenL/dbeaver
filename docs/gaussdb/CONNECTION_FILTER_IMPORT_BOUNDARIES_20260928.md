@@ -1,5 +1,13 @@
 # 连接过滤器导入类型边界
 
+## 后续：作用域、开关及实际导入调用方
+
+新增10项：type数组、id对象、name数字、description布尔值、enabled无效字符串、case-sensitive数组六种拒绝；旧true/false字符串两种正例；UserDBSObjectFilterUtils实际导入入口两项。红测`/tmp/shared-filter-scope-red-20260928.log`375项中369通过、6失败，错误字段原先通过通用转换被静默接受。
+
+生产FilterSerializer对作用域/名称/说明校验字符串，对开关校验布尔或明确true/false字符串；缺省/null保持原行为，不回显错误值。导入入口验证同一数组中后项非法时DataSourceDescriptor没有收到任何调用；有效数组中schema/table作用域准确、缺类型条目跳过、用户过滤器标记正确。该描述符是Mockito替身，实际导入工具类与序列化器直接编译运行，不证明磁盘或GUI原子性。
+
+联合`/tmp/shared-filter-scope-green-20260928.log`375/375通过、0跳过、0失败，过滤器类28项。其他347项复跑；无额外测试数量累加。多个设置键、完整连接文件中其他字段已修改后的失败回滚、重复JSON字段、配置升级、GUI及磁盘凭据仍未闭环。
+
 ## 范围与缺陷
 
 对应历史清单3.12连接配置导入/过滤、10.4配置元数据。直接编译生产FilterSerializer并调用JSON反序列化入口，不替代完整连接文件导入向导。

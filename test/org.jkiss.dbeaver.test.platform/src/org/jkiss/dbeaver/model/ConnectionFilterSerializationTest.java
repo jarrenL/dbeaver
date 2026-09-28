@@ -35,6 +35,57 @@ class ConnectionFilterSerializationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
+        "[{\"type\":[]}]", "[{\"id\":{}}]", "[{\"name\":1}]",
+        "[{\"description\":true}]", "[{\"enabled\":\"invalid\"}]", "[{\"case-sensitive\":[]}]"
+    })
+    void malformedScopeAndFlagsAreRejected(String json) {
+        assertThrows(com.google.gson.JsonParseException.class, () -> serializer.deserializeObjectFilterConfig(json));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void legacyBooleanStringsPreserveTheirMeaning(boolean flag) {
+        var filter = serializer.deserializeObjectFilterConfig(
+            "[{\"enabled\":\"" + flag + "\",\"case-sensitive\":\"" + flag + "\"}]").getFirst().filter();
+        assertEquals(flag, filter.isEnabled());
+        assertEquals(flag, filter.isCaseSensitive());
+    }
+
+    @Test
+    void invalidLaterEntryDoesNotApplyEarlierUserFilter() {
+        var source = mock(DataSourceDescriptor.class);
+        assertThrows(com.google.gson.JsonParseException.class, () ->
+            org.jkiss.dbeaver.registry.UserDBSObjectFilterUtils.setUserObjectFilters(source, java.util.Map.of(
+                "navigator-filters", "[{\"type\":\"schema\",\"id\":\"db1\",\"include\":[\"A%\"]},"
+                    + "{\"type\":\"table\",\"include\":[null]}]")));
+        verifyNoInteractions(source);
+    }
+
+    @Test
+    void userImportPreservesScopeAndMarksOnlyApplicableEntries() {
+        var source = mock(DataSourceDescriptor.class);
+        org.jkiss.dbeaver.registry.UserDBSObjectFilterUtils.setUserObjectFilters(source, java.util.Map.of(
+            "navigator-filters", "[{\"type\":\"schema\",\"id\":\"中文库\",\"enabled\":true,\"include\":[\"A%\"]},"
+                + "{\"type\":\"table\",\"id\":\"db2\",\"exclude\":[\"private%\"]},{\"include\":[\"ignored%\"]}]"));
+        // The string-scoped setter is protected; inspect actual recorded calls without changing its visibility.
+        var calls = List.copyOf(mockingDetails(source).getInvocations());
+        assertEquals(2, calls.size());
+        assertTrue(calls.stream().allMatch(call -> call.getMethod().getName().equals("setObjectFilter")));
+        assertEquals("schema", calls.get(0).getArgument(0));
+        assertEquals("中文库", calls.get(0).getArgument(1));
+        assertEquals("table", calls.get(1).getArgument(0));
+        assertEquals("db2", calls.get(1).getArgument(1));
+        DBSObjectFilter first = calls.get(0).getArgument(2);
+        DBSObjectFilter second = calls.get(1).getArgument(2);
+        assertTrue(first.isUserFilter());
+        assertTrue(second.isUserFilter());
+        assertTrue(first.matches("Accounts"));
+        assertFalse(first.matches("Other"));
+        assertEquals(List.of("private%"), second.getExclude());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
         "[{\"enabled\":true}]",
         "[{\"enabled\":true,\"include\":null,\"exclude\":null}]",
         "[{\"enabled\":true,\"include\":[],\"exclude\":[]}]"

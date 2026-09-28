@@ -54,6 +54,8 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
         if (filterCfg == null) {
             throw new JsonParseException("Filter entry must be an object");
         }
+        validateField(filterCfg, RegistryConstants.ATTR_TYPE, String.class);
+        validateField(filterCfg, RegistryConstants.ATTR_ID, String.class);
         String typeName = JSONUtils.getString(filterCfg, RegistryConstants.ATTR_TYPE);
         String objectID = JSONUtils.getString(filterCfg, RegistryConstants.ATTR_ID);
         DBSObjectFilter filter = deserializeObjectFilter(filterCfg);
@@ -62,6 +64,10 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
 
     @NotNull
     public DBSObjectFilter deserializeObjectFilter(@NotNull Map<String, Object> map) {
+        validateField(map, RegistryConstants.ATTR_NAME, String.class);
+        validateField(map, RegistryConstants.ATTR_DESCRIPTION, String.class);
+        validateField(map, RegistryConstants.ATTR_ENABLED, Boolean.class);
+        validateField(map, ATTR_CASE_SENSITIVE, Boolean.class);
         validatePatterns(map, RegistryConstants.TAG_INCLUDE);
         validatePatterns(map, RegistryConstants.TAG_EXCLUDE);
         DBSObjectFilter filter = new DBSObjectFilter();
@@ -72,6 +78,19 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
         filter.setInclude(JSONUtils.deserializeStringList(map, RegistryConstants.TAG_INCLUDE));
         filter.setExclude(JSONUtils.deserializeStringList(map, RegistryConstants.TAG_EXCLUDE));
         return filter;
+    }
+
+    private static void validateField(@NotNull Map<String, Object> map, @NotNull String name, @NotNull Class<?> type) {
+        Object value = map.get(name);
+        if (value == null || type.isInstance(value)) {
+            return;
+        }
+        // Preserve explicit legacy boolean strings, not arbitrary values coerced to false.
+        if (type == Boolean.class && value instanceof String flag
+            && (flag.equalsIgnoreCase("true") || flag.equalsIgnoreCase("false"))) {
+            return;
+        }
+        throw new JsonParseException("Invalid type for filter " + name);
     }
 
     private static void validatePatterns(@NotNull Map<String, Object> map, @NotNull String name) {
