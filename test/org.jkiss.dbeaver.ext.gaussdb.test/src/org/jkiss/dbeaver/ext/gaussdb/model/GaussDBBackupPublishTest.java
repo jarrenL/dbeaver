@@ -24,6 +24,44 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"write", "flush"})
+    void failedLogOutputCannotBeReportedAsSuccessfulTask(String operation) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));
+        var sink = new java.io.OutputStream() {
+            @Override public void write(int value) throws IOException {
+                if (operation.equals("write")) throw new IOException("synthetic log write failure");
+            }
+            @Override public void flush() throws IOException {
+                if (operation.equals("flush")) throw new IOException("synthetic log flush failure");
+            }
+        };
+        var writer = new java.io.PrintStream(sink);
+        var settings = mock(PostgreDatabaseBackupSettings.class, RETURNS_DEEP_STUBS);
+        when(settings.getLogWriter()).thenReturn(writer);
+        var info = mock(PostgreDatabaseBackupInfo.class);
+        when(settings.getOutputFile(info)).thenReturn(directory.resolve("unused.dump").toString());
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/usr/bin/true");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+            }
+        };
+        var monitor = mock(DBRProgressMonitor.class);
+        try {
+            var failure = assertThrows(IOException.class, () -> handler.executeProcess(monitor,
+                mock(DBTTask.class, RETURNS_DEEP_STUBS), settings, info, mock(Log.class)));
+            assertTrue(writer.checkError());
+            assertNotNull(failure.getCause());
+            assertEquals("Cannot write native tool log", failure.getCause().getMessage());
+            verify(monitor).done();
+        } finally {
+            writer.close();
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"stderr-only", "stderr-dual", "stdout-dual", "both-distinct", "both-same", "read-and-close"})
     void logReadFailureCannotBecomeSuccessfulTask(String stream) throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));

@@ -603,6 +603,10 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                 logWriter.print(NLS.bind(NativeToolMessages.native_tool_handler_log_finished_task, task.getName(),
                     new Date() + lf));
                 logWriter.flush();
+                // PrintStream records write/flush failures instead of throwing them.
+                if (logWriter.checkError()) {
+                    recordReadFailure(new IOException("Cannot write native tool log"));
+                }
             }
         }
         
