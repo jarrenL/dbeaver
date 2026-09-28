@@ -1,6 +1,18 @@
 # 近期共享组件修复的联合回归
 
-## 最新扩大回归：未通过
+## 最新OSGi复验：34类629项通过
+
+使用测试仓`run-existing-osgi.mjs`读取已有Tycho解析出的bundle配置，在独立临时configuration/data目录启动真实Equinox及DBeaver headless应用。依赖jar只读引用；编译产物通过compiled-sources.json按源码所属bundle分目录覆盖，不把所有类混装到一个bundle。未改动原测试断言、未模拟Platform.getBundle。
+
+先对三个环境失败类运行118项，全部通过；再扩到全部34个非Live GaussDB核心类。首次全类启动在Excel测试处提前退出，增加退出诊断后记录SIGABRT；设置`-Djava.awt.headless=true`和1GB堆上限后运行完成，未进一步定位原生崩溃根因，不把它归为生产Java逻辑缺陷。
+
+最终带逐类报告校验的执行：`/tmp/existing-osgi-all-core-verified-20260928.log`，629项全部通过，0失败、0错误、0跳过，退出码0、signal为null。报告门控确认34个选定类各有非零测试且无失败/错误/跳过；脱敏结果`/tmp/gauss-existing-osgi-K48SJV/verified-results.json`只含类名、计数与范围。投影类89项、二进制类24项等数量也确认加载了本轮编译测试，而非旧测试jar。
+
+生产基线a61c57c26e（后续a5aa5d0b16仅文档）；编译来源`/tmp/shared-focused-3VrhI2/compiled-sources.json`。其他未显式编译的生产依赖仍来自已有产物，所以不是完整Maven/Tycho重新构建。三个Live类明确未执行；“0跳过”不包含未选择的真库用例。此629与下方654专项及931扩大运行均有重叠，不能相加当作新用例或完整验收总数。
+
+复现顺序：先`node scripts/run-shared-focused.mjs --gauss-core`生成编译清单（普通classpath阶段仍会因缺少OSGi失败），再把日志打印的编译目录传给`node scripts/run-existing-osgi.mjs <编译目录> --all-core`。新运行器是当前macOS本地验证入口，非客户Linux/Windows安装或GUI验收说明。旧编译目录不能证明未来提交，修改源码后必须重新编译。
+
+## 历史扩大回归：普通classpath下未通过
 
 主仓a61c57c26e，执行`node scripts/run-shared-focused.mjs --gauss-core`，同次编译全部34个非Live GaussDB核心测试类，并与原共享专项联合执行。结果931项：818通过、113失败、0跳过，进程退出1。日志`/tmp/shared-gauss-core-expanded-20260928.log`。
 
