@@ -24,6 +24,57 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PostgreXmlPlanHierarchyTest {
     @Test
+    void nodeClassificationDoesNotDependOnDesktopLocale() throws Exception {
+        var previous = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+            assertEquals(org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.INDEX_SCAN,
+                parse("<Plan><Node-Type>Index Scan</Node-Type></Plan>").getNodeKind());
+            assertEquals(org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.JOIN,
+                parse("<Plan><Node-Type>Nested Loop</Node-Type></Plan>").getNodeKind());
+        } finally {
+            java.util.Locale.setDefault(previous);
+        }
+    }
+
+    @Test
+    void bufferStatisticsRemainSeparateForParentAndChild() throws Exception {
+        var node = parse("<Plan><Node-Type>Hash Join</Node-Type><Shared-Hit-Blocks>123</Shared-Hit-Blocks>"
+            + "<Shared-Read-Blocks>0</Shared-Read-Blocks><Temp-Written-Blocks>4294967296</Temp-Written-Blocks>"
+            + "<I-O-Read-Time>0.125</I-O-Read-Time><Plans><Plan><Node-Type>Seq Scan</Node-Type>"
+            + "<Shared-Hit-Blocks>7</Shared-Hit-Blocks><Local-Read-Blocks>3</Local-Read-Blocks>"
+            + "</Plan></Plans></Plan>");
+        assertEquals("123", node.getPropertyValue(null, "Shared-Hit-Blocks"));
+        assertEquals("0", node.getPropertyValue(null, "Shared-Read-Blocks"));
+        assertEquals("4294967296", node.getPropertyValue(null, "Temp-Written-Blocks"));
+        assertEquals("0.125", node.getPropertyValue(null, "I-O-Read-Time"));
+        var child = node.getNested().getFirst();
+        assertEquals("7", child.getPropertyValue(null, "Shared-Hit-Blocks"));
+        assertEquals("3", child.getPropertyValue(null, "Local-Read-Blocks"));
+        assertNull(child.getPropertyValue(null, "Shared-Read-Blocks"));
+        assertSame(node, child.getParent());
+    }
+
+    @Test
+    void zeroActualRowsOverrideEstimateAndMissingMetricsAreNotInvented() throws Exception {
+        var node = parse("<Plan><Node-Type>Result</Node-Type><Plan-Rows>500</Plan-Rows>"
+            + "<Actual-Rows>0</Actual-Rows><Actual-Loops>0</Actual-Loops>"
+            + "<Actual-Total-Time>0.000</Actual-Total-Time></Plan>");
+        assertEquals(0L, node.getNodeRowCount().longValue());
+        assertEquals(0.0, node.getNodeDuration().doubleValue());
+        assertEquals("0", node.getPropertyValue(null, "Actual-Loops"));
+        assertNull(node.getNodeCost());
+        assertEquals("", node.getCost());
+        assertNull(node.getPropertyValue(null, "Shared-Hit-Blocks"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"<Plan/>", "<Plan><Node-Type/></Plan>"})
+    void missingNodeTypeUsesDefaultKindWithoutCrashing(String xml) throws Exception {
+        assertEquals(org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.DEFAULT, parse(xml).getNodeKind());
+    }
+
+    @Test
     void parallelXmlNodeStillGetsItsDisplayPrefix() throws Exception {
         var node = parse("<Plan><Node-Type>Seq Scan</Node-Type><Parallel-Aware>true</Parallel-Aware></Plan>");
         assertEquals("Parallel Seq Scan", node.getNodeType());

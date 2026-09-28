@@ -249,7 +249,7 @@ public abstract class PostgrePlanNodeBase<NODE extends PostgrePlanNodeBase<?>> e
     @Override
     public DBCPlanNodeKind getNodeKind() {
        
-        String op = nodeType.toLowerCase();
+        String op = CommonUtils.notEmpty(nodeType).toLowerCase(Locale.ROOT);
 
         for (String kind : allowedKind) {
             if (op.contains(kind)) {
