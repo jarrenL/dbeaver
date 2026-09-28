@@ -429,6 +429,58 @@ class GaussDBDebugSessionTest {
         assertNull(variable.getVal());
     }
 
+    private JDBCResultSet localVariableResult(String value) throws SQLException {
+        JDBCStatement locals = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(connection.createStatement()).thenReturn(locals);
+        when(locals.executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)")).thenReturn(result);
+        when(result.next()).thenReturn(true, false);
+        when(result.getString("varname")).thenReturn("x");
+        when(result.getString("vartype")).thenReturn("text");
+        when(result.getString("value")).thenReturn(value);
+        return result;
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", "4 + 5", "'中文''引号;--'", "NULL"})
+    void variableExpressionsAreBoundAndOnlyServerReadbackBecomesCachedValue(String expression) throws Exception {
+        JDBCPreparedStatement set = query("SELECT DBE_PLDEBUGGER.set_var(?, ?)", true, true, 0);
+        localVariableResult("server representation");
+        var variable = new GaussDBDebugVariable("x", "text", "original", null, false, 0);
+        session.setVariableVal(variable, expression);
+        verify(set).setString(1, "x");
+        verify(set).setString(2, expression);
+        verify(set).executeQuery();
+        assertEquals("server representation", variable.getVal());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"missing", "query", "result-close", "statement-close"})
+    void failedVariableReadbackDoesNotInventValueOrAutomaticallyRepeatAssignment(String failureStage) throws Exception {
+        JDBCPreparedStatement set = query("SELECT DBE_PLDEBUGGER.set_var(?, ?)", true, true, 0);
+        JDBCResultSet result = localVariableResult("8");
+        JDBCStatement locals = connection.createStatement();
+        SQLException failure = new SQLException("readback failure", "XX000");
+        switch (failureStage) {
+            case "missing" -> when(result.next()).thenReturn(false);
+            case "query" -> when(locals.executeQuery(anyString())).thenThrow(failure);
+            case "result-close" -> doThrow(failure).when(result).close();
+            case "statement-close" -> doThrow(failure).when(locals).close();
+            default -> throw new IllegalArgumentException(failureStage);
+        }
+        var variable = new GaussDBDebugVariable("x", "int4", "7", null, false, 0);
+        DBGException actual = assertThrows(DBGException.class, () -> session.setVariableVal(variable, "x + 1"));
+        if (!failureStage.equals("missing")) {
+            assertSame(failure, actual.getCause());
+        }
+        assertEquals("7", variable.getVal(), "an unconfirmed cache is not a successful readback");
+        verify(set).executeQuery();
+        // Refresh independently: do not repeat an expression that may already have changed the target.
+        localVariableResult("8");
+        assertEquals("8", session.getVariables(null).getFirst().getVal());
+        verify(set).executeQuery();
+    }
+
     @Test
     void attachRetriesOnlyTheTargetNotReadyState() throws Exception {
         JDBCPreparedStatement attach = mock(JDBCPreparedStatement.class);
