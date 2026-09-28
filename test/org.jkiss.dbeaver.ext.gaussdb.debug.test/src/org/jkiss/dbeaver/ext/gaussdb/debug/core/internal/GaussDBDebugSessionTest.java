@@ -210,6 +210,82 @@ class GaussDBDebugSessionTest {
     }
 
     @Test
+    void failedInitialDisableKeepsRegisteredBreakpointRetryable() throws Exception {
+        validBreakpoint(0);
+        var breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        breakpoint.setEnabled(false);
+        JDBCPreparedStatement disable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(disable);
+        when(disable.execute()).thenThrow(new SQLException("disable rejected", "XX000")).thenReturn(true);
+        assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, breakpoint));
+        assertEquals(1, session.getBreakpoints().size());
+        assertSame(breakpoint, session.getBreakpoints().getFirst());
+        assertEquals(0, breakpoint.getServerId());
+        assertTrue(breakpoint.isEnabled(), "the successful add has not yet been disabled on the server");
+        session.disableBreakpoint(monitor, breakpoint);
+        verify(disable, times(2)).setInt(1, 0);
+        verify(disable, times(2)).execute();
+        assertFalse(breakpoint.isEnabled());
+    }
+
+    @Test
+    void initialDisabledRegistrationAcknowledgesDisableBeforePublishingDisabledState() throws Exception {
+        validBreakpoint(0);
+        var breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        breakpoint.setEnabled(false);
+        JDBCPreparedStatement disable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(disable);
+        when(disable.execute()).thenAnswer(call -> {
+            assertTrue(breakpoint.isEnabled());
+            return true;
+        });
+        session.addBreakpoint(monitor, breakpoint);
+        assertFalse(breakpoint.isEnabled());
+        session.disableBreakpoint(monitor, breakpoint);
+        verify(disable).execute();
+    }
+
+    @Test
+    void failedDuplicateDeleteKeepsOriginalRegistrationAndDoesNotAddAgain() throws Exception {
+        validBreakpoint(0);
+        var original = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        session.addBreakpoint(monitor, original);
+        JDBCPreparedStatement replacement = validBreakpoint(7);
+        JDBCPreparedStatement delete = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.delete_breakpoint(?)")).thenReturn(delete);
+        when(delete.execute()).thenThrow(new SQLException("delete rejected", "XX000")).thenReturn(true);
+        var requested = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, requested));
+        assertSame(original, session.getBreakpoints().getFirst());
+        verify(replacement, never()).executeQuery();
+        validBreakpoint(7); // Each catalog query needs a fresh result cursor.
+        session.addBreakpoint(monitor, requested);
+        assertEquals(1, session.getBreakpoints().size());
+        assertSame(requested, session.getBreakpoints().getFirst());
+        assertEquals(7, requested.getServerId());
+        verify(delete, times(2)).setInt(1, 0);
+    }
+
+    @Test
+    void failedReplacementAddDoesNotRetryDeletionOfAlreadyDeletedId() throws Exception {
+        validBreakpoint(0);
+        session.addBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(172034, 4));
+        JDBCPreparedStatement delete = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.delete_breakpoint(?)")).thenReturn(delete);
+        JDBCPreparedStatement failedAdd = validBreakpoint(7);
+        when(failedAdd.executeQuery()).thenThrow(new SQLException("add rejected", "XX000"));
+        var requested = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, requested));
+        assertTrue(session.getBreakpoints().isEmpty());
+        validBreakpoint(8);
+        session.addBreakpoint(monitor, requested);
+        verify(delete).execute();
+        verify(delete).setInt(1, 0);
+        assertEquals(1, session.getBreakpoints().size());
+        assertEquals(8, requested.getServerId());
+    }
+
+    @Test
     void rejectedVariableValueDoesNotChangeClientValue() throws Exception {
         query("SELECT DBE_PLDEBUGGER.set_var(?, ?)", true, false, 0);
         GaussDBDebugVariable variable = new GaussDBDebugVariable("x", "int4", "7", null, false, 0);

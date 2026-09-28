@@ -546,9 +546,14 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                     }
                     breakpoint.setServerId(serverId);
                 }
+                boolean disableRequested = !breakpoint.isEnabled();
+                // add_breakpoint creates an enabled server breakpoint. Keep that confirmed
+                // state if the separate disable operation fails, so disabling is retryable.
+                breakpoint.setEnabled(true);
                 breakpoints.add(breakpoint);
-                if (!breakpoint.isEnabled()) {
+                if (disableRequested) {
                     executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint);
+                    breakpoint.setEnabled(false);
                 }
             } catch (SQLException e) {
                 throw sqlError("Unable to add GaussDB breakpoint", e);
