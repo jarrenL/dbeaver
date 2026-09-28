@@ -24,6 +24,57 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void cancelStopsEvenTerminationResistantChildAndReportsInterruption(boolean ignoreTerm) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/bin/sh")) && Files.isExecutable(Path.of("/bin/sleep")));
+        var child = new java.util.concurrent.atomic.AtomicReference<Process>();
+        var canceled = new java.util.concurrent.atomic.AtomicBoolean();
+        var monitor = mock(DBRProgressMonitor.class);
+        when(monitor.isCanceled()).thenAnswer(i -> canceled.get());
+        var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/bin/sh", "-c", (ignoreTerm ? "trap '' TERM; " : "") + "printf 'ready\\n'; exec /bin/sleep 30");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log) throws IOException {
+                child.set(p);
+                var reader = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+                if (!"ready".equals(reader.readLine())) throw new IOException("Synthetic child did not become ready");
+                canceled.set(true);
+            }
+        };
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var future = executor.submit(() -> {
+                try {
+                    handler.executeProcess(monitor, task, mock(PostgreDatabaseBackupSettings.class),
+                        mock(PostgreDatabaseBackupInfo.class), mock(Log.class));
+                    return (Throwable) null;
+                } catch (Exception error) {
+                    return error;
+                }
+            });
+            Throwable result = future.get(4, java.util.concurrent.TimeUnit.SECONDS);
+            assertInstanceOf(InterruptedException.class, result);
+            assertNotNull(child.get());
+            assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
+            assertFalse(child.get().isAlive());
+            verify(monitor).done();
+        } finally {
+            executor.shutdownNow();
+            if (child.get() != null) {
+                child.get().destroyForcibly();
+                assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            assertTrue(executor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"startup-failure", "interrupted"})
     void failureAfterProcessStartDoesNotLeaveNativeChildRunning(String stage) throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/bin/sleep")), "Requires local sleep executable");
@@ -150,6 +201,8 @@ class GaussDBBackupPublishTest {
         stagedPaths.put(info, staged);
         if (outcome.equals("exit-failure")) {
             assertThrows(IOException.class, () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class)));
+        } else if (outcome.equals("canceled")) {
+            assertThrows(InterruptedException.class, () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class)));
         } else {
             boolean success = handler.executeProcess(monitor, task, settings, info, mock(Log.class));
             assertAll(

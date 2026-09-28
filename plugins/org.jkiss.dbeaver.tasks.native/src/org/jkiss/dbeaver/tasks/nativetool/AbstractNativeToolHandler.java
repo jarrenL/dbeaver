@@ -237,6 +237,11 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                 Thread.sleep(100);
                 if (monitor.isCanceled()) {
                     process.destroy();
+                    if (!process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS)) {
+                        process.destroyForcibly();
+                    }
+                    // Cancellation is not a native command failure, even if termination returns a nonzero code.
+                    throw new InterruptedException();
                 }
                 try {
                     final int exitCode = process.exitValue();

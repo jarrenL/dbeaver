@@ -1,5 +1,13 @@
 # 原生工具命令参数与认证失败边界
 
+## 有界取消与终止信号抵抗（后续）
+
+新增两个受控进程：普通sleep，以及shell设置忽略TERM后exec sleep（不创建额外长期子进程）。收到ready后才置取消标志；独立测试线程限4秒完成，finally强制清理进程并确认线程退出。
+
+红测`/tmp/native-cancel-bounded-red.log`31项中29通过、2失败：普通终止退出码被转成IOException而不是取消；忽略TERM进程持续轮询，超过4秒。修复取消分支先destroy、最多等待1秒，未退出则destroyForcibly，之后抛InterruptedException；不再把终止退出码当作工具运行错误。既有取消发布保护测试相应要求InterruptedException而不是返回false，仍验证原备份不被覆盖和暂存路径被删除。
+
+`/tmp/native-cancel-bounded-green.log`31/31通过、0跳过、0失败。进程和工作线程都经测试finally确认退出。该1秒为宽限等待，不保证所有OS下总取消耗时严格等于1秒；未验证不可终止OS状态、进程树、远程服务器事务收尾、真实gs_dump或Windows。共享原生工具的取消语义变化仍须完整回归。
+
 ## 启动后异常与线程中断的进程回收（后续）
 
 新增2项真实受控子进程测试：生产executeProcess启动/bin/sleep 30后，启动处理回调抛IOException，或设置当前线程中断令等待阶段抛InterruptedException。断言原始IO异常身份/中断类型保留，方法退出后自有子进程在2秒内结束，进度done；测试finally另有强制清理及退出确认，避免红测遗留进程。
