@@ -25,6 +25,8 @@ import org.jkiss.dbeaver.model.access.DBAAuthProfile;
 import org.jkiss.dbeaver.model.impl.app.DefaultValueEncryptor;
 import org.jkiss.dbeaver.model.net.DBWNetworkProfile;
 import org.jkiss.dbeaver.model.net.DBWNetworkProfileManager;
+import org.jkiss.dbeaver.model.net.DBWHandlerConfiguration;
+import org.jkiss.dbeaver.registry.network.NetworkHandlerRegistry;
 import org.jkiss.dbeaver.registry.DataSourceConfigurationManager;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
 import org.jkiss.dbeaver.registry.DataSourceSerializerModern;
@@ -391,6 +393,70 @@ class ConfigurationReadFailureTest {
 
     private String credentialsName() {
         return DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_PREFIX + DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_EXT;
+    }
+
+    @ParameterizedTest
+    @CsvSource({"ssh_tunnel, false, false", "ssh_tunnel, false, true", "ssh_tunnel, true, false",
+        "ssh_tunnel, true, true", "postgre_ssl, false, false", "postgre_ssl, false, true",
+        "postgre_ssl, true, false", "postgre_ssl, true, true"})
+    void networkHandlerCredentialsRemainAssociatedAfterProfileRename(String handlerId, boolean secure, boolean savePassword)
+        throws Exception {
+        var descriptor = NetworkHandlerRegistry.getInstance().getDescriptor(handlerId);
+        assertNotNull(descriptor, "Required network handler must be installed in the test runtime");
+        var project = mock(DBPProject.class);
+        var profile = new DBWNetworkProfile(project);
+        profile.setProfileId("stable-network-id");
+        profile.setProfileName("中文网络名");
+        var handler = new DBWHandlerConfiguration(descriptor, null);
+        handler.setEnabled(true);
+        handler.setSavePassword(savePassword);
+        handler.setUserName("网络用户");
+        handler.setPassword("fixture-network-password");
+        handler.setSecureProperty("fixture-key", "fixture-private-key");
+        handler.setProperty("host", "example.invalid");
+        profile.updateConfiguration(handler);
+        var configurationManager = mock(DataSourceConfigurationManager.class);
+        when(configurationManager.isTrusted()).thenReturn(true);
+        when(configurationManager.isSecure()).thenReturn(secure);
+        var writerMethod = DataSourceParser.class.getDeclaredMethod("saveNetworkProfiles",
+            DataSourceParser.ContextParameters.class, JsonWriter.class, List.class);
+        writerMethod.setAccessible(true);
+        for (int round = 0; round < 2; round++) {
+            var parameters = new DataSourceParser.ContextParameters(project, configurationManager, new HashMap<>());
+            var output = new StringWriter();
+            try (var writer = new JsonWriter(output)) {
+                writer.beginObject();
+                writerMethod.invoke(null, parameters, writer, List.of(profile));
+                writer.endObject();
+            }
+            String json = output.toString();
+            assertEquals(secure && savePassword, json.contains("fixture-network-password"));
+            assertEquals(secure, json.contains("fixture-private-key"));
+            if (secure) {
+                assertTrue(parameters.secureProperties().isEmpty());
+            } else {
+                var secrets = parameters.secureProperties().get("profile:stable-network-id");
+                assertNotNull(secrets);
+                assertEquals(1, secrets.size());
+                assertTrue(secrets.containsKey("network/" + handlerId + "/profile/" + profile.getProfileName()));
+                assertEquals(savePassword, secrets.values().iterator().next().containsKey("password"));
+            }
+            var loaded = DataSourceParser.parseProfiles(parameters, JSONUtils.parseMap(new Gson(), new StringReader(json)));
+            assertEquals(1, loaded.size());
+            var restored = loaded.getFirst();
+            assertEquals("stable-network-id", restored.getProfileId());
+            assertEquals(profile.getProfileName(), restored.getProfileName());
+            var restoredHandler = restored.getConfiguration(handlerId);
+            assertNotNull(restoredHandler);
+            assertTrue(restoredHandler.isEnabled());
+            assertEquals(savePassword, restoredHandler.isSavePassword());
+            assertEquals("网络用户", restoredHandler.getUserName());
+            assertEquals(savePassword ? "fixture-network-password" : null, restoredHandler.getPassword());
+            assertEquals("fixture-private-key", restoredHandler.getSecureProperty("fixture-key"));
+            assertEquals("example.invalid", restoredHandler.getStringProperty("host"));
+            profile = restored;
+            profile.setProfileName("改名后的网络配置");
+        }
     }
 
     @ParameterizedTest

@@ -1,5 +1,15 @@
 # 网络配置显示信息与身份加载回归
 
+## 后续：SSH/SSL handler 凭据关联
+
+新增 8 项：实际扩展注册的 `ssh_tunnel`、`postgre_ssl` × 是否保存密码 × 配置管理器是否标记为安全存储。平台测试模块显式声明 SSH 插件依赖，缺少 handler 时测试失败，不作条件跳过。
+
+每项连续两次调用生产保存器和解析器，第二次使用改名后的配置。检查稳定 ID、当前显示名、用户名、启用状态、普通 host 属性及安全属性；保存密码关闭时，两个输出位置都不应持久化密码，加载后密码为空。独立凭据模式下，主 JSON 不含测试密码/私钥值，并核对 `profile:<稳定ID>` 与 `network/<handler>/profile/<当前名称>` 对应；安全配置模式则检查凭据写入配置且没有额外凭据表条目。
+
+测试类 **46/46 通过、零跳过**。本轮没有生产修复，只增加测试依赖与场景。这里的“安全配置”是生产 `DataSourceConfigurationManager.isSecure()` 分支，测试存储介质仍为内存，不能据此证明磁盘加密。未发起实际 SSH 隧道、TLS 握手或数据库连接；跨配置隔离、secret-storage 后端和历史凭据键清理仍须单独验证。
+
+完整 73 模块诊断共 2,505 项：2,335 通过、169 跳过、1 项错误（仍为 Rest 本地网络权限拒绝），独立门控拒绝通过。日志 `/tmp/network-handler-credentials-20260929.log`；逐项证据：[NETWORK_HANDLER_CREDENTIAL_REACTOR_20260929.json](evidence/NETWORK_HANDLER_CREDENTIAL_REACTOR_20260929.json)。不与前轮计数累加。
+
 ## 后续：保存器与独立解析入口往返
 
 扩展至生产 `saveNetworkProfiles → JSON → parseProfiles → DBWNetworkProfileManager.getProfile`，空属性/非空属性两组分别连续保存和加载两轮。检查稳定 ID、中文扩展汉字名称、多行描述、引号/反斜杠属性及空字符串，使用真实管理器方法按名称查找。
