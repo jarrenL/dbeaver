@@ -213,6 +213,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         Log log
     ) throws IOException, InterruptedException {
         monitor.beginTask(task.getType().getName(), 1);
+        Process process = null;
         try {
             monitor.subTask("Start native tool " + getClass().getSimpleName());
             final List<String> commandLine = getCommandLine(settings, arg);
@@ -224,7 +225,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                 processBuilder.redirectErrorStream(true);
             }
             setupProcessParameters(monitor, settings, arg, processBuilder);
-            Process process = processBuilder.start();
+            process = processBuilder.start();
             startProcessHandler(monitor, task, settings, arg, processBuilder, process, log);
 
 
@@ -254,6 +255,14 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
             log.error("Process error: " + e.getMessage());
             throw new IOException(e);
         } finally {
+            // Startup handlers and interrupted waits can exit before the polling loop cleans up.
+            if (process != null && process.isAlive()) {
+                try {
+                    process.destroyForcibly();
+                } catch (RuntimeException cleanupFailure) {
+                    log.warn("Cannot stop native process after task exit", cleanupFailure);
+                }
+            }
             monitor.done();
         }
         return CommonUtils.isEmpty(taskErrorMessage);

@@ -24,6 +24,51 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"startup-failure", "interrupted"})
+    void failureAfterProcessStartDoesNotLeaveNativeChildRunning(String stage) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/bin/sleep")), "Requires local sleep executable");
+        var child = new java.util.concurrent.atomic.AtomicReference<Process>();
+        var monitor = mock(DBRProgressMonitor.class);
+        var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
+        var settings = mock(PostgreDatabaseBackupSettings.class);
+        var info = mock(PostgreDatabaseBackupInfo.class);
+        IOException original = new IOException("synthetic startup failure");
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/bin/sleep", "30");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder builder) {
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process process, Log log) throws IOException {
+                child.set(process);
+                if (stage.equals("startup-failure")) throw original;
+                Thread.currentThread().interrupt();
+            }
+        };
+        try {
+            if (stage.equals("startup-failure")) {
+                assertSame(original, assertThrows(IOException.class,
+                    () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class))));
+            } else {
+                assertThrows(InterruptedException.class,
+                    () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class)));
+            }
+            assertNotNull(child.get());
+            assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS), "Failed task must stop its owned native process");
+            assertFalse(child.get().isAlive());
+            verify(monitor).done();
+        } finally {
+            Thread.interrupted();
+            if (child.get() != null) {
+                child.get().destroyForcibly();
+                assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS), "Test process cleanup failed");
+            }
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"success", "canceled", "io-failure", "interrupted"})
     void taskLoopStopsOnCancellationOrFailureAndDoesNotNotifySuccess(String outcome) throws Exception {
         var first = mock(PostgreDatabaseBackupInfo.class);

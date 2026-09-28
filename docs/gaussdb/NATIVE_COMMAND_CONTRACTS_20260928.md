@@ -1,5 +1,13 @@
 # 原生工具命令参数与认证失败边界
 
+## 启动后异常与线程中断的进程回收（后续）
+
+新增2项真实受控子进程测试：生产executeProcess启动/bin/sleep 30后，启动处理回调抛IOException，或设置当前线程中断令等待阶段抛InterruptedException。断言原始IO异常身份/中断类型保留，方法退出后自有子进程在2秒内结束，进度done；测试finally另有强制清理及退出确认，避免红测遗留进程。
+
+红测`/tmp/native-child-lifecycle-red.log`29项中27通过、2失败：原finally仅结束进度，仍在运行的子进程未被回收。修复将Process引用保留至finally，仅对当前任务仍存活的子进程调用destroyForcibly；清理发生RuntimeException时记录警告，不替换原失败。未改为扫描或终止其他系统进程。
+
+`/tmp/native-child-lifecycle-green.log`29/29通过、0跳过、0失败。此改动影响共享原生工具框架，仍需各数据库工具回归；测试不是GaussDB服务器进程、Windows、子孙进程树、OS拒绝终止或GUI取消验收。强制终止意味着工具不能再执行自身收尾，因此失败后的备份副本不得发布，原有发布保护测试同轮继续通过。
+
 ## 上层备份任务循环补验（后续）
 
 新增成功、取消标志、IOException、InterruptedException四项，调用生产AbstractNativeToolHandler.doExecute。子进程执行替换为确定性结果，两个待备份对象：成功依次执行两个并通知完成；第一个取消或抛异常时第二个不执行，取消向上抛InterruptedException，已有中断保留同一实例，IO错误作为DBException原cause保留；失败/取消不发完成通知。备份无需模型刷新，断言不获取刷新对象、不操作导航模型。
