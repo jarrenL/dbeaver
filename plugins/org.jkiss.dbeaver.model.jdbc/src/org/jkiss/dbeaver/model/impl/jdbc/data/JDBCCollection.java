@@ -96,8 +96,33 @@ public class JDBCCollection extends AbstractDatabaseList implements DBDValueClon
 
     @NotNull
     @Override
-    public DBDValueCloneable cloneValue(@NotNull DBRProgressMonitor monitor) {
-        return new JDBCCollection(monitor, type, valueHandler, contents);
+    public DBDValueCloneable cloneValue(@NotNull DBRProgressMonitor monitor) throws DBCException {
+        JDBCCollection copy = new JDBCCollection();
+        copy.type = type;
+        copy.valueHandler = valueHandler;
+        if (contents != null) {
+            copy.contents = new Object[contents.length];
+            try {
+                for (int i = 0; i < contents.length; i++) {
+                    Object value = contents[i];
+                    copy.contents[i] = value instanceof DBDValueCloneable cloneable
+                        ? cloneable.cloneValue(monitor) : value;
+                }
+            } catch (DBCException | RuntimeException failure) {
+                // A failed editable copy must not silently borrow the original mutable value.
+                for (int i = 0; i < copy.contents.length; i++) {
+                    if (copy.contents[i] != contents[i]) {
+                        try {
+                            DBUtils.releaseValue(copy.contents[i]);
+                        } catch (RuntimeException cleanupFailure) {
+                            failure.addSuppressed(cleanupFailure);
+                        }
+                    }
+                }
+                throw failure;
+            }
+        }
+        return copy;
     }
 
     @Nullable
