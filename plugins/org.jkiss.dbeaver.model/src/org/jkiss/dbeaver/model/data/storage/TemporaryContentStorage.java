@@ -83,12 +83,18 @@ public class TemporaryContentStorage implements DBDContentStorageLocal {
     @Override
     public DBDContentStorage cloneStorage(@NotNull DBRProgressMonitor monitor)
         throws IOException {
+        if (monitor.isCanceled()) {
+            throw new java.io.InterruptedIOException("Content copy canceled");
+        }
         // Create new local storage
         Path tempFile = ContentUtils.createTempContentFile(monitor, platform, "copy" + this.hashCode());
         try {
             try (InputStream is = Files.newInputStream(file)) {
                 try (OutputStream os = Files.newOutputStream(tempFile)) {
                     ContentUtils.copyStreams(is, Files.size(file), os, monitor);
+                    if (monitor.isCanceled()) {
+                        throw new java.io.InterruptedIOException("Content copy canceled");
+                    }
                 }
             }
         } catch (IOException e) {
