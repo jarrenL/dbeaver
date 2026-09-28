@@ -44,6 +44,7 @@ import org.jkiss.utils.csv.CSVWriter;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.math.BigDecimal;
 import java.sql.Struct;
 import java.sql.Types;
 import java.util.ArrayList;
@@ -89,9 +90,17 @@ public class PostgreValueParser {
                 case Types.FLOAT:
                     return Float.parseFloat(string);
                 case Types.REAL:
-                case Types.NUMERIC:
                 case Types.DOUBLE:
                     return Double.parseDouble(string);
+                case Types.NUMERIC:
+                    // Numeric array members must not lose decimal precision through binary floating point.
+                    // Preserve the existing representation of the supported non-finite literals.
+                    String numeric = string.trim();
+                    if ("NaN".equals(numeric) || "Infinity".equals(numeric)
+                        || "+Infinity".equals(numeric) || "-Infinity".equals(numeric)) {
+                        return Double.valueOf(numeric);
+                    }
+                    return new BigDecimal(numeric);
                 default: {
                     return convertStringToSimpleValue(session, arrayType, string);
                 }
