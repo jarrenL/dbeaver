@@ -182,6 +182,9 @@ public class SQLQuery implements SQLScriptElement {
                         selectItems = items;
                     }
                 }
+            } else if (statement instanceof SetOperationList) {
+                // UNION/INTERSECT/EXCEPT return query results, but do not identify a single update target.
+                type = SQLQueryType.SELECT;
             } else if (statement instanceof Insert insert) {
                 type = SQLQueryType.INSERT;
                 fillSingleSource(insert.getTable());

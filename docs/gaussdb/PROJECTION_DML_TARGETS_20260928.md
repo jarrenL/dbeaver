@@ -1,5 +1,13 @@
 # SQL别名及DML目标识别回归
 
+## 后续：集合查询分类
+
+新增8项覆盖UNION、UNION ALL、INTERSECT、EXCEPT、同表两分支、中文输出别名与ORDER BY、CTE及混合集合运算。红测`/tmp/shared-set-query-red-20260928.log`中505通过、8失败，均期望SELECT而得到UNKNOWN。
+
+生产SQLQuery增加SetOperationList分类为SELECT，不创建单表编辑元数据，不标记为plain SELECT。每项同时断言原始/去引号目标均为空、isPlainSelect为false、没有虚构星号位置。绿测`/tmp/shared-set-query-green-20260928.log`为513/513通过、0跳过、0失败，该类现74项。
+
+影响检查：DBUtils执行准备仍以SELECT且isPlainSelect判断简单查询，原SELECT或UNKNOWN的“可能查询”判断对集合查询均成立；SQLEditor统计页焦点选择依据SELECT分类，因此修复可能改变原先集合查询被切换到统计页的行为。此处是源码检查，不宣称GUI焦点验收完成。不扩展到VALUES、括号包裹整个语句或集合结果列来源推导，也不改变JDBC元数据提供的其他编辑判断。
+
 对应历史清单8.2的UPDATE、DELETE、子查询别名以及9.4的DML对象识别。
 
 ## 新增场景

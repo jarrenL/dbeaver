@@ -32,6 +32,26 @@ import static org.mockito.Mockito.*;
 
 class GaussDBProjectionMetadataTest {
     @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT id FROM public.accounts UNION SELECT id FROM audit.other_table",
+        "SELECT id FROM public.accounts UNION ALL SELECT id FROM audit.other_table",
+        "SELECT id FROM public.accounts INTERSECT SELECT id FROM audit.other_table",
+        "SELECT id FROM public.accounts EXCEPT SELECT id FROM audit.other_table",
+        "SELECT id FROM public.accounts UNION ALL SELECT id FROM public.accounts",
+        "SELECT id AS \"编号\" FROM public.accounts UNION SELECT id FROM audit.other_table ORDER BY 1",
+        "WITH q AS (SELECT id FROM public.accounts) SELECT id FROM q UNION ALL SELECT id FROM audit.other_table",
+        "SELECT id FROM public.accounts UNION SELECT id FROM audit.other_table INTERSECT SELECT id FROM public.accounts"
+    })
+    void setQueriesAreSelectsWithoutInventingSingleTableEditTarget(String sql) {
+        SQLQuery query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getEntityMetadata(false));
+        assertNull(query.getEntityMetadata(true));
+        assertFalse(query.isPlainSelect(), "Set operations are not simple single-source SELECTs");
+        assertEquals(-1, query.getSelectItemAsteriskIndex());
+    }
+
+    @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
         "UPDATE public.accounts a SET amount=(SELECT max(b.amount) FROM audit.other_table b) WHERE a.id=1|UPDATE|public|accounts",
         "UPDATE public.accounts a SET amount=b.amount FROM audit.other_table b WHERE a.id=b.id|UPDATE|public|accounts",
