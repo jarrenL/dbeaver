@@ -331,18 +331,14 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
     void saveSecureCredentialsFile(
         @NotNull DataSourceConfigurationManager configurationManager,
         @NotNull DBPDataSourceConfigurationStorage storage
-    ) {
+    ) throws DBException, IOException {
         String credFile = DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_PREFIX + storage.getStorageSubId() + DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_EXT;
-        try {
-            if (secureProperties.isEmpty()) {
-                saveConfigFile(configurationManager, credFile, null, true);
-            } else {
-                // Serialize and encrypt
-                String jsonString = CONFIG_GSON.toJson(secureProperties, Map.class);
-                saveConfigFile(configurationManager, credFile, jsonString, true);
-            }
-        } catch (Exception e) {
-            log.error("Error saving secure credentials", e);
+        // Let the registry retain the save error rather than report partial persistence as success.
+        if (secureProperties.isEmpty()) {
+            saveConfigFile(configurationManager, credFile, null, true);
+        } else {
+            String jsonString = CONFIG_GSON.toJson(secureProperties, Map.class);
+            saveConfigFile(configurationManager, credFile, jsonString, true);
         }
     }
 

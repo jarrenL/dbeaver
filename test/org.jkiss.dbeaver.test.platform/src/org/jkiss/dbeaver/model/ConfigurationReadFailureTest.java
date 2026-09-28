@@ -396,6 +396,55 @@ class ConfigurationReadFailureTest {
     }
 
     @ParameterizedTest
+    @CsvSource({"false, io", "true, io", "false, db", "true, db"})
+    void credentialWriteFailureMustPropagateAndAllowExplicitRetry(boolean removeCredentials, String failureKind)
+        throws Exception {
+        configure(false);
+        when(storage.isDefault()).thenReturn(true);
+        when(storage.getStorageSubId()).thenReturn("");
+        when(manager.isTrusted()).thenReturn(true);
+        when(registry.getNetworkProfiles()).thenReturn(mock(DBWNetworkProfileManager.class));
+        var profile = new DBAAuthProfile(registry.getProject());
+        profile.setProfileId("write-fixture");
+        profile.setProfileName("写入测试");
+        profile.setSavePassword(true);
+        profile.setUserName("fixture-user");
+        profile.setUserPassword("fixture-password");
+        when(registry.getAllAuthProfiles()).thenReturn(removeCredentials ? List.of() : List.of(profile));
+        Exception failure = "io".equals(failureKind) ? new IOException("synthetic write failure")
+            : new DBException("synthetic configuration store failure");
+        var reject = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var written = new HashMap<String, byte[]>();
+        doAnswer(call -> {
+            String name = call.getArgument(0);
+            if (name.equals(credentialsName()) && reject.getAndSet(false)) {
+                throw failure;
+            }
+            byte[] bytes = call.getArgument(1);
+            written.put(name, bytes == null ? null : bytes.clone());
+            return null;
+        }).when(manager).writeConfiguration(anyString(), nullable(byte[].class));
+        var constructor = DataSourceSerializerModern.class.getDeclaredConstructor(DataSourceRegistry.class);
+        constructor.setAccessible(true);
+        var saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        assertSame(failure, assertThrows(Exception.class, () -> saver.saveDataSources(
+            new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of())));
+        assertTrue(written.containsKey("fixture.json"), "This path does not promise atomicity across both files");
+        assertFalse(written.containsKey(credentialsName()));
+        assertEquals("fixture-password", profile.getUserPassword());
+        saver.saveDataSources(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of());
+        assertTrue(written.containsKey(credentialsName()));
+        if (removeCredentials) {
+            assertNull(written.get(credentialsName()));
+        } else {
+            String plaintext = new String(encryptor.decryptValue(written.get(credentialsName())), StandardCharsets.UTF_8);
+            assertTrue(plaintext.contains("fixture-password"));
+            assertTrue(plaintext.contains("profile:write-fixture"));
+        }
+        verify(manager, times(2)).writeConfiguration(eq(credentialsName()), nullable(byte[].class));
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"rename", "delete", "no-password"})
     void freshConfigurationSaveRemovesObsoleteNetworkCredentialPayload(String operation) throws Exception {
         configure(false);
