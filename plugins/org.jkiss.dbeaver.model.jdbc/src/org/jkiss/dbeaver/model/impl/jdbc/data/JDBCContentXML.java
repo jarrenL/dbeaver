@@ -70,15 +70,18 @@ public class JDBCContentXML extends JDBCContentLOB {
         throws DBCException
     {
         if (storage == null && xml != null) {
-            try {
-                storage = StringContentStorage.createFromReader(xml.getCharacterStream());
+            final DBDContentStorage newStorage;
+            try (Reader reader = xml.getCharacterStream()) {
+                newStorage = StringContentStorage.createFromReader(reader);
             }
             catch (IOException e) {
                 throw new DBCException("IO error while reading content", e);
             } catch (SQLException e) {
                 throw new DBCException(e, executionContext);
             }
-            // Free blob - we don't need it anymore
+            // Publish only after the reader has closed successfully, so failures remain retryable.
+            storage = newStorage;
+            // Free XML - we don't need it anymore
             releaseXML();
         }
         return storage;
