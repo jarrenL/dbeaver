@@ -375,6 +375,81 @@ class GaussDBDebugSessionTest {
         assertTrue(session.isTransactionCompletionPending());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(DBGTransactionAction.class)
+    void confirmedTransactionStaysConfirmedWhenTimeoutRestorationFails(DBGTransactionAction action) throws Exception {
+        completedTarget();
+        doThrow(new SQLException("restoring timeout failed", "08006"))
+            .when(connection).setNetworkTimeout(any(), eq(0));
+        assertDoesNotThrow(() -> session.completeTransaction(monitor, action));
+        assertFalse(session.isTransactionCompletionPending());
+        // A second UI completion notification must not repeat an already acknowledged transaction.
+        session.completeTransaction(monitor, action);
+        verify(connection, times(action == DBGTransactionAction.COMMIT ? 1 : 0)).commit();
+        verify(connection, times(action == DBGTransactionAction.ROLLBACK ? 1 : 0)).rollback();
+        verify(connection).close();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(DBGTransactionAction.class)
+    void transactionFailureKeepsOriginalCauseWhenTimeoutRestorationAlsoFails(DBGTransactionAction action) throws Exception {
+        completedTarget();
+        SQLException failure = new SQLException("transaction acknowledgment lost", "08006");
+        if (action == DBGTransactionAction.COMMIT) {
+            doThrow(failure).when(connection).commit();
+        } else {
+            doThrow(failure).when(connection).rollback();
+        }
+        doThrow(new SQLException("secondary timeout restoration error"))
+            .when(connection).setNetworkTimeout(any(), eq(0));
+        DBGException actual = assertThrows(DBGException.class, () -> session.completeTransaction(monitor, action));
+        assertSame(failure, actual.getCause());
+        assertTrue(session.isTransactionCompletionPending());
+        assertThrows(DBGException.class, () -> session.completeTransaction(monitor, DBGTransactionAction.COMMIT));
+        verify(connection, times(action == DBGTransactionAction.COMMIT ? 1 : 0)).commit();
+        verify(connection, times(action == DBGTransactionAction.ROLLBACK ? 1 : 0)).rollback();
+        verify(connection).close();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(DBGTransactionAction.class)
+    void transactionBoundsLongTimeoutAndRestoresItInOrder(DBGTransactionAction action) throws Exception {
+        completedTarget();
+        when(connection.getNetworkTimeout()).thenReturn(20000);
+        session.completeTransaction(monitor, action);
+        var order = inOrder(connection);
+        order.verify(connection).setNetworkTimeout(any(), eq(10000));
+        if (action == DBGTransactionAction.COMMIT) {
+            order.verify(connection).commit();
+            verify(connection, never()).rollback();
+        } else {
+            order.verify(connection).rollback();
+            verify(connection, never()).commit();
+        }
+        order.verify(connection).setNetworkTimeout(any(), eq(20000));
+        order.verify(connection).close();
+        assertFalse(session.isTransactionCompletionPending());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void timeoutSetupFailureDoesNotExecuteTransaction(boolean failRead) throws Exception {
+        completedTarget();
+        SQLException failure = new SQLException("timeout setup unavailable");
+        if (failRead) {
+            when(connection.getNetworkTimeout()).thenThrow(failure);
+        } else {
+            doThrow(failure).when(connection).setNetworkTimeout(any(), eq(10000));
+        }
+        DBGException actual = assertThrows(DBGException.class,
+            () -> session.completeTransaction(monitor, DBGTransactionAction.COMMIT));
+        assertSame(failure, actual.getCause());
+        verify(connection, never()).commit();
+        verify(connection, never()).rollback();
+        verify(connection).close();
+        assertTrue(session.isTransactionCompletionPending());
+    }
+
     @Test
     void lateTargetAcknowledgmentPublishesCompletionOnce() throws Exception {
         field("controlFinished", true);
