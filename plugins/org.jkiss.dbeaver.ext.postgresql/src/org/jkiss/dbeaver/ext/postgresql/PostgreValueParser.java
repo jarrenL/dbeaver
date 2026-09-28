@@ -48,8 +48,8 @@ import java.math.BigDecimal;
 import java.sql.Struct;
 import java.sql.Types;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 
@@ -261,12 +261,8 @@ public class PostgreValueParser {
             if (value instanceof DBDCollection) {
                 value = ((DBDCollection) value).getRawValue();
             }
-            if (value instanceof Object[]) {
-                String arrayPostgreStyle = Arrays.deepToString((Object[]) value)
-                        .replace("[", "{")
-                        .replace("]", "}")
-                        .replace(" ", "");
-                line[i] = arrayPostgreStyle; //Strings are not quoted
+            if (value instanceof Object[] array) {
+                line[i] = generateCompositeArrayString(array);
             } else if (value instanceof JDBCComposite) {
                 line[i] = generateObjectString(((JDBCComposite) value).getValues());
             } else if (value != null) {
@@ -276,7 +272,7 @@ public class PostgreValueParser {
             }
         }
         StringWriter out = new StringWriter();
-        final CSVWriter writer = new CSVWriter(out);
+        final CSVWriter writer = new CSVWriter(out, ',', '"', '\\');
         writer.writeNext(line);
         try {
             writer.flush();
@@ -284,6 +280,29 @@ public class PostgreValueParser {
             log.warn(e);
         }
         return "(" + out.toString().trim() + ")";
+    }
+
+    @NotNull
+    private static String generateCompositeArrayString(@NotNull Object[] values) {
+        StringJoiner result = new StringJoiner(",", "{", "}");
+        for (Object value : values) {
+            if (value instanceof DBDCollection collection) {
+                value = collection.getRawValue();
+            }
+            if (DBUtils.isNullValue(value)) {
+                result.add(SQLConstants.NULL_VALUE);
+            } else if (value instanceof Object[] nested) {
+                result.add(generateCompositeArrayString(nested));
+            } else if (value instanceof Number || value instanceof Boolean) {
+                result.add(value.toString());
+            } else {
+                String text = value instanceof JDBCComposite composite
+                    ? generateObjectString(composite.getValues()) : value.toString();
+                // Array escaping is applied before the outer composite field is quoted.
+                result.add('"' + text.replace("\\", "\\\\").replace("\"", "\\\"") + '"');
+            }
+        }
+        return result.toString();
     }
 
     // Copied from pgjdbc array parser class
