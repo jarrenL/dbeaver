@@ -36,6 +36,51 @@ import static org.mockito.Mockito.*;
 
 public class GaussDBStreamExportFailureTest {
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void jobRunStopsAtFailedPipeAndPreservesCancellationStatus(boolean cancelled) throws Exception {
+        Class<?> jobType = org.jkiss.dbeaver.tools.transfer.DataTransferJob.class;
+        var job = mock(org.jkiss.dbeaver.tools.transfer.DataTransferJob.class, invocation ->
+            invocation.getMethod().getName().equals("run")
+                ? invocation.callRealMethod() : RETURNS_DEFAULTS.answer(invocation));
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.DataTransferSettings.class);
+        var producer = mock(org.jkiss.dbeaver.tools.transfer.IDataTransferProducer.class);
+        var consumer = mock(org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var logger = mock(org.jkiss.dbeaver.Log.class);
+        for (var entry : java.util.Map.of("settings", settings, "log", logger).entrySet()) {
+            Field field = jobType.getDeclaredField(entry.getKey());
+            field.setAccessible(true);
+            field.set(job, entry.getValue());
+        }
+        var pipe = new org.jkiss.dbeaver.tools.transfer.DataTransferPipe(producer, consumer);
+        var next = mock(org.jkiss.dbeaver.tools.transfer.DataTransferPipe.class);
+        when(settings.getDataPipes()).thenReturn(java.util.List.of(pipe, next));
+        when(settings.acquireDataPipe(any(), isNull())).thenReturn(pipe, next, null);
+        when(producer.getObjectFullName(any())).thenReturn("synthetic-source");
+        when(consumer.getObjectFullName(any())).thenReturn("synthetic-output");
+        DBException original = cancelled
+            ? new org.jkiss.dbeaver.runtime.DBInterruptedException("synthetic cancellation")
+            : new DBException("synthetic database read failure");
+        DBException secondary = new DBException("synthetic notification failure");
+        doThrow(original).when(producer).transferData(any(), same(consumer), isNull(), isNull(), isNull(), eq(-1L));
+        doThrow(secondary).when(consumer).finishTransfer(any(), same(original), isNull(), eq(false));
+        Method run = jobType.getDeclaredMethod("run", DBRProgressMonitor.class);
+        run.setAccessible(true);
+        var status = (org.eclipse.core.runtime.IStatus) run.invoke(job, monitor);
+        if (cancelled) {
+            assertEquals(org.eclipse.core.runtime.IStatus.CANCEL, status.getSeverity());
+        } else {
+            // The caller handles the attached exception; OK suppresses duplicate UI dialogs.
+            assertEquals(org.eclipse.core.runtime.IStatus.OK, status.getSeverity());
+            assertSame(original, status.getException());
+        }
+        assertArrayEquals(new Throwable[]{secondary}, original.getSuppressed());
+        verify(settings, times(1)).acquireDataPipe(any(), isNull());
+        verifyNoInteractions(next);
+        verify(monitor, atLeastOnce()).done();
+    }
+
+    @ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"false,none", "false,checked", "false,runtime", "false,same",
         "true,none", "true,checked", "true,runtime", "true,same"})
     public void transferJobKeepsProducerErrorWhenErrorNotificationFails(boolean cancelled, String notification) throws Exception {
