@@ -555,16 +555,24 @@ public class SQLEditor extends SQLEditorBase implements
         } else {
             // Get/open context
             final DBPDataSource dataSource = dataSourceContainer.getDataSource();
+            final DBSInstance replacementInstance = dataSource == null ? null
+                : DBExecUtils.findReplacementInstance(dataSource, isolatedExecutionContext);
             if (dataSource == null) {
                 releaseExecutionContext();
-            } else if (curDataSource != dataSource) {
+            } else if (curDataSource != dataSource || replacementInstance != null) {
                 // Datasource was changed or instance was changed (PG)
                 releaseExecutionContext();
                 curDataSource = dataSource;
                 if (executionContextProvider == null) {
                     DBPDataSourceContainer container = dataSource.getContainer();
                     if (SQLEditorUtils.isOpenSeparateConnection(container)) {
-                        initSeparateConnection(dataSource, onSuccess, true);
+                        if (replacementInstance != null) {
+                            // Refresh may replace catalog instances without replacing the datasource.
+                            // Keep this editor's database, not the datasource's currently selected one.
+                            new OpenContextJob(replacementInstance, onSuccess, true).schedule();
+                        } else {
+                            initSeparateConnection(dataSource, onSuccess, true);
+                        }
                     } else {
                         if (onSuccess != null) {
                             onSuccess.run();

@@ -2,6 +2,22 @@
 
 ## 结论
 
+### 当前源码修复进度
+
+后续已增加实例替换识别并接入 `SQLEditor.updateExecutionContext`：在数据源对象未变、但独立编辑器所属数据库实例被同名新实例替换时，释放旧编辑器上下文，通过现有 OpenContextJob 在新实例创建独立上下文。明确选择同名实例，不回退到当前默认数据库，不主动执行原 SQL 或重放 DML。
+
+`DBExecUtils.findReplacementInstance` 只读取已知实例，不执行 SQL：原实例仍在登记列表（即使暂时断开）时返回无替换，空列表/缺失目标/同名歧义/不同数据源/空上下文均不猜测。新增正式平台测试 `ExecutionContextReplacementTest` 9 项；普通共享回归 794/794、实际 OSGi 平台 21 类 362/362，均 0 失败错误跳过；必需类门控自测 7/7。初次测试编译缺少 close() 的受检异常声明，修正测试声明后通过，不计为生产缺陷。
+
+测试工具仓命令：
+
+```sh
+node scripts/run-shared-focused.mjs --sql-editor
+node scripts/run-existing-osgi.mjs <编译输出目录> --module=org.jkiss.dbeaver.test.platform --all-module
+node --test scripts/verify-regression-results.test.mjs
+```
+
+本次编译目录 `/tmp/shared-focused-ezCqR1`，日志 `/tmp/context-replacement-green-20260928.log` 和 `/tmp/context-replacement-osgi-20260928.log`。`--sql-editor` 显式编译当前 SQLEditor 源码，不将旧编译类当作新代码；测试断言目前覆盖生产替换判断方法，尚未驱动实际 OpenContextJob 或窗口生命周期。运行中的 Linux GUI 尚未安装这次 model/SQL 编辑器修复，**上面的组件通过不代表 08003 GUI 问题已闭环**。下一步必须安装独立验收副本并重跑下文复现，随后复验待保存修改及数据库结果。
+
 2026-09-28 恢复访问独立麒麟 Linux 图形验收副本后，确认此前编辑器保存动作已完成，但结果集保存失败。手动重连后再次保存仍报 `08003: This connection has been closed.`。此项为实际未通过路径，不计入通过项。
 
 当前证据证明：失败后待保存文本仍可见，保存按钮保持可用，独立数据库连接读回的原值未变。尚未证明重连后可继续保存，也未确定最初连接关闭的原因。

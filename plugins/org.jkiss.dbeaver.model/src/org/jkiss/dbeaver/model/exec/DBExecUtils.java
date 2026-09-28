@@ -76,6 +76,36 @@ public class DBExecUtils {
 
     public static final int DEFAULT_READ_FETCH_SIZE = 10000;
 
+    /**
+     * Finds an instance replaced by a metadata refresh, without opening connections or executing SQL.
+     * A disconnected context whose owner is still registered is not a replacement: ordinary
+     * invalidation must retain that context and its transaction settings.
+     */
+    @Nullable
+    public static DBSInstance findReplacementInstance(
+        @NotNull DBPDataSource dataSource,
+        @Nullable DBCExecutionContext context
+    ) {
+        if (context == null || context.getDataSource() != dataSource) {
+            return null;
+        }
+        DBSInstance owner = context.getOwnerInstance();
+        DBSInstance replacement = null;
+        for (DBSInstance candidate : dataSource.getAvailableInstances()) {
+            if (candidate == owner) {
+                return null;
+            }
+            if (candidate.getName().equals(owner.getName())) {
+                if (replacement != null) {
+                    // Do not guess when a provider exposes ambiguous instance names.
+                    return null;
+                }
+                replacement = candidate;
+            }
+        }
+        return replacement;
+    }
+
     private static final Log log = Log.getLog(DBExecUtils.class);
 
     /**
