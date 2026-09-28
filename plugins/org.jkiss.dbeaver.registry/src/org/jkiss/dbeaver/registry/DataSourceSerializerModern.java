@@ -524,7 +524,9 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
                     DataSourceParser.readSecuredCredentials(contextParameters, null, profile, null);
                 profile.setUserName(authCreds.getUserName());
                 profile.setUserPassword(authCreds.getUserPassword());
-                profile.setProperties(authCreds.getProperties());
+                // Credentials containing only a user/password have no additional properties.
+                Map<String, String> authProperties = authCreds.getProperties();
+                profile.setProperties(authProperties == null ? Collections.emptyMap() : authProperties);
                 profiles.add(profile);
             }
             registry.setAuthProfiles(profiles);

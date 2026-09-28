@@ -189,6 +189,7 @@ class ConfigurationReadFailureTest {
         assertEquals("中文用户", captured.get().getFirst().getUserName());
         assertEquals("synthetic-password", captured.get().getFirst().getUserPassword());
         assertEquals("fixture-profile", captured.get().getFirst().getProfileId());
+        assertTrue(captured.get().getFirst().getProperties().isEmpty());
         assertEquals(1, configStream.closeCount);
         assertEquals(1, credentialStream.closeCount);
     }
@@ -206,6 +207,28 @@ class ConfigurationReadFailureTest {
         assertEquals(1, results.addedFolders.size());
         assertEquals(1, captured.get().size());
         assertNull(captured.get().getFirst().getUserPassword());
+        assertTrue(captured.get().getFirst().getProperties().isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"user\":\"测试用户\",\"password\":\"fixture-password\"}",
+        "{\"user\":\"测试用户\",\"password\":\"fixture-password\",\"tenant\":\"中文租户\"}"})
+    void secureConfigurationPreservesOptionalAuthProperties(String credentials) throws Exception {
+        configure(false);
+        when(manager.isSecure()).thenReturn(true);
+        String json = "{\"connections\":{},\"auth-profiles\":{\"fixture-profile\":{"
+            + "\"name\":\"测试配置\",\"save-password\":true,\"credentials\":" + credentials + "}}}";
+        when(manager.readConfiguration("fixture.json", null))
+            .thenReturn(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        var captured = captureProfiles();
+        parse(new DataSourceParseResults());
+        assertEquals(1, captured.get().size());
+        var profile = captured.get().getFirst();
+        assertEquals(credentials.contains("user") ? "测试用户" : null, profile.getUserName());
+        assertEquals(credentials.contains("password") ? "fixture-password" : null, profile.getUserPassword());
+        assertEquals(credentials.contains("tenant") ? Map.of("tenant", "中文租户") : Map.of(), profile.getProperties());
+        profile.getProperties().put("added", "local");
+        assertEquals("local", profile.getProperties().get("added"));
     }
 
     @Test
