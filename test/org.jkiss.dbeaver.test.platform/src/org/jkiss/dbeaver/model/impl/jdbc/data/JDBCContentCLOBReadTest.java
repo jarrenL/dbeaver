@@ -59,6 +59,56 @@ class JDBCContentCLOBReadTest {
         @Override public void close() { closed = true; super.close(); }
     }
     @ParameterizedTest
+    @ValueSource(strings = {"before-memory", "before-disk", "after-substring", "after-fallback"})
+    void canceledFreshReadDoesNotPublishOrFreeAndAllowsRetry(String stage) throws Exception {
+        boolean disk = stage.equals("before-disk");
+        if (disk) when(platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)).thenReturn(0);
+        when(platform.getTempFolder(any(), anyString())).thenReturn(directory);
+        var monitor = mock(DBRProgressMonitor.class);
+        var clob = mock(Clob.class);
+        when(clob.length()).thenReturn(4L);
+        when(clob.getSubString(1, 4)).thenAnswer(call -> {
+            if (stage.equals("after-substring")) when(monitor.isCanceled()).thenReturn(true);
+            return "原始内容";
+        });
+        var reader = new TrackedReader("原始内容") {
+            @Override public void close() {
+                super.close();
+                if (stage.equals("after-fallback")) when(monitor.isCanceled()).thenReturn(true);
+            }
+        };
+        when(clob.getCharacterStream()).thenReturn(reader);
+        if (stage.equals("after-fallback")) {
+            when(clob.getSubString(1, 4)).thenThrow(new SQLException("substring unsupported"));
+        }
+        if (stage.startsWith("before")) when(monitor.isCanceled()).thenReturn(true);
+        var content = new JDBCContentCLOB(mock(DBCExecutionContext.class), clob) {
+            @Override protected String getDefaultEncoding() { return "UTF-8"; }
+        };
+        assertThrows(DBException.class, () -> content.getContents(monitor));
+        verify(clob, never()).free();
+        if (stage.startsWith("before")) {
+            verify(clob, never()).length();
+            verify(clob, never()).getCharacterStream();
+            verify(clob, never()).getSubString(anyLong(), anyInt());
+        }
+        if (stage.equals("after-fallback")) assertTrue(reader.closed);
+        try (var files = java.nio.file.Files.list(directory)) { assertEquals(0, files.count()); }
+        when(monitor.isCanceled()).thenReturn(false);
+        doReturn("重试成功").when(clob).getSubString(1, 4);
+        doReturn(new TrackedReader("重试成功")).when(clob).getCharacterStream();
+        var storage = content.getContents(monitor);
+        try (var result = storage.getContentReader()) {
+            var writer = new StringWriter();
+            result.transferTo(writer);
+            assertEquals("重试成功", writer.toString());
+        }
+        verify(clob).free();
+        content.release();
+        try (var files = java.nio.file.Files.list(directory)) { assertEquals(0, files.count()); }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"success", "read", "close", "both", "cancel"})
     void diskStorageClosesReaderCleansFailedAttemptAndRetries(String stage) throws Exception {
         when(platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)).thenReturn(0);

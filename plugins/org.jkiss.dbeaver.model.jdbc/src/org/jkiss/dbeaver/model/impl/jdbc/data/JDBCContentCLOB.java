@@ -90,16 +90,19 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
         throws DBCException
     {
         if (storage == null && clob != null) {
+            if (monitor.isCanceled()) {
+                throw new DBCException("CLOB content read canceled");
+            }
             try {
                 long contentLength = getContentLength();
                 DBPPlatform platform = DBWorkbench.getPlatform();
                 if (contentLength < platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)) {
+                    DBDContentStorage newStorage;
                     try {
                         String subString = clob.getSubString(1, (int) contentLength);
-                        storage = new JDBCContentChars(executionContext, subString);
+                        newStorage = new JDBCContentChars(executionContext, subString);
                     } catch (Exception e) {
                         log.debug("Can't get CLOB as substring", e);
-                        final DBDContentStorage newStorage;
                         try (Reader reader = clob.getCharacterStream()) {
                             newStorage = StringContentStorage.createFromReader(reader, contentLength);
                         } catch (IOException e1) {
@@ -107,8 +110,12 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
                         } catch (Throwable e1) {
                             throw new DBCException(e1, executionContext);
                         }
-                        storage = newStorage;
                     }
+                    if (monitor.isCanceled()) {
+                        newStorage.release();
+                        throw new DBCException("CLOB content read canceled");
+                    }
+                    storage = newStorage;
                 } else {
                     // Create new local storage
                     Path tempFile;
