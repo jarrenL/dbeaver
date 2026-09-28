@@ -89,6 +89,9 @@ public class JDBCContentBLOB extends JDBCContentLOB {
         throws DBCException
     {
         if (storage == null && blob != null) {
+            if (monitor.isCanceled()) {
+                throw new DBCException("BLOB content read canceled");
+            }
             try {
                 long contentLength = getContentLength();
                 DBPPlatform platform = DBWorkbench.getPlatform();
@@ -100,6 +103,10 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                                 bs,
                                 contentLength,
                                 getDefaultEncoding());
+                        }
+                        if (monitor.isCanceled()) {
+                            newStorage.release();
+                            throw new DBCException("BLOB content read canceled");
                         }
                         storage = newStorage;
                     } catch (IOException e) {

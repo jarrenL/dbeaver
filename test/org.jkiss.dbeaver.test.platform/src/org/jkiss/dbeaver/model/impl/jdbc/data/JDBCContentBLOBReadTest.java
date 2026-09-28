@@ -53,6 +53,44 @@ class JDBCContentBLOBReadTest {
         workbenchField.set(null, originalWorkbench);
     }
     @ParameterizedTest
+    @ValueSource(strings = {"before-memory", "before-disk", "after-close"})
+    void canceledFreshReadKeepsBlobRetryable(String stage) throws Exception {
+        boolean disk = stage.equals("before-disk");
+        if (disk) when(platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)).thenReturn(0);
+        when(platform.getTempFolder(any(), anyString())).thenReturn(directory);
+        var blob = mock(Blob.class);
+        when(blob.length()).thenReturn(3L);
+        var monitor = mock(DBRProgressMonitor.class);
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var stream = new ByteArrayInputStream(new byte[] {1, 2, 3}) {
+            @Override public void close() {
+                closed.set(true);
+                if (stage.equals("after-close")) when(monitor.isCanceled()).thenReturn(true);
+            }
+        };
+        when(blob.getBinaryStream()).thenReturn(stream);
+        when(monitor.isCanceled()).thenReturn(stage.startsWith("before"));
+        var content = new JDBCContentBLOB(mock(DBCExecutionContext.class), blob) {
+            @Override protected String getDefaultEncoding() { return "UTF-8"; }
+        };
+        assertThrows(DBException.class, () -> content.getContents(monitor));
+        verify(blob, never()).free();
+        if (stage.startsWith("before")) {
+            verify(blob, never()).length();
+            verify(blob, never()).getBinaryStream();
+        } else assertTrue(closed.get());
+        try (var files = java.nio.file.Files.list(directory)) { assertEquals(0, files.count()); }
+        when(monitor.isCanceled()).thenReturn(false);
+        when(blob.getBinaryStream()).thenReturn(new ByteArrayInputStream(new byte[] {4, 5, 6}));
+        try (var result = content.getContents(monitor).getContentStream()) {
+            assertArrayEquals(new byte[] {4, 5, 6}, result.readAllBytes());
+        }
+        verify(blob).free();
+        content.release();
+        try (var files = java.nio.file.Files.list(directory)) { assertEquals(0, files.count()); }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"success", "read", "first-close", "second-close"})
     void memoryReadDoesNotPublishBeforeAllStreamClosesSucceed(String stage) throws Exception {
         var blob = mock(Blob.class);

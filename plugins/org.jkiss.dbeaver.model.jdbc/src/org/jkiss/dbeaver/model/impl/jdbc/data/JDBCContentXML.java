@@ -70,6 +70,9 @@ public class JDBCContentXML extends JDBCContentLOB {
         throws DBCException
     {
         if (storage == null && xml != null) {
+            if (monitor.isCanceled()) {
+                throw new DBCException("XML content read canceled");
+            }
             final DBDContentStorage newStorage;
             try (Reader reader = xml.getCharacterStream()) {
                 newStorage = StringContentStorage.createFromReader(reader);
@@ -80,6 +83,10 @@ public class JDBCContentXML extends JDBCContentLOB {
                 throw new DBCException(e, executionContext);
             }
             // Publish only after the reader has closed successfully, so failures remain retryable.
+            if (monitor.isCanceled()) {
+                newStorage.release();
+                throw new DBCException("XML content read canceled");
+            }
             storage = newStorage;
             // Free XML - we don't need it anymore
             releaseXML();

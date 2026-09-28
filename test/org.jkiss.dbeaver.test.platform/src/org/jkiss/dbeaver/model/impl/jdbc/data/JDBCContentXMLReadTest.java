@@ -54,6 +54,33 @@ class JDBCContentXMLReadTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void cancellationBeforeReadOrAfterCloseKeepsXmlRetryable(boolean afterClose) throws Exception {
+        var xml = mock(SQLXML.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var reader = new TrackedReader("<old/>") {
+            @Override public void close() {
+                super.close();
+                if (afterClose) when(monitor.isCanceled()).thenReturn(true);
+            }
+        };
+        when(xml.getCharacterStream()).thenReturn(reader);
+        when(monitor.isCanceled()).thenReturn(!afterClose);
+        var content = new JDBCContentXML(mock(DBCExecutionContext.class), xml);
+        assertThrows(DBException.class, () -> content.getContents(monitor));
+        verify(xml, never()).free();
+        if (afterClose) assertTrue(reader.closed);
+        else verify(xml, never()).getCharacterStream();
+        when(monitor.isCanceled()).thenReturn(false);
+        var retry = new TrackedReader("<new>中文</new>");
+        when(xml.getCharacterStream()).thenReturn(retry);
+        assertEquals("<new>中文</new>", ((DBDContentCached) content.getContents(monitor)).getCachedValue());
+        assertTrue(retry.closed);
+        verify(xml).free();
+        content.release();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"read", "close", "both"})
     void failureClosesReaderAndDoesNotCacheIncompleteAttempt(String mode) throws Exception {
         var xml = mock(SQLXML.class);
