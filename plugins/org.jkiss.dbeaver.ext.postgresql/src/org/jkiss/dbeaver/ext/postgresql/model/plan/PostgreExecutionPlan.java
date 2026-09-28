@@ -38,6 +38,7 @@ import org.w3c.dom.Element;
 
 import java.sql.SQLException;
 import java.sql.SQLXML;
+import java.sql.Savepoint;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -154,12 +155,7 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
         rootNodes = new ArrayList<>();
         planText = null;
         JDBCSession connection = (JDBCSession) session;
-        boolean oldAutoCommit = false;
-        try {
-            oldAutoCommit = connection.getAutoCommit();
-            if (oldAutoCommit) {
-                connection.setAutoCommit(false);
-            }
+        try (PlanTransaction transaction = new PlanTransaction(connection)) {
             try (JDBCStatement dbStat = connection.createStatement()) {
                 try (JDBCResultSet dbResult = dbStat.executeQuery(getPlanQueryString())) {
                     if (oldQuery) {
@@ -192,15 +188,36 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
             rootNodes = new ArrayList<>();
             planText = null;
             throw new DBCException(e, session.getExecutionContext());
-        } finally {
-            // Rollback changes because EXPLAIN actually executes query and it could be INSERT/UPDATE
-            try {
-                connection.rollback();
-                if (oldAutoCommit) {
-                    connection.setAutoCommit(true);
+        }
+    }
+
+    /** Roll back only the analysis, never the user's pre-existing manual transaction. */
+    private static final class PlanTransaction implements AutoCloseable {
+        private final JDBCSession connection;
+        private final Savepoint savepoint;
+
+        private PlanTransaction(JDBCSession connection) throws SQLException {
+            this.connection = connection;
+            if (connection.getAutoCommit()) {
+                connection.setAutoCommit(false);
+                savepoint = null;
+            } else {
+                savepoint = connection.setSavepoint();
+                if (savepoint == null) {
+                    throw new SQLException("Cannot isolate execution plan analysis in the existing transaction");
                 }
-            } catch (SQLException e) {
-                log.error("Error closing plan analyser", e);
+            }
+        }
+
+        @Override
+        public void close() throws SQLException {
+            // Do not enable auto-commit if rollback fails: that could commit analysis side effects.
+            if (savepoint == null) {
+                connection.rollback();
+                connection.setAutoCommit(true);
+            } else {
+                connection.rollback(savepoint);
+                connection.releaseSavepoint(savepoint);
             }
         }
     }

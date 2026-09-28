@@ -2590,6 +2590,8 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         // Bridge the real server payload into the same production parser used by DBeaver.
         // Only the DBeaver session adapter is mocked, not the XML or plan nodes.
         var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        // This adapter parses an already fetched payload; it is not the live transaction under test.
+        when(session.getAutoCommit()).thenReturn(true);
         var statement = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement.class);
         var rows = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
         var sqlXml = mock(java.sql.SQLXML.class);

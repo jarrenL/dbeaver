@@ -46,3 +46,13 @@
 首批 `/tmp/plan-response-red.log` 为54项中49通过、5失败：空响应/缺结构不报错、null指针、损坏XML仍留旧源码。修复刷新前清空和XML必要结构校验。后半程SQLException测试首次缺少模拟执行上下文，属测试夹具错误；补齐后 `/tmp/plan-response-late-red2.log` 实际复现失败后保留已解析节点。补SQL异常清空后 `/tmp/plan-response-final-green.log` 为55/55通过、0跳过、0失败（新增6项，其他49项回归）。
 
 当前源码PostgreExecutionPlan纳入直接编译。输入/会话/结果集/SQLXML为模拟对象，解析与状态转换为生产代码；不代表真实断连或服务器返回了这些坏数据。SQLXML.free、输入流所有权、已有手动事务隔离、回滚失败传播和GUI错误呈现仍需独立审计，不能由自动提交路径的资源断言推出已全部覆盖。
+
+## 分析事务隔离的组件验证
+
+调用方ExplainPlanViewer和SQLEditor均可从既有executionContext打开分析会话，不能假定这是独占的新事务。原explain无条件rollback整条连接；即使getAutoCommit失败，也在finally执行rollback；清理异常只记录，可能把回滚失败当作分析成功。
+
+新增6项组件测试：手动事务成功/解析失败只回滚专属保存点；读取事务状态/建立保存点失败不执行计划、不回滚用户事务；自动提交下回滚失败（成功分析/解析失败两种）显式报告且不再切回自动提交。红测61项中55通过、6失败，日志 `/tmp/plan-transaction-red.log`。
+
+修复使用PlanTransaction资源：自动提交时临时关闭自动提交，回滚成功后才恢复；已有手动事务时先建立保存点，结束只rollback(savepoint)及releaseSavepoint，不commit、不全局rollback、不改自动提交。无法建立保存点则阻止分析，不退化为全局回滚。try-with-resources保留原始解析错误，清理失败成为suppressed。
+
+绿测 `/tmp/plan-transaction-green.log`：61/61通过、0跳过、0失败。既有真库XML解析适配器显式模拟自动提交（它不代理实际事务），真库专项脚本纳入当前PostgreExecutionPlan源码。上述事务验证全部是JDBC交互组件测试，尚未证明真实GaussDB/PG未提交业务行在分析后保留；保存点不支持版本、保存点释放失败、真实连接故障和GUI均待回归。此变更影响共享PostgreSQL计划路径，不能直接宣布交付验收完成。
