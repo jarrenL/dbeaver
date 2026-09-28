@@ -406,6 +406,15 @@ public class SQLQuery implements SQLScriptElement {
 
     public void setText(@NotNull String text) {
         this.text = text;
+        // Parameter expansion and translation can change the statement and its physical sources.
+        parsed = false;
+        parseError = null;
+        type = SQLQueryType.UNKNOWN;
+        statement = null;
+        singleTableMeta = null;
+        rawSingleTableMetadata = null;
+        selectItems = null;
+        allSelectEntitiesNames.clear();
     }
 
     public String getQueryTitle() {
@@ -480,7 +489,7 @@ public class SQLQuery implements SQLScriptElement {
     }
 
     public void reset() {
-        this.text = this.originalText;
+        setText(this.originalText);
         if (this.parameters != null) {
             setParameters(this.parameters);
         }

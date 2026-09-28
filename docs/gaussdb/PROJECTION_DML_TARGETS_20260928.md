@@ -1,5 +1,15 @@
 # SQL别名及DML目标识别回归
 
+## 后续：替换文本与reset的解析缓存
+
+新增7项：已解析SELECT切换到另一张表、DELETE、UNION、空文本和损坏SQL，再reset恢复；参数填充111→reset→222→reset；JOIN切换到单表并reset时导出名称不残留。
+
+红测`/tmp/shared-query-state-red-20260928.log`：518项中513通过、5失败，setText未使已解析状态失效。修复setText清除parsed、类型、AST、错误、原始/去引号表元数据、投影与JOIN派生名称；reset改经setText恢复原文。不清除参数列表、执行数据标识、位置、长度、结果偏移/上限；参数测试逐项断言这些信息保留，重新解析的AST反映新参数值。
+
+参数测试初次构造SQLSyntaxManager触发缺失OSGi应用的错误，属于夹具问题；改为模拟不参与本场景操作的syntax manager，继续调用实际SQLUtils.fillQueryParameters（该共享依赖使用已有构建产物）。最终`/tmp/shared-query-state-final2-20260928.log`：520/520通过，0跳过、0失败、0中止；投影类81项。
+
+setText调用点包括参数填充、SQL翻译及执行统计对象构造。测试证明模型生命周期，不等同编辑器键入、翻译向导、参数弹窗或JDBC执行；GUI回归仍待。SQL标题及附加执行错误信息未改变，不宣称这些字段已覆盖。
+
 ## 后续：集合查询分类
 
 新增8项覆盖UNION、UNION ALL、INTERSECT、EXCEPT、同表两分支、中文输出别名与ORDER BY、CTE及混合集合运算。红测`/tmp/shared-set-query-red-20260928.log`中505通过、8失败，均期望SELECT而得到UNKNOWN。

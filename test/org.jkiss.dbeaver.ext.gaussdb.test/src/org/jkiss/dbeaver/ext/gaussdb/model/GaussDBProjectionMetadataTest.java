@@ -31,6 +31,87 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBProjectionMetadataTest {
+    @Test
+    void parameterExpansionAndResetPreserveExecutionIdentity() {
+        String original = "SELECT id FROM public.accounts WHERE id=:id";
+        SQLQuery query = new SQLQuery(null, original, 17, original.length());
+        var parameter = new org.jkiss.dbeaver.model.sql.SQLQueryParameter(
+            mock(org.jkiss.dbeaver.model.sql.SQLSyntaxManager.class), 0, "id", ":id", original.indexOf(":id"), 3);
+        var parameters = java.util.List.of(parameter);
+        query.setParameters(parameters);
+        Object identity = new Object();
+        query.setData(identity);
+        query.setResultSetLimit(5, 20);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        for (String value : java.util.List.of("111", "222")) {
+            parameter.setValue(value);
+            org.jkiss.dbeaver.model.sql.SQLUtils.fillQueryParameters(query, parameters);
+            assertEquals(original.replace(":id", value), query.getText());
+            assertTrue(query.getStatement().toString().contains(value));
+            assertEquals("accounts", query.getEntityMetadata(false).getEntityName());
+            assertSame(parameters, query.getParameters());
+            assertSame(identity, query.getData());
+            assertEquals(17, query.getOffset());
+            assertEquals(original.length(), query.getLength());
+            assertEquals(5, query.getResultsOffset());
+            assertEquals(20, query.getResultsMaxRows());
+            query.reset();
+            assertEquals(original, query.getText());
+            assertTrue(query.getStatement().toString().contains(":id"));
+        }
+    }
+
+    @Test
+    void replacingJoinQueryClearsDerivedExportNames() {
+        SQLQuery query = new SQLQuery(null,
+            "SELECT a.id,b.id FROM public.accounts a JOIN audit.other_table b ON a.id=b.id");
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertFalse(query.getAllSelectEntitiesNames().isEmpty());
+        query.setText("SELECT id FROM public.accounts");
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertTrue(query.getAllSelectEntitiesNames().isEmpty());
+        query.reset();
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertEquals(2, query.getAllSelectEntitiesNames().size());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "SELECT name FROM audit.other_table|SELECT|other_table|1|false",
+        "DELETE FROM audit.other_table WHERE id=1|DELETE|other_table|0|false",
+        "SELECT id FROM public.accounts UNION SELECT id FROM audit.other_table|SELECT|-|0|false",
+        "''|UNKNOWN|-|0|true",
+        "SELECT (|UNKNOWN|-|0|true"
+    })
+    void replacingAndResettingTextCannotRetainOldParseState(
+        String replacement, SQLQueryType type, String table, int columns, boolean invalid
+    ) {
+        String original = "SELECT id,a.* FROM public.accounts a";
+        SQLQuery query = new SQLQuery(null, original);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertEquals("accounts", query.getEntityMetadata(false).getEntityName());
+        assertEquals(1, query.getSelectItemAsteriskIndex());
+        query.setText(replacement);
+        assertEquals(type, query.getType());
+        assertEquals(columns, query.getSelectItemCount());
+        assertEquals(-1, query.getSelectItemAsteriskIndex());
+        if (table.equals("-")) {
+            assertNull(query.getEntityMetadata(false));
+            assertNull(query.getEntityMetadata(true));
+        } else {
+            assertEquals(table, query.getEntityMetadata(false).getEntityName());
+            assertEquals("audit", query.getEntityMetadata(false).getSchemaName());
+        }
+        assertEquals(invalid, query.getParseError() != null);
+        query.reset();
+        assertEquals(original, query.getText());
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getParseError());
+        assertEquals("accounts", query.getEntityMetadata(false).getEntityName());
+        assertEquals(2, query.getSelectItemCount());
+        assertEquals(1, query.getSelectItemAsteriskIndex());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "SELECT id FROM public.accounts UNION SELECT id FROM audit.other_table",
