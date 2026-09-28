@@ -104,6 +104,34 @@ public class EpochTimeAttributeTransformerTest extends DBeaverUnitTest {
         Assertions.assertEquals(-1L, getValue("1969-12-31 23:59:59.999"));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "0|1970-01-01 00:00:00.000000",
+        "1|1970-01-01 00:00:00.000001",
+        "42|1970-01-01 00:00:00.000042",
+        "999999|1970-01-01 00:00:00.999999",
+        "1000001|1970-01-01 00:00:01.000001",
+        "-1|1969-12-31 23:59:59.999999",
+        "-1000001|1969-12-31 23:59:58.999999",
+        "1709251199123456|2024-02-29 23:59:59.123456"
+    })
+    void microsecondsRoundTripAcrossSecondAndEpochBoundaries(long raw, String expected) {
+        setOptions("microseconds", "UTC");
+        Assertions.assertEquals(expected, getDisplayString(raw));
+        Assertions.assertEquals(raw, getValue(expected));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"not-a-date", "1970-01-01 00:00:00.000000junk"})
+    void malformedEpochTextThrowsInsteadOfReturningAnExceptionAsValue(String text) throws Exception {
+        setOptions("microseconds", "UTC");
+        DBCException failure = Assertions.assertThrows(DBCException.class,
+            () -> proxyHandler.getValueFromObject(session, column, text, false, true));
+        Assertions.assertInstanceOf(java.time.DateTimeException.class, failure.getCause());
+        Assertions.assertEquals(42L,
+            proxyHandler.getValueFromObject(session, column, "1970-01-01 00:00:00.000042", false, true));
+    }
+
     @Test
     public void testSecondsAndParis() {
         setOptions(SECONDS, "Europe/Paris");

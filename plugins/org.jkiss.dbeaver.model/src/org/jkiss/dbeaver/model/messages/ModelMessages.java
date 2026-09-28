@@ -19,6 +19,7 @@ package org.jkiss.dbeaver.model.messages;
 import org.eclipse.osgi.util.NLS;
 
 public class ModelMessages extends NLS {
+    public static String model_epoch_invalid_datetime;
     public static String model_edit_atomic_unavailable;
     public static String model_edit_atomic_task;
     public static String model_edit_atomic_canceled;

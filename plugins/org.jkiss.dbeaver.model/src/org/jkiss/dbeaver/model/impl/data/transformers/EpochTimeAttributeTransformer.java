@@ -29,6 +29,7 @@ import org.jkiss.dbeaver.model.data.DBDValueHandler;
 import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.impl.data.ProxyValueHandler;
+import org.jkiss.dbeaver.model.messages.ModelMessages;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
 import org.jkiss.utils.CommonUtils;
 
@@ -60,7 +61,7 @@ public class EpochTimeAttributeTransformer implements DBDAttributeTransformer {
 
     private static final DateTimeFormatter SECONDS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH);
     private static final DateTimeFormatter MILLIS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ENGLISH);
-    private static final DateTimeFormatter MICROS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.nnnnnn", Locale.ENGLISH);
+    private static final DateTimeFormatter MICROS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS", Locale.ENGLISH);
     private static final DateTimeFormatter NANOS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.nnnnnnnnn", Locale.ENGLISH);
     // 10 us precision
     private static final DateTimeFormatter SQLITE_JULIAN_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.nnnnn", Locale.ENGLISH);
@@ -108,7 +109,7 @@ public class EpochTimeAttributeTransformer implements DBDAttributeTransformer {
             @Override
             Instant toInstant(Number value) {
                 long longValue = value.longValue();
-                return Instant.ofEpochSecond(longValue / MEGA, longValue % MEGA);
+                return Instant.ofEpochSecond(longValue / MEGA, (longValue % MEGA) * NANOS_TO_MICROS);
             }
 
             @Override
@@ -303,7 +304,7 @@ public class EpochTimeAttributeTransformer implements DBDAttributeTransformer {
             try {
                 dateTime = ZonedDateTime.of(LocalDateTime.parse((String) object, unit.getFormatter()), getZoneId());
             } catch (DateTimeException e) {
-                return new DBCException("Incorrect zoneId");
+                throw new DBCException(ModelMessages.model_epoch_invalid_datetime, e);
             }
             return unit.toRawValue(Instant.from(dateTime));
         }
