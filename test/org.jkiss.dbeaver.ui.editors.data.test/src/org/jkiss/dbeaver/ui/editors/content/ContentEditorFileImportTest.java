@@ -45,6 +45,53 @@ class ContentEditorFileImportTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"binary", "text-before-read", "text-between-chunks"})
+    void cancellationDuringImportPreservesInput(String stage) throws Exception {
+        var controller = mock(IValueController.class);
+        var input = input(controller, "UTF-8");
+        var selected = directory.resolve("cancel-during.bin");
+        var replacement = "中文 replacement\n".repeat(10000);
+        Files.writeString(selected, replacement);
+        var original = directory.resolve("cancel-owned.bin");
+        Files.writeString(original, "original");
+        boolean binary = stage.equals("binary");
+        if (binary) {
+            field(input, "stringStorage", null);
+            field(input, "contentFile", original.toFile());
+            field(input, "contentDetached", false);
+            when(controller.getValue()).thenReturn(mock(DBDContent.class));
+        }
+        int cancelAt = stage.equals("text-between-chunks") ? 4 : 2;
+        var checks = new java.util.concurrent.atomic.AtomicInteger();
+        var monitor = new NullProgressMonitor() {
+            @Override public boolean isCanceled() {
+                return checks.incrementAndGet() >= cancelAt;
+            }
+        };
+        assertThrows(InterruptedException.class, () -> input.loadFromExternalFile(selected.toFile(), monitor));
+        assertEquals(cancelAt, checks.get());
+        verify(controller, never()).updateValue(any(), anyBoolean());
+        assertEquals("original", Files.readString(original));
+        assertEquals(replacement, Files.readString(selected));
+        if (binary) {
+            assertEquals(original.toFile(), field(input, "contentFile"));
+            assertEquals(Boolean.FALSE, field(input, "externalContentPending"));
+        } else {
+            assertEquals("original", ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
+        }
+        input.loadFromExternalFile(selected.toFile(), new NullProgressMonitor());
+        if (binary) {
+            assertEquals(selected.toFile(), field(input, "contentFile"));
+            assertEquals(Boolean.TRUE, field(input, "externalContentPending"));
+        } else {
+            assertEquals(replacement, ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
+        }
+        verify(controller, never()).updateValue(any(), anyBoolean());
+        input.release();
+        assertEquals(replacement, Files.readString(selected));
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void canceledImportLeavesOriginalInputUntouched(boolean binary) throws Exception {
         var controller = mock(IValueController.class);

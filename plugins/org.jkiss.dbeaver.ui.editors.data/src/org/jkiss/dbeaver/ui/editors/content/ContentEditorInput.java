@@ -55,7 +55,6 @@ import org.jkiss.dbeaver.utils.ContentUtils;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
-import org.jkiss.utils.IOUtils;
 
 import java.io.*;
 import java.nio.charset.Charset;
@@ -322,6 +321,9 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
                 }
                 boolean sameFile = contentFile != null && contentFile.exists()
                     && Files.isSameFile(contentFile.toPath(), extFile.toPath());
+                if (monitor.isCanceled()) {
+                    throw new InterruptedException();
+                }
                 if (sameFile) {
                     // The selected external path may be an alias of our temporary input.
                     contentDetached = true;
@@ -331,19 +333,37 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
                 contentDetached = true;
                 externalContentPending = true;
             } else {
-                updateStringValueFromFile(extFile);
+                updateStringValueFromFile(extFile, monitor);
             }
             refreshContentParts(extFile);
+        }
+        catch (InterruptedException e) {
+            throw e;
         }
         catch (Throwable e) {
             throw new CoreException(GeneralUtils.makeExceptionStatus(e));
         }
     }
 
-    private void updateStringValueFromFile(File extFile) throws DBException {
+    private void updateStringValueFromFile(File extFile, IProgressMonitor monitor) throws DBException, InterruptedException {
         final String str;
         try (FileReader is = new FileReader(extFile, Charset.forName(fileCharset))) {
-            str = IOUtils.readToString(is);
+            var text = new StringBuilder();
+            var buffer = new char[8192];
+            while (true) {
+                if (monitor.isCanceled()) {
+                    throw new InterruptedException();
+                }
+                int count = is.read(buffer);
+                if (count < 0) {
+                    break;
+                }
+                text.append(buffer, 0, count);
+            }
+            if (monitor.isCanceled()) {
+                throw new InterruptedException();
+            }
+            str = text.toString();
         } catch (IOException e) {
             throw new DBException("Error reading content from file", e);
         }
