@@ -514,6 +514,7 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
                 DBAAuthProfile profile = new DBAAuthProfile(registry.getProject());
                 profile.setProfileId(profileId);
                 profile.setProfileName(JSONUtils.getString(profileMap, RegistryConstants.ATTR_NAME));
+                profile.setProfileDescription(JSONUtils.getString(profileMap, RegistryConstants.ATTR_DESCRIPTION));
                 profile.setAuthModelId(JSONUtils.getString(profileMap, RegistryConstants.ATTR_AUTH_MODEL));
                 profile.setSavePassword(JSONUtils.getBoolean(profileMap, RegistryConstants.ATTR_SAVE_PASSWORD));
 

@@ -25,6 +25,7 @@ import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.registry.DataSourceConfigurationManagerNIO;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
 import org.jkiss.dbeaver.registry.DataSourceSerializerModern;
+import org.jkiss.dbeaver.registry.DataSourceParseResults;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -35,6 +36,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -74,6 +77,9 @@ class ConfigurationNIOPersistenceTest {
         var profile = new DBAAuthProfile(project);
         profile.setProfileId("disk-profile");
         profile.setProfileName("磁盘配置𠀀");
+        profile.setProfileDescription("配置说明\n第二行𠀀");
+        profile.setAuthModelId("native");
+        profile.setProperties(Map.of("realm", "测试域"));
         profile.setUserName("磁盘用户");
         profile.setUserPassword("fixture-disk-password");
         profile.setSavePassword(true);
@@ -97,12 +103,33 @@ class ConfigurationNIOPersistenceTest {
         assertFalse(new String(encryptedCredentials, StandardCharsets.UTF_8).contains("fixture-disk-password"));
         assertTrue(new String(encryptor.decryptValue(encryptedCredentials), StandardCharsets.UTF_8)
             .contains("fixture-disk-password"));
+        var restoredProfiles = new AtomicReference<List<DBAAuthProfile>>();
+        doAnswer(call -> {
+            restoredProfiles.set(call.getArgument(0));
+            return null;
+        }).when(registry).setAuthProfiles(anyList());
+        var reader = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        reader.parseDataSources(storage, manager, new DataSourceParseResults(), null);
+        assertEquals(1, restoredProfiles.get().size());
+        var restoredProfile = restoredProfiles.get().getFirst();
+        assertEquals("disk-profile", restoredProfile.getProfileId());
+        assertEquals("磁盘配置𠀀", restoredProfile.getProfileName());
+        assertEquals("配置说明\n第二行𠀀", restoredProfile.getProfileDescription());
+        assertEquals("native", restoredProfile.getAuthModelId());
+        assertEquals("磁盘用户", restoredProfile.getUserName());
+        assertEquals("fixture-disk-password", restoredProfile.getUserPassword());
+        assertEquals(Map.of("realm", "测试域"), restoredProfile.getProperties());
+        assertTrue(restoredProfile.isSavePassword());
         profile.setSavePassword(false);
         saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
         saver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of());
         String withoutPassword = new String(encryptor.decryptValue(read(manager, credentialName)), StandardCharsets.UTF_8);
         assertFalse(withoutPassword.contains("fixture-disk-password"));
         assertTrue(withoutPassword.contains("磁盘用户"));
+        reader.parseDataSources(storage, manager, new DataSourceParseResults(), null);
+        assertNull(restoredProfiles.get().getFirst().getUserPassword());
+        assertFalse(restoredProfiles.get().getFirst().isSavePassword());
+        assertEquals("配置说明\n第二行𠀀", restoredProfiles.get().getFirst().getProfileDescription());
         for (boolean removeCredentials : new boolean[] {false, true}) {
             byte[] beforeFailure = read(manager, credentialName);
             Path retainedFile = directory.resolve("retained-credentials-" + removeCredentials);
@@ -131,6 +158,8 @@ class ConfigurationNIOPersistenceTest {
         }
         assertFalse(Files.exists(metadata.resolve(credentialName)));
         assertNull(manager.readConfiguration(credentialName, null));
+        reader.parseDataSources(storage, manager, new DataSourceParseResults(), null);
+        assertTrue(restoredProfiles.get().isEmpty());
         Path backup = metadata.resolve((credentialName.startsWith(".") ? credentialName : "." + credentialName) + ".bak");
         assertArrayEquals(encryptedCredentials, Files.readAllBytes(backup));
         assertTrue(new String(encryptor.decryptValue(Files.readAllBytes(backup)), StandardCharsets.UTF_8)
