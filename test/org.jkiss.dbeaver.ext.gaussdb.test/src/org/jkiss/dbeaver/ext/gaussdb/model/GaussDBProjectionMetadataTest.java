@@ -45,6 +45,34 @@ class GaussDBProjectionMetadataTest {
 
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
+        "(SELECT id FROM public.accounts)|false",
+        "((SELECT id FROM public.accounts))|false",
+        "(SELECT id FROM public.accounts ORDER BY id LIMIT 5)|false",
+        "(SELECT id FROM public.accounts FOR UPDATE)|true",
+        "((SELECT id FROM public.accounts FOR UPDATE))|true",
+        "(SELECT id FROM public.accounts FOR SHARE)|true"
+    })
+    void parenthesizedSelectsPreserveLockingClassification(String sql, boolean modifying) {
+        var query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getParseError());
+        assertEquals(modifying, query.isModifying());
+        assertInstanceOf(net.sf.jsqlparser.statement.select.ParenthesedSelect.class, query.getStatement());
+        assertEquals(sql, query.getText());
+        assertFalse(query.isPlainSelect(), "A wrapper is not exposed as a plain editable select");
+        assertNull(query.getEntityMetadata(false));
+        assertNull(query.getEntityMetadata(true));
+        query.setText("SELECT id FROM public.accounts");
+        assertFalse(query.isModifying());
+        assertEquals("accounts", query.getEntityMetadata(false).getEntityName());
+        query.reset();
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertEquals(modifying, query.isModifying());
+        assertNull(query.getEntityMetadata(false));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
         "UPDATE public.accounts SET amount=1|true|false|true",
         "UPDATE public.accounts SET amount=1 WHERE id=1|false|false|true",
         "DELETE FROM public.accounts|true|false|true",

@@ -185,6 +185,9 @@ public class SQLQuery implements SQLScriptElement {
             } else if (isSetOperationStatement(statement)) {
                 // UNION/INTERSECT/EXCEPT return query results, but do not identify a single update target.
                 type = SQLQueryType.SELECT;
+            } else if (statement instanceof ParenthesedSelect && unwrapParentheses(statement) instanceof PlainSelect) {
+                // Preserve the wrapper and its limits; classification must still recognize locking SELECTs.
+                type = SQLQueryType.SELECT;
             } else if (statement instanceof Insert insert) {
                 type = SQLQueryType.INSERT;
                 fillSingleSource(insert.getTable());
@@ -554,13 +557,18 @@ public class SQLQuery implements SQLScriptElement {
             && dropStatement.getType() != null;
     }
 
-    private static boolean isSetOperationStatement(@Nullable Statement candidate) {
+    @Nullable
+    private static Statement unwrapParentheses(@Nullable Statement candidate) {
         // Keep the original AST (including outer ORDER BY/LIMIT) for callers.
         // Parentheses do not turn a set query into a single writable table.
         while (candidate instanceof ParenthesedSelect parenthesed) {
             candidate = parenthesed.getSelect();
         }
-        return candidate instanceof SetOperationList;
+        return candidate;
+    }
+
+    private static boolean isSetOperationStatement(@Nullable Statement candidate) {
+        return unwrapParentheses(candidate) instanceof SetOperationList;
     }
 
     public boolean isModifying() {
@@ -570,7 +578,7 @@ public class SQLQuery implements SQLScriptElement {
         if (isSetOperationStatement(statement)) {
             return false;
         }
-        if (statement instanceof PlainSelect plainSelect) {
+        if (unwrapParentheses(statement) instanceof PlainSelect plainSelect) {
             return plainSelect.getForMode() != null || plainSelect.getIntoTables() != null;
         } else {
             return true;
