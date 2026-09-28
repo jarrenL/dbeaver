@@ -408,6 +408,9 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
     public void updateContentFromFile(DBRProgressMonitor monitor, Object value)
         throws DBException
     {
+        if (monitor.isCanceled()) {
+            throw new DBCException("Content update canceled");
+        }
         if (valueController.isReadOnly()) {
             throw new DBCException("Can't update read-only value");
         }

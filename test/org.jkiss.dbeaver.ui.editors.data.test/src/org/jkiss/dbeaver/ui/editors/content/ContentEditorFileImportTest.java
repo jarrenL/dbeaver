@@ -42,7 +42,55 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ContentEditorFileImportTest {
+    private static class UncanceledMonitor extends VoidProgressMonitor {
+        @Override public boolean isCanceled() {
+            return false;
+        }
+    }
+
     @TempDir Path directory;
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void canceledSaveKeepsImportedValuePendingForRetry(boolean binary) throws Exception {
+        var controller = mock(IValueController.class);
+        var input = input(controller, "UTF-8");
+        var original = new byte[] {9, 8, 7};
+        var content = spy(new JDBCContentBytes(mock(DBCExecutionContext.class), original));
+        if (binary) {
+            when(controller.getValue()).thenReturn(content);
+            field(input, "stringStorage", null);
+        }
+        var selected = directory.resolve("pending-canceled-save.txt");
+        Files.writeString(selected, "中文 pending\n");
+        var monitor = mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        when(monitor.isCanceled()).thenReturn(true);
+        try (var workbench = mockStatic(DBWorkbench.class)) {
+            workbench.when(DBWorkbench::getPlatform).thenReturn(mock(DBPPlatform.class));
+            input.loadFromExternalFile(selected.toFile(), new NullProgressMonitor());
+            assertThrows(DBException.class,
+                () -> input.updateContentFromFile(monitor, binary ? content : "original"));
+            verify(controller, never()).updateValue(any(), anyBoolean());
+            verify(content, never()).updateContents(any(), any());
+            if (binary) {
+                assertEquals(Boolean.TRUE, field(input, "externalContentPending"));
+                assertArrayEquals(original, content.getContentStream().readAllBytes());
+            } else {
+                assertEquals(Files.readString(selected),
+                    ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
+            }
+            when(monitor.isCanceled()).thenReturn(false);
+            input.updateContentFromFile(monitor, binary ? content : "original");
+            if (binary) {
+                assertEquals(Boolean.FALSE, field(input, "externalContentPending"));
+                assertArrayEquals(Files.readAllBytes(selected), content.getContentStream().readAllBytes());
+            } else {
+                verify(controller).updateValue(Files.readString(selected), false);
+            }
+            input.release();
+        }
+        assertEquals("中文 pending\n", Files.readString(selected));
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"text-canceled", "text-missing", "binary-canceled", "binary-missing"})
@@ -87,14 +135,14 @@ class ContentEditorFileImportTest {
                 assertEquals(Files.readString(first),
                     ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
             }
-            input.updateContentFromFile(new VoidProgressMonitor(), binary ? content : "original");
+            input.updateContentFromFile(new UncanceledMonitor(), binary ? content : "original");
             if (binary) {
                 assertArrayEquals(Files.readAllBytes(first), content.getContentStream().readAllBytes());
             } else {
                 verify(controller).updateValue(Files.readString(first), false);
             }
             input.loadFromExternalFile(second.toFile(), new NullProgressMonitor());
-            input.updateContentFromFile(new VoidProgressMonitor(), binary ? content : "original");
+            input.updateContentFromFile(new UncanceledMonitor(), binary ? content : "original");
             if (binary) {
                 assertArrayEquals(Files.readAllBytes(second), content.getContentStream().readAllBytes());
                 verify(content, times(2)).updateContents(any(), any());
@@ -196,7 +244,7 @@ class ContentEditorFileImportTest {
         input.loadFromExternalFile(selected.toFile(), new NullProgressMonitor());
         when(controller.isReadOnly()).thenReturn(true);
         assertThrows(DBException.class,
-            () -> input.updateContentFromFile(new VoidProgressMonitor(), "original"));
+            () -> input.updateContentFromFile(new UncanceledMonitor(), "original"));
         verify(controller, never()).updateValue(any(), anyBoolean());
         assertEquals("中文 pending", ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
         if (discard) {
@@ -204,7 +252,7 @@ class ContentEditorFileImportTest {
             verify(controller, never()).updateValue(any(), anyBoolean());
         } else {
             when(controller.isReadOnly()).thenReturn(false);
-            input.updateContentFromFile(new VoidProgressMonitor(), "original");
+            input.updateContentFromFile(new UncanceledMonitor(), "original");
             verify(controller).updateValue("中文 pending", false);
             input.release();
         }
@@ -232,7 +280,7 @@ class ContentEditorFileImportTest {
             input.loadFromExternalFile(selected.toFile(), new NullProgressMonitor());
             when(controller.isReadOnly()).thenReturn(true);
             assertThrows(DBException.class,
-                () -> input.updateContentFromFile(new VoidProgressMonitor(), content));
+                () -> input.updateContentFromFile(new UncanceledMonitor(), content));
             verify(content, never()).updateContents(any(), any());
             assertArrayEquals(original, content.getContentStream().readAllBytes());
             assertEquals(Boolean.TRUE, field(input, "externalContentPending"));
@@ -242,7 +290,7 @@ class ContentEditorFileImportTest {
                 assertArrayEquals(original, content.getContentStream().readAllBytes());
             } else {
                 when(controller.isReadOnly()).thenReturn(false);
-                input.updateContentFromFile(new VoidProgressMonitor(), content);
+                input.updateContentFromFile(new UncanceledMonitor(), content);
                 verify(content).updateContents(any(), any());
                 assertArrayEquals(replacement, content.getContentStream().readAllBytes());
                 assertEquals(Boolean.FALSE, field(input, "externalContentPending"));
@@ -395,10 +443,10 @@ class ContentEditorFileImportTest {
             var rejection = new DBException("Rejected save");
             doThrow(rejection).doCallRealMethod().when(content).updateContents(any(), any());
             assertSame(rejection, assertThrows(DBException.class,
-                () -> input.updateContentFromFile(new VoidProgressMonitor(), content)));
+                () -> input.updateContentFromFile(new UncanceledMonitor(), content)));
             assertEquals(selected.toString(), input.getPath().toOSString());
             assertArrayEquals(originalBytes, content.getContentStream().readAllBytes());
-            input.updateContentFromFile(new VoidProgressMonitor(), content);
+            input.updateContentFromFile(new UncanceledMonitor(), content);
             assertFalse(content.isNull(), "Zero-byte content must remain distinct from SQL NULL");
             assertArrayEquals(bytes, content.getContentStream().readAllBytes());
             var storage = ArgumentCaptor.forClass(DBDContentStorage.class);
@@ -455,7 +503,7 @@ class ContentEditorFileImportTest {
         verify(controller, never()).updateValue(any(), anyBoolean());
         assertEquals("", ((StringEditorInput.StringStorage) storage).getString());
         assertEquals(0, input.getContentLength());
-        input.updateContentFromFile(new VoidProgressMonitor(), input.getValue());
+        input.updateContentFromFile(new UncanceledMonitor(), input.getValue());
         verify(controller).updateValue("", false);
         input.release();
         assertArrayEquals(bytes, Files.readAllBytes(path));
@@ -495,11 +543,11 @@ class ContentEditorFileImportTest {
         input.loadFromExternalFile(path.toFile(), new NullProgressMonitor());
         verify(controller, never()).updateValue(any(), anyBoolean());
         assertThrows(IllegalStateException.class,
-            () -> input.updateContentFromFile(new VoidProgressMonitor(), input.getValue()));
+            () -> input.updateContentFromFile(new UncanceledMonitor(), input.getValue()));
         assertSame(storage, field(input, "stringStorage"));
         assertEquals("replacement", ((StringEditorInput.StringStorage) storage).getString());
         assertEquals(11, input.getContentLength());
-        input.updateContentFromFile(new VoidProgressMonitor(), input.getValue());
+        input.updateContentFromFile(new UncanceledMonitor(), input.getValue());
         verify(controller, times(2)).updateValue("replacement", false);
         assertEquals("replacement", ((StringEditorInput.StringStorage) storage).getString());
         assertEquals(11, input.getContentLength());
@@ -537,7 +585,7 @@ class ContentEditorFileImportTest {
                 input.loadFromExternalFile(selected.toFile(), new NullProgressMonitor());
                 assertArrayEquals(originalBytes, Files.readAllBytes(original));
                 verify(content, never()).updateContents(any(), any());
-                input.updateContentFromFile(new VoidProgressMonitor(), content);
+                input.updateContentFromFile(new UncanceledMonitor(), content);
                 var storage = ArgumentCaptor.forClass(DBDContentStorage.class);
                 verify(content).updateContents(any(), storage.capture());
                 try (var stream = storage.getValue().getContentStream()) {

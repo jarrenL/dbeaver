@@ -28,6 +28,63 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 public class JDBCContentBytesReadTest {
+    private static class UncanceledMonitor extends VoidProgressMonitor {
+        @Override public boolean isCanceled() {
+            return false;
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void canceledUpdateDoesNotOpenStorageOrClearOriginal(boolean clearValue) throws Exception {
+        var original = new byte[] {9, 8, 7};
+        var content = new JDBCContentBytes(mock(DBCExecutionContext.class), original);
+        var storage = mock(DBDContentStorage.class);
+        var monitor = mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[] {1}));
+        when(storage.getContentLength()).thenReturn(1L);
+        when(monitor.isCanceled()).thenReturn(true);
+        assertThrows(DBException.class, () -> content.updateContents(monitor, clearValue ? null : storage));
+        verifyNoInteractions(storage);
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+        when(monitor.isCanceled()).thenReturn(false);
+        when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[] {1}));
+        when(storage.getContentLength()).thenReturn(1L);
+        content.updateContents(monitor, clearValue ? null : storage);
+        if (clearValue) {
+            assertTrue(content.isNull());
+        } else {
+            assertArrayEquals(new byte[] {1}, content.getContentStream().readAllBytes());
+        }
+        content.resetContents();
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+    }
+
+    @Test
+    void cancellationAtEndOfReadDoesNotPublishAndAllowsRetry() throws Exception {
+        var original = new byte[] {9, 8, 7};
+        var content = new JDBCContentBytes(mock(DBCExecutionContext.class), original);
+        var monitor = mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class);
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var stream = new java.io.ByteArrayInputStream(new byte[] {1}) {
+            @Override public synchronized int read() {
+                when(monitor.isCanceled()).thenReturn(true);
+                return super.read();
+            }
+            @Override public void close() { closed.set(true); }
+        };
+        var storage = mock(DBDContentStorage.class);
+        when(storage.getContentStream()).thenReturn(stream);
+        when(storage.getContentLength()).thenReturn(1L);
+        assertThrows(DBException.class, () -> content.updateContents(monitor, storage));
+        assertTrue(closed.get());
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+        when(monitor.isCanceled()).thenReturn(false);
+        when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[] {1}));
+        content.updateContents(monitor, storage);
+        assertArrayEquals(new byte[] {1}, content.getContentStream().readAllBytes());
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 256})
     void streamLongerThanDeclaredLengthFailsWithoutSilentTruncation(int declaredLength) throws Exception {
@@ -45,13 +102,13 @@ public class JDBCContentBytesReadTest {
         when(storage.getContentStream()).thenReturn(stream);
         when(storage.getContentLength()).thenReturn((long) declaredLength);
         var failure = assertThrows(DBException.class,
-            () -> content.updateContents(new VoidProgressMonitor(), storage));
+            () -> content.updateContents(new UncanceledMonitor(), storage));
         assertInstanceOf(java.io.IOException.class, failure.getCause());
         assertTrue(closed.get());
         assertArrayEquals(original, content.getContentStream().readAllBytes());
         when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(actual));
         when(storage.getContentLength()).thenReturn((long) actual.length);
-        content.updateContents(new VoidProgressMonitor(), storage);
+        content.updateContents(new UncanceledMonitor(), storage);
         assertArrayEquals(actual, content.getContentStream().readAllBytes());
         content.resetContents();
         assertArrayEquals(original, content.getContentStream().readAllBytes());
@@ -102,14 +159,14 @@ public class JDBCContentBytesReadTest {
         when(storage.getContentStream()).thenReturn(stream);
         when(storage.getContentLength()).thenReturn((long) expected.length);
         var thrown = assertThrows(DBException.class,
-            () -> content.updateContents(new VoidProgressMonitor(), storage));
+            () -> content.updateContents(new UncanceledMonitor(), storage));
         assertSame(failure, thrown.getCause());
         assertEquals(failAfter, consumed.get());
         assertTrue(closed.get());
         assertArrayEquals(original, content.getContentStream().readAllBytes());
 
         when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(expected));
-        content.updateContents(new VoidProgressMonitor(), storage);
+        content.updateContents(new UncanceledMonitor(), storage);
         assertArrayEquals(expected, content.getContentStream().readAllBytes());
         content.resetContents();
         assertArrayEquals(original, content.getContentStream().readAllBytes());
@@ -131,7 +188,7 @@ public class JDBCContentBytesReadTest {
         var storage = mock(DBDContentStorage.class);
         when(storage.getContentStream()).thenReturn(stream);
         when(storage.getContentLength()).thenReturn((long) expected.length);
-        content.updateContents(new VoidProgressMonitor(), storage);
+        content.updateContents(new UncanceledMonitor(), storage);
         assertTrue(closed.get());
         assertArrayEquals(expected, content.getContentStream().readAllBytes());
     }
@@ -143,10 +200,10 @@ public class JDBCContentBytesReadTest {
         var storage = mock(DBDContentStorage.class);
         when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[] {1}));
         when(storage.getContentLength()).thenReturn(3L);
-        assertThrows(DBException.class, () -> content.updateContents(new VoidProgressMonitor(), storage));
+        assertThrows(DBException.class, () -> content.updateContents(new UncanceledMonitor(), storage));
         assertArrayEquals(original, content.getContentStream().readAllBytes());
         when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(new byte[] {1, 2, 3}));
-        content.updateContents(new VoidProgressMonitor(), storage);
+        content.updateContents(new UncanceledMonitor(), storage);
         assertArrayEquals(new byte[] {1, 2, 3}, content.getContentStream().readAllBytes());
     }
 
@@ -159,7 +216,7 @@ public class JDBCContentBytesReadTest {
         var storage = mock(DBDContentStorage.class);
         when(storage.getContentStream()).thenReturn(stream);
         when(storage.getContentLength()).thenReturn(length);
-        assertThrows(DBException.class, () -> content.updateContents(new VoidProgressMonitor(), storage));
+        assertThrows(DBException.class, () -> content.updateContents(new UncanceledMonitor(), storage));
         verify(stream).close();
         verify(stream, never()).readNBytes(anyInt());
         assertArrayEquals(original, content.getContentStream().readAllBytes());

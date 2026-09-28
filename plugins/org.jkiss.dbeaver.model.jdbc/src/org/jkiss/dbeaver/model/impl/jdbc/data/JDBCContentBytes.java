@@ -128,6 +128,9 @@ public class JDBCContentBytes extends JDBCContentAbstract implements DBDContentS
         @Nullable DBDContentStorage storage)
         throws DBException
     {
+        if (monitor.isCanceled()) {
+            throw new DBCException("Content update canceled");
+        }
         if (storage == null) {
             data = null;
         } else {
@@ -144,6 +147,9 @@ public class JDBCContentBytes extends JDBCContentAbstract implements DBDContentS
                     }
                     if (is.read() != -1) {
                         throw new IOException("Content exceeds its declared length");
+                    }
+                    if (monitor.isCanceled()) {
+                        throw new DBCException("Content update canceled");
                     }
                     if (data != null && Arrays.equals(data, newData)) {
                         return false;
