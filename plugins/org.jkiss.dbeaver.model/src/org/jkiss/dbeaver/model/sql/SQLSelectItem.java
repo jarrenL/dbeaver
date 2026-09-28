@@ -23,7 +23,6 @@ import net.sf.jsqlparser.schema.Database;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.select.*;
 import org.jkiss.dbeaver.model.exec.DBCEntityMetaData;
-import org.jkiss.dbeaver.model.sql.parser.SQLSemanticProcessor;
 import org.jkiss.utils.CommonUtils;
 
 /**
@@ -83,7 +82,7 @@ public class SQLSelectItem {
         if (table.getAlias() == null && (tableDatabase == null || CommonUtils.isEmpty(tableDatabase.getDatabaseName())) && table.getSchemaName() == null) {
             // Only name was specified. Probably an alias.
             if (query.getStatement() instanceof Select) {
-                Table refTable = SQLSemanticProcessor.findTableByNameOrAlias((Select) query.getStatement(), table.getName());
+                Table refTable = query.resolveSourceTable(table.getName());
                 if (refTable != null) {
                     return query.isVirtualTable(refTable) ? null : query.createTableMetaData(refTable);
                 }

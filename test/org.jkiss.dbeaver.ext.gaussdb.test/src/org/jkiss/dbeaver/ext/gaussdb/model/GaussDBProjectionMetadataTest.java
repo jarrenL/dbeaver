@@ -372,6 +372,42 @@ class GaussDBProjectionMetadataTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT id FROM public.accounts a JOIN audit.other_table b ON a.id=b.id",
+        "SELECT x.id FROM public.accounts a JOIN audit.other_table b ON a.id=b.id",
+        "SELECT x.id FROM public.accounts x JOIN audit.other_table x ON 1=1",
+        "SELECT x.id FROM (SELECT 1 AS id) x JOIN public.accounts x ON 1=1",
+        "SELECT x.id FROM public.accounts x JOIN (SELECT 1 AS id) x ON 1=1"
+    })
+    void ambiguousOrUnresolvedJoinColumnCannotChooseFirstTable(String sql) {
+        var query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getParseError());
+        assertNull(query.getEntityMetadata(false));
+        assertNull(query.getSelectItem(0).getEntityMetaData());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "A|a|true", "a|A|true", "\"a\"|a|true", "a|\"a\"|true",
+        "\"A\"|a|false", "a|\"A\"|false", "\"A\"|\"A\"|true"
+    })
+    void physicalAliasMatchingUsesDialectCaseRules(String alias, String reference, boolean resolves) {
+        DBPDataSource source = mock(DBPDataSource.class);
+        when(source.getSQLDialect()).thenReturn(new GaussDBDialect());
+        var query = new SQLQuery(source, "SELECT " + reference + ".id FROM public.accounts " + alias);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        var metadata = query.getSelectItem(0).getEntityMetaData();
+        if (resolves) {
+            assertNotNull(metadata);
+            assertEquals("accounts", metadata.getEntityName());
+            assertEquals("public", metadata.getSchemaName());
+        } else {
+            assertNull(metadata);
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"*", "a.*"})
     void actualWildcardProjectionIsIdentified(String projection) {
         SQLQuery query = new SQLQuery(null, "SELECT a.id," + projection + " FROM public.accounts a");

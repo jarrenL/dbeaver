@@ -280,6 +280,37 @@ public class SQLQuery implements SQLScriptElement {
         return false;
     }
 
+    @Nullable
+    Table resolveSourceTable(@Nullable String qualifier) {
+        if (CommonUtils.isEmpty(qualifier) || !(statement instanceof PlainSelect select)) {
+            return null;
+        }
+        List<FromItem> sources = new ArrayList<>();
+        sources.add(select.getFromItem());
+        for (Join join : CommonUtils.safeList(select.getJoins())) {
+            sources.add(join.getRightItem());
+        }
+        boolean matched = false;
+        Table result = null;
+        String normalized = normalizeRelationIdentifier(qualifier);
+        for (FromItem source : sources) {
+            if (source == null) {
+                continue;
+            }
+            String name = source.getAlias() != null ? source.getAlias().getName()
+                : source instanceof Table table ? table.getName() : null;
+            if (name != null && normalized.equals(normalizeRelationIdentifier(name))) {
+                if (matched) {
+                    return null;
+                }
+                matched = true;
+                // A derived source participates in ambiguity detection, but is not a physical update target.
+                result = source instanceof Table table ? table : null;
+            }
+        }
+        return result;
+    }
+
     @NotNull
     private String normalizeRelationIdentifier(@NotNull String identifier) {
         String unquoted = unquoteIdentifier(identifier);
