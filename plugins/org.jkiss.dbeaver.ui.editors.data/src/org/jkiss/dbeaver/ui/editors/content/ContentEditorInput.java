@@ -42,7 +42,6 @@ import org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage;
 import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.runtime.DefaultProgressMonitor;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.runtime.LocalFileStorage;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
@@ -74,6 +73,7 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
     private IEditorPart defaultPart;
 
     private boolean contentDetached = false;
+    private boolean externalContentPending;
     private File contentFile;
     private String fileCharset;
     private StringEditorInput.StringStorage stringStorage;
@@ -196,6 +196,7 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
     private void prepareContent(DBRProgressMonitor monitor)
         throws DBException
     {
+        externalContentPending = false;
         final Object[] value = new Object[1];
         UIUtils.syncExec(() -> value[0] = getValue());
         DBDContent content;
@@ -316,9 +317,6 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
                 }
                 boolean sameFile = contentFile != null && contentFile.exists()
                     && Files.isSameFile(contentFile.toPath(), extFile.toPath());
-                ((DBDContent)value).updateContents(
-                    new DefaultProgressMonitor(monitor),
-                    new ExternalContentStorage(DBWorkbench.getPlatform(), extFile.toPath()));
                 if (sameFile) {
                     // The selected external path may be an alias of our temporary input.
                     contentDetached = true;
@@ -326,6 +324,7 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
                 release();
                 contentFile = extFile;
                 contentDetached = true;
+                externalContentPending = true;
             } else {
                 updateStringValueFromFile(extFile);
             }
@@ -390,6 +389,14 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
 
         if (value instanceof DBDContent) {
             DBDContent content = (DBDContent) value;
+            if (externalContentPending) {
+                // Keep the selected file editor-local until the user explicitly saves.
+                // Do not reuse the original local storage: it still contains the old value.
+                content.updateContents(monitor,
+                    new ExternalContentStorage(DBWorkbench.getPlatform(), contentFile.toPath(), fileCharset));
+                externalContentPending = false;
+                return;
+            }
             DBDContentStorage storage = content.getContents(monitor);
             if (storage instanceof DBDContentStorageLocal) {
                 // Nothing to update - we use content's storage
