@@ -13,6 +13,8 @@ import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPNativeClientLocation;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -66,10 +68,61 @@ class GaussDBNativePasswordTest {
         verifyNoInteractions(process);
     }
 
-    @Test void rejectsMultilinePasswordWithoutWritingPartialCredentials() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"a\nb", "a\rb", "a\0b"})
+    void rejectsMultilinePasswordWithoutWritingPartialCredentials(String password) throws Exception {
         var process = mock(Process.class);
-        assertThrows(IOException.class, () -> new Restore().authenticate(settings(true, "a\nb"), process));
+        assertThrows(IOException.class, () -> new Restore().authenticate(settings(true, password), process));
         verify(process).destroy(); verify(process, never()).getOutputStream();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"write", "flush", "close"})
+    void passwordPipeFailureDestroysProcessAndPreservesCause(String stage) throws Exception {
+        var process = mock(Process.class);
+        var pipe = mock(java.io.OutputStream.class);
+        when(process.getOutputStream()).thenReturn(pipe);
+        IOException failure = new IOException("synthetic pipe " + stage + " failure");
+        switch (stage) {
+            case "write" -> doThrow(failure).when(pipe).write(any(byte[].class));
+            case "flush" -> doThrow(failure).when(pipe).flush();
+            case "close" -> doThrow(failure).when(pipe).close();
+            default -> throw new AssertionError(stage);
+        }
+        var thrown = assertThrows(IOException.class,
+            () -> new Restore().authenticate(settings(true, "Synthetic!秘密"), process));
+        assertSame(failure, thrown.getCause());
+        assertFalse(String.valueOf(thrown.getMessage()).contains("Synthetic!秘密"));
+        verify(process).destroy();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void specialPathsAndDatabaseNamesRemainSingleArguments(boolean plain) throws Exception {
+        var settings = settings(true, "Synthetic!secret");
+        var format = plain ? PostgreBackupRestoreSettings.ExportFormat.PLAIN : PostgreBackupRestoreSettings.ExportFormat.CUSTOM;
+        when(settings.getFormat()).thenReturn(format);
+        var server = ((PostgreDataSource) settings.getDataSourceContainer().getDataSource()).getServerType();
+        when(server.getNativeToolName("psql")).thenReturn("gsql");
+        Path homePath = Files.createDirectory(directory.resolve("客户端 space"));
+        Path binary = Files.createFile(homePath.resolve(plain ? "gsql" : "gs_restore"));
+        var home = mock(DBPNativeClientLocation.class);
+        when(home.getPath()).thenReturn(homePath.toFile());
+        when(settings.getClientHome()).thenReturn(home);
+        String input = directory.resolve("备份 space;literal$(text).dump").toString();
+        when(settings.getInputFile()).thenReturn(input);
+        when(settings.getToolUserName()).thenReturn("user space");
+        var database = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase.class);
+        when(database.toString()).thenReturn("数据库 space;literal");
+        var info = new PostgreDatabaseRestoreInfo(database);
+        when(settings.getRestoreInfo()).thenReturn(info);
+        var command = new Restore().command(settings, info);
+        assertEquals(binary.toAbsolutePath().toString(), command.getFirst());
+        assertEquals(1, command.stream().filter(s -> s.equals("--username=user space")).count());
+        assertEquals(1, command.stream().filter(s -> s.equals("--dbname=数据库 space;literal")).count());
+        assertEquals(plain ? "--file=" + input : input, command.getLast());
+        assertFalse(command.toString().contains("Synthetic!secret"));
+        assertTrue(command.contains("--pipeline"));
     }
 
     @Test void pipelineOptionIsGaussOnly() throws Exception {
@@ -111,6 +164,9 @@ class GaussDBNativePasswordTest {
     }
 
     private static class Restore extends PostgreDatabaseRestoreHandler {
+        java.util.List<String> command(PostgreDatabaseRestoreSettings settings, PostgreDatabaseRestoreInfo info) throws IOException {
+            return getCommandLine(settings, info);
+        }
         void configure(PostgreDatabaseRestoreSettings settings, ProcessBuilder builder) {
             setupProcessParameters(new VoidProgressMonitor(), settings, null, builder);
         }
