@@ -47,6 +47,30 @@ FROM dbv_text_import_20260928.payload WHERE id=1;
 
 ## 定位证据与后续
 
+### 纯 SELECT 对照复现（后续补验）
+
+为排除文件导入、待保存值和 UPDATE 执行的影响，另建 Script-4 编辑器，原 Script-3 未保存修改保持不动。执行：
+
+```sql
+SELECT 42 AS context_probe, pg_backend_pid() AS backend_pid;
+```
+
+1. 281 新建编辑器，283 查询，285 文本结果为 `42 / 281469788207424`，成功。
+2. 286 展开数据库导航，287 选择目标连接按 F5 刷新。日志 15:48:13 明确关闭上下文 3、4、7（7 为 Script-4），创建新主/元数据上下文 8、9，随后另有 10、11 创建记录。
+3. 289 再次查询，290 结果为 `42 / 281469100341568`，成功，但日志已经出现 Script-4 上下文 7 不在查询管理缓存的警告。
+4. 291 手动重连，日志 15:49:06 显示 `Connections reopened: 2 (of 2)`；294 仍取得 `42 / 281469100341568`，后端编号未变。293 使用的控件索引不是预期编辑器文本索引，不单独视为键盘焦点正确的证据；这里只记录 294 实际新查询时间及结果。
+5. 使用独立 gsql 查询 `pg_stat_activity`，确认该编号当时对应 `distributed_acceptance / distributed_lab / idle`，最后语句是上述 `SELECT 42`。用同时限制编号、库、用户、空闲状态和 SQL 前缀的条件调用 `pg_terminate_backend`，返回 `t`。没有终止其他客户端或数据库服务。
+6. 295 在编辑器执行 SELECT，296 可见结果区报 `57P01: terminating connection due to administrator command`，证明本次故障命中了目标连接。
+7. 297 再次手动重连，日志 15:50:37 再显示重开两条连接。298 重新观察编辑器文本控件后，299 正确聚焦并执行相同 SELECT，300 **可见**结果区报 `08003: This connection has been closed.`，没有返回新查询结果。
+
+因此该运行副本具有可重复的“连接刷新 → 独立编辑器继续使用旧上下文 → 会话失效后无法通过数据源重连恢复”路径；不依赖文件导入或写操作。不是说刷新后的第一次 SELECT 必定失败。两条手动重连日志只枚举主/元数据上下文，未枚举该编辑器。
+
+注意：本环境的后端编号可能被复用。故障后的查询发现 `281469100341568` 已对应核对用的 gausscore 查询自身；不能把编号仍存在理解成原会话未终止，更不能重复终止同一编号。本轮只进行一次带身份/状态/语句保护的终止。
+
+初始旧编辑器问题也有时间线佐证：14:35:36 创建 Script-3 上下文 2，14:36:59 的导航刷新关闭 0/1/2 并创建新主/元数据上下文，14:37 后原上下文 2 的缓存缺失警告持续出现。这与本次干净 SELECT 对照一致。生产源码 `PostgreDataSource.refreshObject` 会 shutdown 并替换数据库实例缓存，而 `SQLEditor.updateExecutionContext` 主要比较数据源对象身份；这是后续需用自动化验证的具体生命周期缺口，不是已完成的修复。
+
+现场：Script-4 保留 SELECT 失败结果；Script-3 仍保留待保存 `abc\n`；没有直接 SQL 修改原表。此补验没有新增通过的 JUnit 数量，也没有发布生产补丁。
+
 工作区日志显示 `Main <distributed_acceptance>`、`Metadata <distributed_acceptance>` 的 BEFORE/INVALIDATE/AFTER 阶段，并记录 `Connections reopened: 2 (of 2)`；保存错误栈来自 `ResultSetPersister.DataUpdaterJob` → `ExecuteBatchImpl` → `JDBCTable.prepareStatement` → JDBC `PgConnection.checkClosed`。查询管理日志同时出现 `SQLEditor <Script-3.sql>` 会话不在缓存的警告。
 
 当前源码 `InvalidateJob.invalidateInstances` 遍历可用实例及其所有执行上下文；`SQLEditor.getExecutionContext` 优先返回独立连接或指定 provider。需要进一步确认编辑器持有上下文与实例登记列表的生命周期，以及运行副本与当前源码差异。以上只是定位线索，不能据此直接断言唯一根因或采用自动重放 DML 的修复。
