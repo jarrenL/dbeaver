@@ -30,3 +30,11 @@
 修复后XML专项26/26通过。脚本随后加入已有PostgreSavedPlanTest并编译当前PostgreQueryPlaner/PostgrePlanNodeExternal，联合 `/tmp/plan-categories-saved-regression.log`：49/49通过、0跳过、0失败（26项XML＋23项已有保存计划测试），不是新增49项。保存/恢复、层级和格式校验的既有断言继续通过。
 
 类别矩阵使用人工XML，不声称服务器各版本都产生这些名称，也不代替实际GUI图标验收；PG/GaussDB完整产品回归仍待。后续保存计划专项已补，不再把“未运行任何保存计划回归”作为当前结论。
+
+## 真库专项重跑入口与环境结果
+
+独立测试仓新增 `scripts/run-live-plan-focused.mjs`，直接编译当前节点类、计划保存类和既有GaussDBHistoricalJdbcLiveTest，选择4个真实数据库方法：递归CTE、窗口排序、索引扫描、ANALYZE实际行数/耗时/循环。复用既有随机schema创建与finally精确清理，不新增固定业务对象。
+
+2026-09-28首次直接编译通过，执行4项均因原临时连接配置文件不存在，在读取配置阶段失败；未打开数据库连接、未创建schema，日志 `/tmp/live-plan-distributed-20260928.log`。不算产品解析失败，更不算真库通过。
+
+入口随后增加前置检查：必须显式设置GAUSSDB_HISTORY_ALLOW_DDL=YES，GAUSSDB_HISTORY_CONNECTION和GAUSSDB_HISTORY_JDBC必须指向实际文件；缺失则退出2，提示缺哪个配置键，不输出凭据、不启动测试。缺失配置路径复验得到退出2，Node语法检查通过。该脚本完整成功运行仍待恢复现有隔离测试连接配置后验证，不能以入口实现替代真库结果。
