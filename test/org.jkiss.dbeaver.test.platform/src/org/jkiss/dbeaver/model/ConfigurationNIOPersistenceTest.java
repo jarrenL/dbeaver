@@ -17,7 +17,14 @@
 package org.jkiss.dbeaver.model;
 
 import org.jkiss.dbeaver.model.app.DBPProject;
+import org.jkiss.dbeaver.model.app.DBPDataSourceRegistry;
+import org.jkiss.dbeaver.model.access.DBAAuthProfile;
+import org.jkiss.dbeaver.model.impl.app.DefaultValueEncryptor;
+import org.jkiss.dbeaver.model.net.DBWNetworkProfileManager;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.registry.DataSourceConfigurationManagerNIO;
+import org.jkiss.dbeaver.registry.DataSourceRegistry;
+import org.jkiss.dbeaver.registry.DataSourceSerializerModern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,6 +34,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -48,6 +56,63 @@ class ConfigurationNIOPersistenceTest {
             assertNotNull(stream);
             return stream.readAllBytes();
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completeSerializerWritesEncryptedCredentialsAndDeletesOnlyActiveFile(boolean encryptedProject) throws Exception {
+        Path metadata = Files.createDirectories(directory.resolve("项目元数据"));
+        var project = mock(DBPProject.class);
+        when(project.getMetadataFolder(anyBoolean())).thenReturn(metadata);
+        when(project.getAbsolutePath()).thenReturn(directory);
+        when(project.isEncryptedProject()).thenReturn(encryptedProject);
+        var encryptor = new DefaultValueEncryptor(DefaultValueEncryptor.makeSecretKeyFromPassword("fixture-disk-key"));
+        when(project.getValueEncryptor()).thenReturn(encryptor);
+        var registry = mock(DataSourceRegistry.class);
+        when(registry.getProject()).thenReturn(project);
+        when(registry.getNetworkProfiles()).thenReturn(mock(DBWNetworkProfileManager.class));
+        var profile = new DBAAuthProfile(project);
+        profile.setProfileId("disk-profile");
+        profile.setProfileName("磁盘配置𠀀");
+        profile.setUserName("磁盘用户");
+        profile.setUserPassword("fixture-disk-password");
+        profile.setSavePassword(true);
+        when(registry.getAllAuthProfiles()).thenReturn(List.of(profile));
+        var storage = mock(DBPDataSourceConfigurationStorage.class);
+        when(storage.getStorageName()).thenReturn("fixture.json");
+        when(storage.getStorageSubId()).thenReturn("");
+        when(storage.isDefault()).thenReturn(true);
+        var manager = new DataSourceConfigurationManagerNIO(project);
+        var constructor = DataSourceSerializerModern.class.getDeclaredConstructor(DataSourceRegistry.class);
+        constructor.setAccessible(true);
+        var saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        saver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of());
+        String credentialName = DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_PREFIX
+            + DBPDataSourceRegistry.CREDENTIALS_CONFIG_FILE_EXT;
+        byte[] config = read(manager, "fixture.json");
+        String decodedConfig = new String(encryptedProject ? encryptor.decryptValue(config) : config, StandardCharsets.UTF_8);
+        assertTrue(decodedConfig.contains("磁盘配置𠀀"));
+        assertFalse(decodedConfig.contains("fixture-disk-password"));
+        byte[] encryptedCredentials = read(manager, credentialName);
+        assertFalse(new String(encryptedCredentials, StandardCharsets.UTF_8).contains("fixture-disk-password"));
+        assertTrue(new String(encryptor.decryptValue(encryptedCredentials), StandardCharsets.UTF_8)
+            .contains("fixture-disk-password"));
+        profile.setSavePassword(false);
+        saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        saver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of());
+        String withoutPassword = new String(encryptor.decryptValue(read(manager, credentialName)), StandardCharsets.UTF_8);
+        assertFalse(withoutPassword.contains("fixture-disk-password"));
+        assertTrue(withoutPassword.contains("磁盘用户"));
+        when(registry.getAllAuthProfiles()).thenReturn(List.of());
+        saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        saver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of());
+        assertFalse(Files.exists(metadata.resolve(credentialName)));
+        assertNull(manager.readConfiguration(credentialName, null));
+        Path backup = metadata.resolve((credentialName.startsWith(".") ? credentialName : "." + credentialName) + ".bak");
+        assertArrayEquals(encryptedCredentials, Files.readAllBytes(backup));
+        assertTrue(new String(encryptor.decryptValue(Files.readAllBytes(backup)), StandardCharsets.UTF_8)
+            .contains("fixture-disk-password"), "Deleting the active file is not secure erasure of its backup");
+        assertEquals("fixture-disk-password", profile.getUserPassword());
     }
 
     @ParameterizedTest
