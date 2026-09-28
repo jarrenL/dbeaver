@@ -59,19 +59,21 @@ public abstract class PostgrePlanNodeBase<NODE extends PostgrePlanNodeBase<?>> e
     private final static List<String> allowedKind = new ArrayList<>( 
             Arrays.asList("result",
                           "project",
+                          // Compound operators must precede their implementation detail (e.g. Hash Join).
+                          "join",
+                          "loop",
+                          "aggregate",
                           "index",
                           "hash",
-                          "foregin",
-                          "aggregate",
+                          "foreign",
+                          "seq scan",
+                          "bitmap heap scan",
                           "modify",
-                          "inset",
+                          "insert",
                           "update",
                           "delete",
-                          "loop",
-                          "join",
                           "merge",
                           "sort",
-                          "merge",
                           "group",
                           "materialize",
                           "function"));
@@ -274,7 +276,9 @@ public abstract class PostgrePlanNodeBase<NODE extends PostgrePlanNodeBase<?>> e
                 case "hash":
                     return DBCPlanNodeKind.HASH;
 
-                case "foregin":
+                case "foreign":
+                case "seq scan":
+                case "bitmap heap scan":
                     return DBCPlanNodeKind.TABLE_SCAN;
 
                 case "aggregate":

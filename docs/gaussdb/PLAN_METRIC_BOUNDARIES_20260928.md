@@ -20,3 +20,13 @@
 ## 边界
 
 只证明标量统计属性和指定节点结构解析，不证明服务器实际生成BUFFERS、多DN统计聚合、嵌套Worker统计结构或GUI图表展示。缺失节点类型输入不会崩溃不代表残缺计划语义完整。共享PostgreSQL解析器受影响，完整PG/GaussDB和保存计划回归仍需执行。
+
+## 节点类别矩阵与保存计划回归
+
+新增17项XML节点类别输入：Hash/Merge Join、Nested Loop、Hash、HashAggregate/Aggregate、Seq/Parallel Seq/Foreign/Bitmap Heap Scan、Index/Index Only Scan、Insert/ModifyTable、Sort、Function Scan及未知节点。每项同时断言原始Node-Type标签不被分类逻辑重写。
+
+红测 `/tmp/plan-categories-red.log`：26项中19通过、7失败。Hash Join和HashAggregate被较早的hash子串匹配误归为HASH；普通/并行顺序扫描、外部扫描、位图堆扫描未分类；Insert因允许列表拼写inset而落入DEFAULT。修复优先匹配join/loop/aggregate，补明确扫描词及foreign/insert拼写，移除重复merge条目。不将一次类型矩阵的7个失败统计为7个独立根因。
+
+修复后XML专项26/26通过。脚本随后加入已有PostgreSavedPlanTest并编译当前PostgreQueryPlaner/PostgrePlanNodeExternal，联合 `/tmp/plan-categories-saved-regression.log`：49/49通过、0跳过、0失败（26项XML＋23项已有保存计划测试），不是新增49项。保存/恢复、层级和格式校验的既有断言继续通过。
+
+类别矩阵使用人工XML，不声称服务器各版本都产生这些名称，也不代替实际GUI图标验收；PG/GaussDB完整产品回归仍待。后续保存计划专项已补，不再把“未运行任何保存计划回归”作为当前结论。

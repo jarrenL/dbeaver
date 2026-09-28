@@ -23,6 +23,21 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PostgreXmlPlanHierarchyTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "Hash Join,JOIN", "Merge Join,JOIN", "Nested Loop,JOIN", "Hash,HASH",
+        "HashAggregate,AGGREGATE", "Aggregate,AGGREGATE", "Seq Scan,TABLE_SCAN",
+        "Parallel Seq Scan,TABLE_SCAN", "Foreign Scan,TABLE_SCAN", "Bitmap Heap Scan,TABLE_SCAN",
+        "Index Scan,INDEX_SCAN", "Index Only Scan,INDEX_SCAN", "Insert,MODIFY",
+        "ModifyTable,MODIFY", "Sort,SORT", "Function Scan,FUNCTION", "Unknown Operator,DEFAULT"
+    })
+    void operatorCategoryDistinguishesJoinsAggregatesAndScans(String type,
+        org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind expected) throws Exception {
+        var node = parse("<Plan><Node-Type>" + type + "</Node-Type></Plan>");
+        assertEquals(expected, node.getNodeKind());
+        assertEquals(type, node.getNodeType(), "Classification must not rewrite the server label");
+    }
+
     @Test
     void nodeClassificationDoesNotDependOnDesktopLocale() throws Exception {
         var previous = java.util.Locale.getDefault();
