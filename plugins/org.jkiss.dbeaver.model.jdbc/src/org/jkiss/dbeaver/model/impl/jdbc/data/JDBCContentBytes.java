@@ -134,10 +134,13 @@ public class JDBCContentBytes extends JDBCContentAbstract implements DBDContentS
             try {
                 InputStream is = storage.getContentStream();
                 try {
-                    byte[] newData = new byte[(int)storage.getContentLength()];
-                    int count = is.read(newData);
-                    if (count != newData.length) {
-                        log.warn("Actual content length (" + count + ") is less than declared (" + newData.length + ")"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    long length = storage.getContentLength();
+                    if (length < 0 || length > Integer.MAX_VALUE) {
+                        throw new IOException("Content length cannot be represented as a byte array: " + length);
+                    }
+                    byte[] newData = is.readNBytes((int) length);
+                    if (newData.length != length) {
+                        throw new EOFException("Content ended before its declared length");
                     }
                     if (data != null && Arrays.equals(data, newData)) {
                         return false;
