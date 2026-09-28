@@ -443,6 +443,67 @@ class ConfigurationReadFailureTest {
 
     @ParameterizedTest
     @CsvSource({"false, io", "true, io", "false, db", "true, db"})
+    void mainConfigurationWriteFailureMustNotAdvanceCredentials(boolean encryptedProject, String failureKind)
+        throws Exception {
+        configure(encryptedProject);
+        when(storage.isDefault()).thenReturn(true);
+        when(storage.getStorageSubId()).thenReturn("");
+        when(manager.isTrusted()).thenReturn(true);
+        when(registry.getNetworkProfiles()).thenReturn(mock(DBWNetworkProfileManager.class));
+        var profile = new DBAAuthProfile(registry.getProject());
+        profile.setProfileId("main-write-fixture");
+        profile.setProfileName("主配置写入测试𠀀");
+        profile.setSavePassword(true);
+        profile.setUserName("fixture-user");
+        profile.setUserPassword("fixture-password");
+        when(registry.getAllAuthProfiles()).thenReturn(List.of(profile));
+        Exception failure = "io".equals(failureKind) ? new IOException("synthetic main write failure")
+            : new DBException("synthetic main store failure");
+        var reject = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var written = new HashMap<String, byte[]>();
+        byte[] oldMain = "existing main".getBytes(StandardCharsets.UTF_8);
+        byte[] oldCredentials = "existing credentials".getBytes(StandardCharsets.UTF_8);
+        written.put("fixture.json", oldMain.clone());
+        written.put(credentialsName(), oldCredentials.clone());
+        doAnswer(call -> {
+            String name = call.getArgument(0);
+            if (name.equals("fixture.json") && reject.getAndSet(false)) {
+                throw failure;
+            }
+            byte[] bytes = call.getArgument(1);
+            written.put(name, bytes == null ? null : bytes.clone());
+            return null;
+        }).when(manager).writeConfiguration(anyString(), nullable(byte[].class));
+        var constructor = DataSourceSerializerModern.class.getDeclaredConstructor(DataSourceRegistry.class);
+        constructor.setAccessible(true);
+        var saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        assertSame(failure, assertThrows(Exception.class, () -> saver.saveDataSources(
+            new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of())));
+        verify(manager, never()).writeConfiguration(eq(credentialsName()), nullable(byte[].class));
+        assertArrayEquals(oldMain, written.get("fixture.json"));
+        assertArrayEquals(oldCredentials, written.get(credentialsName()));
+        assertEquals("fixture-password", profile.getUserPassword());
+
+        saver.saveDataSources(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of());
+        byte[] json = written.get("fixture.json");
+        if (encryptedProject) {
+            json = encryptor.decryptValue(json);
+        }
+        String mainJson = new String(json, StandardCharsets.UTF_8);
+        assertFalse(mainJson.contains("fixture-password"));
+        var restored = new Gson().fromJson(mainJson, Map.class);
+        var authProfiles = (Map<?, ?>) restored.get("auth-profiles");
+        var authProfile = (Map<?, ?>) authProfiles.get("main-write-fixture");
+        assertEquals("主配置写入测试𠀀", authProfile.get("name"));
+        String credentials = new String(encryptor.decryptValue(written.get(credentialsName())), StandardCharsets.UTF_8);
+        assertTrue(credentials.contains("profile:main-write-fixture"));
+        assertTrue(credentials.contains("fixture-password"));
+        verify(manager, times(2)).writeConfiguration(eq("fixture.json"), nullable(byte[].class));
+        verify(manager).writeConfiguration(eq(credentialsName()), nullable(byte[].class));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, io", "true, io", "false, db", "true, db"})
     void credentialWriteFailureMustPropagateAndAllowExplicitRetry(boolean removeCredentials, String failureKind)
         throws Exception {
         configure(false);
