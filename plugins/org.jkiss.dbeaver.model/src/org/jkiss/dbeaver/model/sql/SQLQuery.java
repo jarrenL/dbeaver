@@ -182,7 +182,7 @@ public class SQLQuery implements SQLScriptElement {
                         selectItems = items;
                     }
                 }
-            } else if (statement instanceof SetOperationList) {
+            } else if (isSetOperationStatement(statement)) {
                 // UNION/INTERSECT/EXCEPT return query results, but do not identify a single update target.
                 type = SQLQueryType.SELECT;
             } else if (statement instanceof Insert insert) {
@@ -554,11 +554,20 @@ public class SQLQuery implements SQLScriptElement {
             && dropStatement.getType() != null;
     }
 
+    private static boolean isSetOperationStatement(@Nullable Statement candidate) {
+        // Keep the original AST (including outer ORDER BY/LIMIT) for callers.
+        // Parentheses do not turn a set query into a single writable table.
+        while (candidate instanceof ParenthesedSelect parenthesed) {
+            candidate = parenthesed.getSelect();
+        }
+        return candidate instanceof SetOperationList;
+    }
+
     public boolean isModifying() {
         if (getType() == SQLQueryType.UNKNOWN) {
             return false;
         }
-        if (statement instanceof SetOperationList) {
+        if (isSetOperationStatement(statement)) {
             return false;
         }
         if (statement instanceof PlainSelect plainSelect) {

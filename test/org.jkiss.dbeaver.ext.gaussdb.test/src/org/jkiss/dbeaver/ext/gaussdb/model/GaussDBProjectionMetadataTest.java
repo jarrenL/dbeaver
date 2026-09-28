@@ -194,6 +194,28 @@ class GaussDBProjectionMetadataTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {
+        "(SELECT id FROM public.accounts UNION SELECT id FROM audit.other_table)",
+        "((SELECT id FROM public.accounts UNION ALL SELECT id FROM audit.other_table))",
+        "(SELECT id FROM public.accounts INTERSECT SELECT id FROM audit.other_table)",
+        "(SELECT id FROM public.accounts EXCEPT SELECT id FROM audit.other_table)",
+        "(SELECT id AS \"编号\" FROM public.accounts UNION ALL SELECT id FROM audit.other_table) ORDER BY 1",
+        "(SELECT id FROM public.accounts UNION ALL SELECT id FROM audit.other_table) LIMIT 10"
+    })
+    void parenthesizedSetQueriesRetainSelectClassificationWithoutWritableTarget(String sql) {
+        var query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertNull(query.getParseError());
+        assertNotNull(query.getStatement());
+        assertNull(query.getEntityMetadata(false));
+        assertNull(query.getEntityMetadata(true));
+        assertFalse(query.isPlainSelect());
+        assertFalse(query.isModifying());
+        assertFalse(query.isMutatingStatement());
+        assertEquals(-1, query.getSelectItemAsteriskIndex());
+    }
+
+    @ParameterizedTest
     @MethodSource("mixedSources")
     void joinsPreservePhysicalSourceWithoutInventingVirtualSource(String join, String orientation) {
         String from = switch (orientation) {
