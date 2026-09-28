@@ -38,6 +38,7 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceListener;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
+import org.jkiss.dbeaver.ui.IRefreshablePart;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.editors.EditorUtils;
 import org.jkiss.dbeaver.ui.editors.binary.internal.BinaryEditorMessages;
@@ -54,7 +55,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 
-public class BinaryEditor extends EditorPart implements ISelectionProvider, IMenuListener, IResourceChangeListener {
+public class BinaryEditor extends EditorPart implements ISelectionProvider, IMenuListener, IResourceChangeListener, IRefreshablePart {
 
     private static final Log log = Log.getLog(HexEditControl.class);
 
@@ -194,7 +195,22 @@ public class BinaryEditor extends EditorPart implements ISelectionProvider, IMen
         bars.setGlobalActionHandler(id, new EditorAction(id));
     }
 
-    private void loadBinaryContent()
+    @Override
+    public RefreshResult refreshPart(Object source, boolean force) {
+        // File imports can notify content parts from a background operation.
+        // Reload the current input, not the old buffer (including for an empty file).
+        RefreshResult[] result = {RefreshResult.CANCELED};
+        UIUtils.syncExec(() -> {
+            if (manager == null) {
+                result[0] = RefreshResult.IGNORED;
+            } else {
+                result[0] = loadBinaryContent() ? RefreshResult.REFRESHED : RefreshResult.CANCELED;
+            }
+        });
+        return result[0];
+    }
+
+    private boolean loadBinaryContent()
     {
         String charset = GeneralUtils.UTF8_ENCODING;
         IEditorInput editorInput = getEditorInput();
@@ -222,10 +238,13 @@ public class BinaryEditor extends EditorPart implements ISelectionProvider, IMen
                 manager.setContent(content, charset);
             } catch (IOException e) {
                 log.error("Can't open binary content", e);
+                return false;
             }
 
             setPartName(systemFile.getName());
+            return true;
         }
+        return false;
     }
 
 
