@@ -1,5 +1,11 @@
 # 原生工具命令参数与认证失败边界
 
+## 本地传输副本生命周期补验（后续）
+
+新增6项直接调用生产copyTransferPath/deleteLocalTransferPath：0/7/65537字节文件三项，逐字节比对复制结果，删除副本及重复/空目标清理后原文件不变；中文嵌套目录、空目录、中文扩展字符/零字节内容一项，清理副本后原目录与同级无关文件保持；源文件缺失、目标父路径为文件两项，异常报告且既有目标/原始文件/冲突文件内容不变。
+
+所有写入和删除位于JUnit为测试创建的独立TempDir，未操作实际备份。`/tmp/native-transfer-files-20260928.log`18/18通过、0跳过、0失败（含旧12项），未发现新生产缺陷。这是实际本机文件操作，不是mock文件系统；但不是完整restore任务、远程文件系统、复制中途取消、部分副本失败清理、符号链接安全或Windows权限验收。尤其不能由工具方法通过推断任务级临时文件注册/回收生命周期已经闭环。
+
 对应历史清单3.15、10.2及连接安全，扩充GaussDBNativePasswordTest。使用生产PostgreNativeToolHandler、PostgreDatabaseRestoreHandler和PostgreScriptExecuteHandler；模拟进程与连接模型，不调用真实备份恢复命令。
 
 ## 新增7项执行

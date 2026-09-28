@@ -27,6 +27,57 @@ import static org.mockito.Mockito.*;
 class GaussDBNativePasswordTest {
     @TempDir Path directory;
 
+    @ParameterizedTest
+    @ValueSource(ints = {0, 7, 65537})
+    void localTransferFilePreservesBytesAndCleanupOnlyRemovesCopy(int length) throws Exception {
+        byte[] payload = new byte[length];
+        for (int i = 0; i < length; i++) payload[i] = (byte) (i * 31);
+        Path source = Files.write(directory.resolve("原备份 " + length + ".dump"), payload);
+        Path target = directory.resolve("副本目录/copy.dump");
+        Restore.copy(source, target);
+        assertArrayEquals(payload, Files.readAllBytes(target));
+        Restore.cleanup(target);
+        assertFalse(Files.exists(target));
+        assertArrayEquals(payload, Files.readAllBytes(source));
+        Restore.cleanup(target);
+        Restore.cleanup(null);
+        assertTrue(Files.isDirectory(target.getParent()));
+    }
+
+    @Test
+    void directoryTransferRetainsEmptyDirectoriesAndOriginalTree() throws Exception {
+        Path source = Files.createDirectory(directory.resolve("原目录"));
+        Files.createDirectories(source.resolve("嵌套/空目录"));
+        byte[] payload = "中文🧪\n\0binary".getBytes(StandardCharsets.UTF_8);
+        Files.write(source.resolve("嵌套/数据.dat"), payload);
+        Path target = directory.resolve("临时副本");
+        Path sibling = Files.writeString(directory.resolve("保留.txt"), "unrelated");
+        Restore.copy(source, target);
+        assertTrue(Files.isDirectory(target.resolve("嵌套/空目录")));
+        assertArrayEquals(payload, Files.readAllBytes(target.resolve("嵌套/数据.dat")));
+        Restore.cleanup(target);
+        assertFalse(Files.exists(target));
+        assertTrue(Files.isDirectory(source.resolve("嵌套/空目录")));
+        assertArrayEquals(payload, Files.readAllBytes(source.resolve("嵌套/数据.dat")));
+        assertEquals("unrelated", Files.readString(sibling));
+    }
+
+    @Test
+    void missingSourceReportsFailureWithoutDeletingExistingTarget() throws Exception {
+        Path target = Files.writeString(directory.resolve("previous.dump"), "keep previous bytes");
+        assertThrows(IOException.class, () -> Restore.copy(directory.resolve("missing.dump"), target));
+        assertEquals("keep previous bytes", Files.readString(target));
+    }
+
+    @Test
+    void targetParentCollisionReportsFailureAndRetainsSource() throws Exception {
+        Path source = Files.writeString(directory.resolve("source.dump"), "source bytes");
+        Path collision = Files.writeString(directory.resolve("not-directory"), "unrelated bytes");
+        assertThrows(IOException.class, () -> Restore.copy(source, collision.resolve("copy.dump")));
+        assertEquals("source bytes", Files.readString(source));
+        assertEquals("unrelated bytes", Files.readString(collision));
+    }
+
     private PostgreDatabaseRestoreSettings settings(boolean pipe, String password) {
         var settings = mock(PostgreDatabaseRestoreSettings.class);
         var container = mock(DBPDataSourceContainer.class);
@@ -164,6 +215,12 @@ class GaussDBNativePasswordTest {
     }
 
     private static class Restore extends PostgreDatabaseRestoreHandler {
+        static void copy(Path source, Path target) throws IOException {
+            copyTransferPath(source, target);
+        }
+        static void cleanup(Path target) {
+            deleteLocalTransferPath(target);
+        }
         java.util.List<String> command(PostgreDatabaseRestoreSettings settings, PostgreDatabaseRestoreInfo info) throws IOException {
             return getCommandLine(settings, info);
         }
