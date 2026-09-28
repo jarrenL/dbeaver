@@ -1,5 +1,21 @@
 # 复合类型数组字段往返验证（2026-09-29）
 
+## 后续：GaussDB provider 与实际绑定入口
+
+新增 `GaussDBCompositeBindingTest` 九项，调用真实 `GaussDBValueHandlerProvider` 与公共 `bindValueObject`：
+
+- 复合类型路由到共享 PostgreSQL handler（1 项）。
+- DBeaver 参数索引 0/2/7 对应 JDBC 1/3/8，绑定 `Types.OTHER`，捕获实际字符串后解析核对中文空格、逗号与 NULL 文本；没有额外 statement 调用、不释放原值（3 项）。
+- Java null 和包装的空复合对象使用 `setNull(..., Types.STRUCT)`，不读取值、不释放对象（2 项）。
+- 驱动绑定异常保留原 SQLException cause；同一对象再次绑定内容一致，没有额外执行或关闭操作（1 项）。这是测试显式第二次调用，不是自动重试 SQL。
+- 不支持的普通对象及非 JDBC 复合对象必须在绑定前失败（2 项）。
+
+首轮 879 项中 1 项失败：非空 `DBDComposite` 但非 `JDBCComposite` 的对象原先静默返回，既未绑定也未报错。共享 handler 补充明确 DBCException，与既有普通对象拒绝行为一致；不把这种输入当正常绑定成功。
+
+修复后共享 **879/879**，重新编译全部 GaussDB 非 Live 核心测试后 OSGi **35 类 638/638**，共享 PostgreSQL OSGi **9 类 159/159**，均零失败/错误/跳过。必需类门控自测 7/7。批次重叠不累加。
+
+日志 `/tmp/composite-bind-red-20260929.log`、`/tmp/composite-bind-green-20260929.log`、`/tmp/composite-bind-core-osgi-20260929.log`、`/tmp/composite-bind-pg-osgi-20260929.log`；联合编译目录 `/tmp/shared-focused-nNFJMw`。statement、会话和对象值容器使用 Mockito，绑定和序列化为实际生产类。**未执行服务器 SQL、事务提交或 GUI 操作**，不能记为真库写回通过；Docker API 本轮仍被拒绝。
+
 ## 范围
 
 对应历史清单 11.1 数组/复合类型及 9.8 编辑值。真实生产 `PostgreStructValueHandler.bindParameter` 对 `JDBCComposite` 调用 `PostgreValueParser.generateObjectString` 后通过 `Types.OTHER` 绑定。本批直接测试该生成方法，再经实际复合字段解析和数组解析检查内容，**未执行真实 JDBC 写回或 GUI 编辑**。

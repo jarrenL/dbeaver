@@ -74,6 +74,8 @@ public class PostgreStructValueHandler extends JDBCStructValueHandler {
                 final Object[] values = ((JDBCComposite) struct).getValues();
                 final String string = PostgreValueParser.generateObjectString(values);
                 statement.setObject(paramIndex, string, Types.OTHER);
+            } else {
+                throw new DBCException("Struct parameter type '" + value.getClass().getName() + "' not supported");
             }
         } else {
             throw new DBCException("Struct parameter type '" + value.getClass().getName() + "' not supported");
