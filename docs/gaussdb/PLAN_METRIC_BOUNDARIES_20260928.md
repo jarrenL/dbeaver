@@ -38,3 +38,11 @@
 2026-09-28首次直接编译通过，执行4项均因原临时连接配置文件不存在，在读取配置阶段失败；未打开数据库连接、未创建schema，日志 `/tmp/live-plan-distributed-20260928.log`。不算产品解析失败，更不算真库通过。
 
 入口随后增加前置检查：必须显式设置GAUSSDB_HISTORY_ALLOW_DDL=YES，GAUSSDB_HISTORY_CONNECTION和GAUSSDB_HISTORY_JDBC必须指向实际文件；缺失则退出2，提示缺哪个配置键，不输出凭据、不启动测试。缺失配置路径复验得到退出2，Node语法检查通过。该脚本完整成功运行仍待恢复现有隔离测试连接配置后验证，不能以入口实现替代真库结果。
+
+## 空响应、损坏XML和失败后重试
+
+新增PostgrePlanResponseTest的6项：无结果行、SQLXML为null、损坏XML、缺Query、缺Plan、节点已解析后getString抛SQLException。每项先在同一个生产计划对象成功加载，再注入失败，最后重新成功加载。验证失败必须是DBCException、旧源码与节点清空、不保留半成品，结果集和语句关闭，并在自动提交场景恢复状态。
+
+首批 `/tmp/plan-response-red.log` 为54项中49通过、5失败：空响应/缺结构不报错、null指针、损坏XML仍留旧源码。修复刷新前清空和XML必要结构校验。后半程SQLException测试首次缺少模拟执行上下文，属测试夹具错误；补齐后 `/tmp/plan-response-late-red2.log` 实际复现失败后保留已解析节点。补SQL异常清空后 `/tmp/plan-response-final-green.log` 为55/55通过、0跳过、0失败（新增6项，其他49项回归）。
+
+当前源码PostgreExecutionPlan纳入直接编译。输入/会话/结果集/SQLXML为模拟对象，解析与状态转换为生产代码；不代表真实断连或服务器返回了这些坏数据。SQLXML.free、输入流所有权、已有手动事务隔离、回滚失败传播和GUI错误呈现仍需独立审计，不能由自动提交路径的资源断言推出已全部覆盖。

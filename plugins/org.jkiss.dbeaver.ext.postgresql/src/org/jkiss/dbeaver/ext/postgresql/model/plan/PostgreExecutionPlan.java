@@ -57,7 +57,7 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
     private final String query;
     private final DBCQueryPlannerConfiguration configuration;
     private String planText;
-    private List<DBCPlanNode> rootNodes;
+    private List<DBCPlanNode> rootNodes = new ArrayList<>();
 
     public PostgreExecutionPlan(boolean oldQuery, boolean verbose, String query, DBCQueryPlannerConfiguration configuration)
     {
@@ -150,6 +150,9 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
     public void explain(DBCSession session)
         throws DBCException
     {
+        // A failed refresh must not expose the previous query's plan as a fresh result.
+        rootNodes = new ArrayList<>();
+        planText = null;
         JDBCSession connection = (JDBCSession) session;
         boolean oldAutoCommit = false;
         try {
@@ -172,8 +175,13 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
                     } else {
                         if (dbResult.next()) {
                             SQLXML planXML = dbResult.getSQLXML(1);
+                            if (planXML == null) {
+                                throw new DBCException("Server returned a null execution plan");
+                            }
                             parsePlanXML(session, planXML);
                             planText = planXML.getString();
+                        } else {
+                            throw new DBCException("Server returned no execution plan");
                         }
                     }
                 } catch (XMLException e) {
@@ -181,6 +189,8 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
                 }
             }
         } catch (SQLException e) {
+            rootNodes = new ArrayList<>();
+            planText = null;
             throw new DBCException(e, session.getExecutionContext());
         } finally {
             // Rollback changes because EXPLAIN actually executes query and it could be INSERT/UPDATE
@@ -195,12 +205,18 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
         }
     }
 
-    private void parsePlanXML(DBCSession session, SQLXML planXML) throws SQLException, XMLException {
+    private void parsePlanXML(DBCSession session, SQLXML planXML) throws SQLException, XMLException, DBCException {
         rootNodes = new ArrayList<>();
         Document planDocument = XMLUtils.parseDocument(planXML.getBinaryStream());
         Element queryElement = XMLUtils.getChildElement(planDocument.getDocumentElement(), "Query");
+        if (queryElement == null) {
+            throw new DBCException("Execution plan XML contains no Query element");
+        }
         for (Element planElement : XMLUtils.getChildElementList(queryElement, "Plan")) {
             rootNodes.add(new PostgrePlanNodeXML(session.getDataSource(), null, planElement));
+        }
+        if (rootNodes.isEmpty()) {
+            throw new DBCException("Execution plan XML contains no Plan element");
         }
     }
 
