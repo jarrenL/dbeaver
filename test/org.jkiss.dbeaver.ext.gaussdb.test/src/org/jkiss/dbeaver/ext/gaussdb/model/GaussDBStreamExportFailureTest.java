@@ -35,6 +35,64 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 public class GaussDBStreamExportFailureTest {
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path temporaryDirectory;
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void failedAppendImportMustNotOpenOrTruncateExistingFile(boolean truncate) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var exporter = mock(org.jkiss.dbeaver.tools.transfer.stream.IAppendableDataExporter.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        var runtime = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.ConsumerRuntimeParameters.class);
+        runtime.dataFileConflictBehavior = org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.DataFileConflictBehavior.APPEND;
+        var parameters = new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters(true, false);
+        byte[] original = "existing customer content 中文𠀀".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var file = temporaryDirectory.resolve("existing.bin");
+        java.nio.file.Files.write(file, original);
+        set(consumer, "processor", exporter);
+        set(consumer, "settings", settings);
+        set(consumer, "runtimeParameters", runtime);
+        set(consumer, "parameters", parameters);
+        set(consumer, "outputFile", file);
+        DBException cause = new DBException("synthetic input parsing failure");
+        doThrow(cause).when(exporter).importData(any());
+        when(exporter.shouldTruncateOutputFileBeforeExport()).thenReturn(truncate);
+        Exception observed = null;
+        try {
+            invoke(consumer, "openOutputStreams", DBRProgressMonitor.class, mock(DBRProgressMonitor.class));
+        } catch (Exception e) {
+            observed = e;
+        } finally {
+            invokeNoArgs(consumer, "closeOutputStreams");
+        }
+        Exception failure = observed;
+        assertAll(
+            () -> assertInstanceOf(IOException.class, failure),
+            () -> assertNotNull(failure),
+            () -> assertArrayEquals(original, java.nio.file.Files.readAllBytes(file))
+        );
+        assertSame(cause, failure.getCause());
+        verify(exporter, never()).shouldTruncateOutputFileBeforeExport();
+        // A corrected input can be retried on this same consumer; loading precedes opening/truncation.
+        doAnswer(call -> {
+            assertArrayEquals(original, java.nio.file.Files.readAllBytes(file));
+            return null;
+        }).when(exporter).importData(any());
+        invoke(consumer, "openOutputStreams", DBRProgressMonitor.class, mock(DBRProgressMonitor.class));
+        OutputStream stream = (OutputStream) get(consumer, "outputStream");
+        byte[] added = "\nnew row 中文".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (truncate) stream.write(original); // Structured exporter rewrites the successfully loaded content.
+        stream.write(added);
+        invokeNoArgs(consumer, "closeOutputStreams");
+        ByteArrayOutputStream expected = new ByteArrayOutputStream();
+        expected.write(original);
+        expected.write(added);
+        assertArrayEquals(expected.toByteArray(), java.nio.file.Files.readAllBytes(file));
+        verify(exporter, times(2)).importData(any());
+        verify(exporter).shouldTruncateOutputFileBeforeExport();
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     public void jobRunStopsAtFailedPipeAndPreservesCancellationStatus(boolean cancelled) throws Exception {

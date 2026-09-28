@@ -462,7 +462,7 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
         }
     }
     
-    private DataFileConflictBehavior prepareDataFileConflictBehavior(String fileName) {
+    private DataFileConflictBehavior prepareDataFileConflictBehavior(String fileName) throws IOException {
         DataFileConflictBehavior behavior = runtimeParameters.dataFileConflictBehavior;
         
         if (behavior == DataFileConflictBehavior.ASK) {
@@ -507,7 +507,8 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
                 try {
                     ((IAppendableDataExporter) processor).importData(exportSite);
                 } catch (DBException e) {
-                    log.warn("Error importing existing data for appending, data loss might occur", e);
+                    // Never open (and potentially truncate) the original until it has been loaded successfully.
+                    throw new IOException("Cannot append: failed to read the existing export file", e);
                 }
                 if (((IAppendableDataExporter) processor).shouldTruncateOutputFileBeforeExport()) {
                     // appendable but not patchable file should be overwritten after the old data was preloaded
