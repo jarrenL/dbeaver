@@ -1,0 +1,134 @@
+/*
+ * DBeaver - Universal Database Manager
+ * Copyright (C) 2010-2026 DBeaver Corp and others
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.jkiss.dbeaver.model;
+
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.model.net.DBWHandlerConfiguration;
+import org.jkiss.dbeaver.model.net.DBWHandlerDescriptor;
+import org.jkiss.dbeaver.model.net.DBWNetworkProfile;
+import org.jkiss.dbeaver.model.secret.DBSSecretController;
+import org.jkiss.dbeaver.model.secret.DBSSecretSubject;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class NetworkProfileContractsTest {
+    private DBWHandlerConfiguration handler(String id) {
+        var descriptor = mock(DBWHandlerDescriptor.class);
+        when(descriptor.getId()).thenReturn(id);
+        var result = new DBWHandlerConfiguration(descriptor, null);
+        result.setEnabled(true);
+        result.setSavePassword(true);
+        result.setUserName("中文-" + id);
+        result.setPassword("synthetic-" + id);
+        result.setSecureProperty("fixture-key", "synthetic-key-" + id);
+        return result;
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void secretScopeAndSharedPropertySnapshotRemainIndependent(boolean scoped) {
+        var profile = new DBWNetworkProfile();
+        profile.setProfileId("fixture-id");
+        if (scoped) {
+            var subject = mock(DBSSecretSubject.class);
+            when(subject.getSecretSubjectId()).thenReturn("fixture-subject");
+            profile.setSecretSubject(subject);
+        }
+        assertEquals((scoped ? "fixture-subject" : "global") + "/network-profile/fixture-id", profile.getSecretKeyId());
+        assertEquals(!scoped, profile.isGlobal());
+        assertEquals(scoped ? "fixture-subject" : null, profile.getProfileSource());
+        var input = new java.util.LinkedHashMap<>(Map.of("label", "原值"));
+        profile.setProperties(input);
+        input.clear();
+        assertEquals("原值", profile.getProperties().get("label"));
+        profile.getProperties().put("label", "修改");
+        assertTrue(input.isEmpty());
+    }
+
+    @Test
+    void handlerReplacementPreservesOtherHandlersAndOrder() {
+        var profile = new DBWNetworkProfile();
+        var ssh = handler("ssh");
+        var ssl = handler("ssl");
+        profile.updateConfiguration(ssh);
+        profile.updateConfiguration(ssl);
+        var replacement = handler("ssh");
+        replacement.setPassword("synthetic-replacement");
+        profile.updateConfiguration(replacement);
+        assertEquals(List.of(replacement, ssl), profile.getConfigurations());
+        assertSame(replacement, profile.getConfiguration("ssh"));
+        assertSame(ssl, profile.getConfiguration("ssl"));
+        assertNull(profile.getConfiguration("unknown"));
+        assertEquals("synthetic-ssh", ssh.getPassword());
+    }
+
+    @Test
+    void multiHandlerSecretRoundTripRestoresOnlyConfiguredHandlers() throws Exception {
+        var source = new DBWNetworkProfile();
+        source.setProfileId("fixture");
+        source.updateConfiguration(handler("ssh"));
+        source.updateConfiguration(handler("ssl"));
+        var controller = mock(DBSSecretController.class);
+        source.persistSecrets(controller);
+        var payload = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(controller).setPrivateSecretValue(eq(source.getSecretKeyId()), payload.capture());
+        var destination = new DBWNetworkProfile();
+        destination.setProfileId("fixture");
+        var ssh = handler("ssh");
+        ssh.setPassword(null);
+        ssh.setSecureProperties(Map.of());
+        destination.updateConfiguration(ssh);
+        when(controller.getPrivateSecretValue(destination.getSecretKeyId())).thenReturn(payload.getValue());
+        destination.resolveSecrets(controller);
+        assertEquals("中文-ssh", ssh.getUserName());
+        assertEquals("synthetic-ssh", ssh.getPassword());
+        assertEquals("synthetic-key-ssh", ssh.getSecureProperty("fixture-key"));
+        assertTrue(ssh.isEnabled());
+        assertTrue(ssh.isSavePassword());
+        assertEquals(1, destination.getConfigurations().size());
+        assertNull(destination.getConfiguration("ssl"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"read", "write"})
+    void storageFailuresDoNotChangeRuntimeHandlers(String operation) throws Exception {
+        var profile = new DBWNetworkProfile();
+        profile.setProfileId("fixture");
+        var ssh = handler("ssh");
+        profile.updateConfiguration(ssh);
+        var controller = mock(DBSSecretController.class);
+        var failure = new DBException("synthetic storage failure");
+        if (operation.equals("read")) {
+            when(controller.getPrivateSecretValue(profile.getSecretKeyId())).thenThrow(failure);
+            assertSame(failure, assertThrows(DBException.class, () -> profile.resolveSecrets(controller)));
+        } else {
+            doThrow(failure).when(controller).setPrivateSecretValue(eq(profile.getSecretKeyId()), anyString());
+            assertSame(failure, assertThrows(DBException.class, () -> profile.persistSecrets(controller)));
+        }
+        assertSame(ssh, profile.getConfiguration("ssh"));
+        assertEquals("synthetic-ssh", ssh.getPassword());
+        assertEquals("synthetic-key-ssh", ssh.getSecureProperty("fixture-key"));
+        verify(controller, never()).flushChanges();
+    }
+}
