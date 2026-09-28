@@ -35,7 +35,6 @@ import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.data.IValueController;
 import org.jkiss.dbeaver.ui.dialogs.DialogUtils;
 import org.jkiss.dbeaver.ui.editors.BaseTextEditorCommands;
 
@@ -236,10 +235,8 @@ public class ContentEditorContributor extends MultiPageEditorActionBarContributo
                         }
                     }
                 });
-                IValueController valueController = editor.getValueController();
-                if (valueController != null) {
-                    valueController.updateValue(editor.getValue(), true);
-                }
+                // Import changes only the editor. Publishing here would mark the
+                // result set modified even when the user subsequently discards it.
                 editor.setDirty(true);
                 editor.fireContentChanged();
             } catch (InvocationTargetException e) {
