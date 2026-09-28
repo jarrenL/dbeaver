@@ -60,6 +60,7 @@ import org.jkiss.utils.IOUtils;
 
 import java.io.*;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 
 /**
  * ContentEditorInput
@@ -306,12 +307,25 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
         try {
             Object value = getValue();
             if (value instanceof DBDContent) {
-                release();
-                contentFile = extFile;
-                contentDetached = true;
+                if (!Files.isRegularFile(extFile.toPath())) {
+                    throw new IOException("Content source is not a regular file");
+                }
+                // External storage is lazy. Check readability before replacing the current input.
+                try (InputStream stream = new FileInputStream(extFile)) {
+                    stream.read();
+                }
+                boolean sameFile = contentFile != null && contentFile.exists()
+                    && Files.isSameFile(contentFile.toPath(), extFile.toPath());
                 ((DBDContent)value).updateContents(
                     new DefaultProgressMonitor(monitor),
                     new ExternalContentStorage(DBWorkbench.getPlatform(), extFile.toPath()));
+                if (sameFile) {
+                    // The selected external path may be an alias of our temporary input.
+                    contentDetached = true;
+                }
+                release();
+                contentFile = extFile;
+                contentDetached = true;
             } else {
                 updateStringValueFromFile(extFile);
             }
