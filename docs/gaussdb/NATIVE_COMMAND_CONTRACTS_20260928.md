@@ -1,5 +1,13 @@
 # 原生工具命令参数与认证失败边界
 
+## 启动前及准备阶段取消（后续）
+
+新增三个取消时点：executeProcess进入前、getCommandLine期间、setupProcessParameters期间。受控命令仅为本机true；记录命令生成、参数准备及进程启动回调次数，不执行恢复或其他数据库操作。
+
+红测`/tmp/native-prestart-red-20260928.log`39项中36通过、3失败，三个时点都实际到达进程启动回调；取消只在启动后的轮询处理。共享AbstractNativeToolHandler增加进入准备前、命令生成后及ProcessBuilder.start前的检查，均以InterruptedException退出，finally保持monitor.done。修复后联合333/333通过、0跳过、0失败（`/tmp/shared-prestart-green-20260928.log`），既有运行中取消、强制终止、发布及清理测试同时复跑。
+
+本次证明三个确定性取消时点不启动进程，以及不会继续不必要的准备阶段；不是检查与start之间的并发原子性保证，不证明已经启动的恢复可回滚，也未对Windows或真实恢复进程进行验收。共享基类修复仍需完整构建及实际客户端回归。
+
 ## 目录备份不得合并旧归档（后续）
 
 新增目标不存在、空目录、已有非空目录三项。受控true进程成功后进入真实备份发布路径：新备份含toc.dat及new.dat，旧目录含旧toc.dat及old.dat。红测36项中35通过、非空目录未拒绝而失败（`/tmp/native-directory-red-20260928.log`）。复制实现原来会替换同名文件而保留旧文件，造成归档混合。

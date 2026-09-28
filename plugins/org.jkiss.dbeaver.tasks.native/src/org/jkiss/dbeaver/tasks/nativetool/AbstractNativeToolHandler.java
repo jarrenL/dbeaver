@@ -215,8 +215,14 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         monitor.beginTask(task.getType().getName(), 1);
         Process process = null;
         try {
+            if (monitor.isCanceled()) {
+                throw new InterruptedException();
+            }
             monitor.subTask("Start native tool " + getClass().getSimpleName());
             final List<String> commandLine = getCommandLine(settings, arg);
+            if (monitor.isCanceled()) {
+                throw new InterruptedException();
+            }
             final File execPath = new File(commandLine.get(0));
 
             ProcessBuilder processBuilder = new ProcessBuilder(commandLine);
@@ -225,6 +231,11 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                 processBuilder.redirectErrorStream(true);
             }
             setupProcessParameters(monitor, settings, arg, processBuilder);
+            // Preparing credentials or transfer files can take time. Do not launch
+            // a potentially destructive command after cancellation during preparation.
+            if (monitor.isCanceled()) {
+                throw new InterruptedException();
+            }
             process = processBuilder.start();
             startProcessHandler(monitor, task, settings, arg, processBuilder, process, log);
 

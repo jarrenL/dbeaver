@@ -24,6 +24,42 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"before-command", "during-command", "during-setup"})
+    void canceledPreparationMustNotStartNativeProcess(String stage) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));
+        var canceled = new java.util.concurrent.atomic.AtomicBoolean(stage.equals("before-command"));
+        var monitor = mock(DBRProgressMonitor.class);
+        when(monitor.isCanceled()).thenAnswer(i -> canceled.get());
+        var commands = new java.util.concurrent.atomic.AtomicInteger();
+        var setups = new java.util.concurrent.atomic.AtomicInteger();
+        var started = new java.util.concurrent.atomic.AtomicBoolean();
+        var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                commands.incrementAndGet();
+                if (stage.equals("during-command")) canceled.set(true);
+                return List.of("/usr/bin/true");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+                setups.incrementAndGet();
+                if (stage.equals("during-setup")) canceled.set(true);
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log) {
+                started.set(true);
+            }
+        };
+        assertThrows(InterruptedException.class, () -> handler.executeProcess(monitor, task,
+            mock(PostgreDatabaseBackupSettings.class), mock(PostgreDatabaseBackupInfo.class), mock(Log.class)));
+        assertAll(
+            () -> assertFalse(started.get(), "Canceled preparation must not launch a native command"),
+            () -> assertEquals(stage.equals("before-command") ? 0 : 1, commands.get()),
+            () -> assertEquals(stage.equals("during-setup") ? 1 : 0, setups.get()));
+        verify(monitor).done();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"absent", "empty", "nonempty"})
     @SuppressWarnings("unchecked")
     void directoryPublicationDoesNotMergeWithExistingBackup(String state) throws Exception {

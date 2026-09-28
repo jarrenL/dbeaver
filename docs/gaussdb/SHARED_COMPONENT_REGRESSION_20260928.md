@@ -8,6 +8,8 @@
 
 ## 最新结果
 
+后续启动前取消回归：`/tmp/shared-prestart-green-20260928.log`333/333通过、0跳过、0失败。基于f5262aa0a4另含共享原生基类三个准备时点取消检查及对应三项测试；下方330项全部重跑，备份生命周期分组增至19，其他不变。不叠加历次执行数，具体证据及并发边界见NATIVE_COMMAND_CONTRACTS_20260928.md。
+
 后续目录备份保护回归：`/tmp/shared-directory-green-20260928.log`330/330通过、0跳过、0失败。基于1d951d4f85另含非空目录保护生产修复及三项新增测试；下方327项全部重跑，备份生命周期分组从13增至16，其他不变。详见NATIVE_COMMAND_CONTRACTS_20260928.md。不将330与327叠加。
 
 `/tmp/shared-native-final-20260928.log`：327项，327通过、0跳过、0失败、0错误中止。新增显式编译共享AbstractNativeToolHandler及四个PostgreSQL原生工具处理器。
