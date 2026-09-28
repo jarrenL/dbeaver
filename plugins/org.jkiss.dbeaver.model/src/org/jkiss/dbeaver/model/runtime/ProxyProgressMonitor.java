@@ -95,16 +95,16 @@ public class ProxyProgressMonitor implements DBRProgressMonitor, IProgressMonito
 
     @Override
     public void internalWorked(double work) {
-
+        getNestedMonitor().internalWorked(work);
     }
 
     @Override
     public void setCanceled(boolean value) {
-
+        getNestedMonitor().setCanceled(value);
     }
 
     @Override
     public void setTaskName(String name) {
-
+        getNestedMonitor().setTaskName(name);
     }
 }

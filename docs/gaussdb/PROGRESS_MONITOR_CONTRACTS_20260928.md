@@ -1,5 +1,13 @@
 # 客户端进度监视器与阻塞栈验证
 
+## Eclipse写接口补验（后续）
+
+新增1/2/3层ProxyProgressMonitor三项执行，底层为真实NullProgressMonitor的spy。经IProgressMonitor设置取消true后DBR接口必须读到true，再设置false后读到false；中文扩展字符任务名、小数进度0.25和零进度均按原值转发，不转成整数worked。
+
+红测`/tmp/progress-proxy-red.log`为8项中5通过、3失败，全部首先复现取消true被空实现丢弃；任务名和小数进度也存在空实现，但没有将其声称为本轮独立红测失败。修复三个IProgressMonitor写接口委托getNestedMonitor()后，`/tmp/progress-proxy-green.log`为8/8通过、0跳过、0失败，包含此前5项。
+
+写接口转发已完成指定组件验证，不能据此证明DefaultProgressMonitor内部累计小数状态、OSGi调度、GUI取消按钮、JDBC中断及工作台关闭已全部通过。特别是“设取消标志成功”不等于运行中SQL已经停止。
+
 对应历史清单6.3进度工具及9.7任务控制的共享基础设施，不将TPDSS进度标签工具直接照搬为独立GaussDB功能。
 
 ## 五项测试

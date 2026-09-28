@@ -17,6 +17,9 @@
 package org.jkiss.dbeaver.utils;
 
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.ProxyProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.DBRBlockingObject;
 import org.jkiss.dbeaver.model.runtime.DefaultProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.SubTaskProgressMonitor;
@@ -27,6 +30,35 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ProgressMonitorContractTest {
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3})
+    void eclipseWritesReachNestedMonitorThroughEveryProxyLayer(int depth) {
+        var nested = spy(new NullProgressMonitor());
+        var original = mock(DBRProgressMonitor.class);
+        when(original.getNestedMonitor()).thenReturn(nested);
+        when(original.isCanceled()).thenAnswer(i -> nested.isCanceled());
+        DBRProgressMonitor current = original;
+        for (int i = 0; i < depth; i++) {
+            current = new ProxyProgressMonitor(current);
+        }
+        IProgressMonitor eclipse = (IProgressMonitor) current;
+        assertFalse(current.isCanceled());
+        eclipse.setCanceled(true);
+        assertTrue(current.isCanceled());
+        eclipse.setCanceled(false);
+        assertFalse(current.isCanceled());
+        eclipse.setTaskName("读取对象 🧪");
+        eclipse.internalWorked(0.25);
+        eclipse.internalWorked(0.0);
+        var order = inOrder(nested);
+        order.verify(nested).setCanceled(true);
+        order.verify(nested).setCanceled(false);
+        order.verify(nested).setTaskName("读取对象 🧪");
+        order.verify(nested).internalWorked(0.25);
+        order.verify(nested).internalWorked(0.0);
+        verify(original, never()).worked(anyInt());
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {1, 2, 3})
     void completingNestedTaskRestoresParentNotCompletedTask(int depth) {
