@@ -228,6 +228,42 @@ class GaussDBDebugSessionTest {
         assertFalse(breakpoint.isEnabled());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"result,false", "result,true", "statement,false", "statement,true"})
+    void acknowledgedBreakpointSurvivesResourceCloseFailure(String failingResource, boolean initiallyDisabled) throws Exception {
+        query("SELECT canbreak FROM DBE_PLDEBUGGER.info_code(?::oid) WHERE lineno=?", true, true, 0);
+        JDBCPreparedStatement add = mock(JDBCPreparedStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.add_breakpoint(?::oid, ?::integer)")).thenReturn(add);
+        when(add.executeQuery()).thenReturn(result);
+        when(result.next()).thenReturn(true, false);
+        when(result.getInt(1)).thenReturn(0);
+        SQLException failure = new SQLException("close failed after acknowledgment", "XX000");
+        if (failingResource.equals("result")) {
+            doThrow(failure).when(result).close();
+        } else {
+            doThrow(failure).when(add).close();
+        }
+        JDBCPreparedStatement disable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(disable);
+        var breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        breakpoint.setEnabled(!initiallyDisabled);
+        DBGException actual = assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, breakpoint));
+        assertSame(failure, actual.getCause());
+        assertEquals(1, session.getBreakpoints().size());
+        assertSame(breakpoint, session.getBreakpoints().getFirst());
+        assertEquals(0, breakpoint.getServerId());
+        boolean disableCompleted = initiallyDisabled && failingResource.equals("statement");
+        assertEquals(!disableCompleted, breakpoint.isEnabled());
+        verify(disable, times(disableCompleted ? 1 : 0)).execute();
+        JDBCPreparedStatement delete = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.delete_breakpoint(?)")).thenReturn(delete);
+        session.removeBreakpoint(monitor, breakpoint);
+        verify(delete).setInt(1, 0);
+        verify(delete).execute();
+        assertTrue(session.getBreakpoints().isEmpty());
+    }
+
     @Test
     void initialDisabledRegistrationAcknowledgesDisableBeforePublishingDisabledState() throws Exception {
         validBreakpoint(0);

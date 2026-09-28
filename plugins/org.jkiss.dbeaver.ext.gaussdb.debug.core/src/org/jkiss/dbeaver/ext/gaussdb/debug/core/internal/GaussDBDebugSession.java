@@ -524,6 +524,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                 executeBreakpointCommand(monitor, "delete_breakpoint", existing);
                 breakpoints.remove(existing);
             }
+            boolean disableRequested = !breakpoint.isEnabled();
             try (JDBCSession session = controllerConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Add breakpoint");
                  PreparedStatement statement = session.prepareStatement("SELECT " + API + "add_breakpoint(?::" + breakpointArgumentType + ", ?::integer)")) {
                 statement.setString(1, String.valueOf(breakpoint.getRoutineOid()));
@@ -545,12 +546,11 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                                 " (line " + breakpoint.getLineNumber() + " already has a breakpoint)");
                     }
                     breakpoint.setServerId(serverId);
+                    // Preserve the acknowledged registration even if ResultSet.close fails.
+                    // add_breakpoint creates an enabled breakpoint; disabling is separate.
+                    breakpoint.setEnabled(true);
+                    breakpoints.add(breakpoint);
                 }
-                boolean disableRequested = !breakpoint.isEnabled();
-                // add_breakpoint creates an enabled server breakpoint. Keep that confirmed
-                // state if the separate disable operation fails, so disabling is retryable.
-                breakpoint.setEnabled(true);
-                breakpoints.add(breakpoint);
                 if (disableRequested) {
                     executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint);
                     breakpoint.setEnabled(false);
