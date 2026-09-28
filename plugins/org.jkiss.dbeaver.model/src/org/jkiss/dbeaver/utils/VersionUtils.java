@@ -19,6 +19,7 @@ package org.jkiss.dbeaver.utils;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 
+import java.math.BigInteger;
 import java.util.Collection;
 import java.util.StringTokenizer;
 
@@ -65,7 +66,8 @@ public class VersionUtils {
             String t1 = st1.nextToken();
             String t2 = st2.nextToken();
             try {
-                int cmp = Integer.parseInt(t1) - Integer.parseInt(t2);
+                // Build numbers can exceed 32-bit (or 64-bit) numeric ranges.
+                int cmp = new BigInteger(t1).compareTo(new BigInteger(t2));
                 if (cmp != 0) {
                     return cmp;
                 }
