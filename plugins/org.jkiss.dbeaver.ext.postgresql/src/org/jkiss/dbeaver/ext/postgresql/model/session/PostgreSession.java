@@ -32,7 +32,7 @@ public class PostgreSession extends AbstractServerSession {
     private static final String CAT_CLIENT = "Client";
     private static final String CAT_TIMING = "Timings";
 
-    private final int pid;
+    private final long pid;
     private String user;
     private String clientHost;
     private String clientPort;
@@ -46,7 +46,8 @@ public class PostgreSession extends AbstractServerSession {
     private String appName;
 
     public PostgreSession(ResultSet dbResult) {
-        this.pid = JDBCUtils.safeGetInt(dbResult, "pid");
+        // PostgreSQL uses int PIDs; compatible servers can expose 64-bit thread identifiers.
+        this.pid = JDBCUtils.safeGetLong(dbResult, "pid");
         this.user = JDBCUtils.safeGetStringTrimmed(dbResult, "usename");
         this.clientHost = JDBCUtils.safeGetStringTrimmed(dbResult, "client_hostname");
         if (CommonUtils.isEmpty(this.clientHost)) {
@@ -66,7 +67,7 @@ public class PostgreSession extends AbstractServerSession {
     }
 
     @Property(viewable = true, order = 1)
-    public int getPid()
+    public long getPid()
     {
         return pid;
     }

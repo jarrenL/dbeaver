@@ -39,7 +39,7 @@ class GaussDBSessionManagerTest {
         when(session.prepareStatement(sql)).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(result);
         when(result.next()).thenReturn(true, false);
-        when(result.getInt("pid")).thenReturn(42);
+        when(result.getLong("pid")).thenReturn(42L);
         when(result.getString("usename")).thenReturn(" developer ");
         when(result.getString("client_hostname")).thenReturn(" ");
         when(result.getString("client_addr")).thenReturn("2001:db8::1");
