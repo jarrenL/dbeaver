@@ -245,6 +245,148 @@ public class GaussDBExcelExportTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"use existing sheets", "create new sheets"})
+    public void appendPreservesExistingFormulasAndCrossSheetReferences(String strategy) throws Exception {
+        Path existing = temporaryDirectory.resolve("formulas.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            var history = seed.createSheet("历史");
+            history.createRow(0).createCell(0).setCellValue("金额");
+            history.createRow(1).createCell(0).setCellValue(17);
+            history.getRow(1).createCell(1).setCellFormula("A2*2");
+            seed.createSheet("汇总").createRow(0).createCell(0).setCellFormula("'历史'!B2+1");
+            seed.getCreationHelper().createFormulaEvaluator().evaluateAll();
+            seed.write(output);
+        }
+        byte[] original = Files.readAllBytes(existing);
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING, Map.of("appendStrategy", strategy), existing,
+            new Object[]{"追加"})) {
+            boolean reuse = "use existing sheets".equals(strategy);
+            assertEquals(reuse ? 2 : 3, workbook.getNumberOfSheets());
+            assertEquals(17, workbook.getSheet("历史").getRow(1).getCell(0).getNumericCellValue());
+            var formula = workbook.getSheet("历史").getRow(1).getCell(1);
+            assertEquals(CellType.FORMULA, formula.getCellType());
+            assertEquals("A2*2", formula.getCellFormula());
+            var summary = workbook.getSheet("汇总").getRow(0).getCell(0);
+            assertEquals(CellType.FORMULA, summary.getCellType());
+            assertEquals("'历史'!B2+1", summary.getCellFormula());
+            assertEquals(35, workbook.getCreationHelper().createFormulaEvaluator().evaluate(summary).getNumberValue());
+            assertEquals(1, workbook.getSheet("汇总").getPhysicalNumberOfRows());
+            assertEquals("追加", workbook.getSheetAt(reuse ? 0 : 2).getRow(reuse ? 2 : 1)
+                .getCell(0).getStringCellValue());
+        }
+        assertArrayEquals(original, Files.readAllBytes(existing));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {2, 5, 8})
+    public void fullImportedSheetsArePreservedWhenAppendRequiresNewSheet(int newRows) throws Exception {
+        Path existing = temporaryDirectory.resolve("full-sheets.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            for (int sheet = 0; sheet < 2; sheet++) {
+                var data = seed.createSheet("历史" + sheet);
+                for (int row = 0; row < 3; row++) {
+                    data.createRow(row).createCell(0).setCellValue("旧" + sheet + ":" + row);
+                }
+            }
+            seed.write(output);
+        }
+        byte[] original = Files.readAllBytes(existing);
+        Object[][] additions = new Object[newRows][];
+        for (int row = 0; row < newRows; row++) {
+            additions[row] = new Object[]{"新增" + row};
+        }
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING,
+            Map.of("appendStrategy", "use existing sheets", "splitByRowCount", 3), existing,
+            additions)) {
+            assertEquals(2 + (newRows + 1) / 2, workbook.getNumberOfSheets());
+            for (int sheet = 0; sheet < 2; sheet++) {
+                assertEquals(3, workbook.getSheetAt(sheet).getPhysicalNumberOfRows());
+                for (int row = 0; row < 3; row++) {
+                    assertEquals("旧" + sheet + ":" + row,
+                        workbook.getSheetAt(sheet).getRow(row).getCell(0).getStringCellValue());
+                }
+            }
+            for (int sheet = 2; sheet < workbook.getNumberOfSheets(); sheet++) {
+                var added = workbook.getSheetAt(sheet);
+                int first = (sheet - 2) * 2;
+                int count = Math.min(2, newRows - first);
+                assertEquals(1 + count, added.getPhysicalNumberOfRows());
+                assertEquals("金额 中文", added.getRow(0).getCell(0).getStringCellValue());
+                for (int row = 0; row < count; row++) {
+                    assertEquals("新增" + (first + row), added.getRow(row + 1).getCell(0).getStringCellValue());
+                }
+            }
+        }
+        assertArrayEquals(original, Files.readAllBytes(existing));
+    }
+
+    @Test
+    public void appendSkipsFullMiddleSheetAndPreservesUnusedTrailingSheet() throws Exception {
+        Path existing = temporaryDirectory.resolve("mixed-capacity.xlsx");
+        int[] lengths = {2, 3, 1, 2};
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            for (int sheet = 0; sheet < lengths.length; sheet++) {
+                var data = seed.createSheet("历史" + sheet);
+                for (int row = 0; row < lengths[sheet]; row++) {
+                    data.createRow(row).createCell(0).setCellValue("旧" + sheet + ":" + row);
+                }
+            }
+            seed.write(output);
+        }
+        byte[] original = Files.readAllBytes(existing);
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING,
+            Map.of("appendStrategy", "use existing sheets", "splitByRowCount", 3), existing,
+            new Object[]{"新0"}, new Object[]{"新1"}, new Object[]{"新2"})) {
+            assertEquals(4, workbook.getNumberOfSheets());
+            for (int sheet = 0; sheet < lengths.length; sheet++) {
+                assertEquals(sheet == 3 ? 2 : 3, workbook.getSheetAt(sheet).getPhysicalNumberOfRows());
+                for (int row = 0; row < lengths[sheet]; row++) {
+                    assertEquals("旧" + sheet + ":" + row,
+                        workbook.getSheetAt(sheet).getRow(row).getCell(0).getStringCellValue());
+                }
+            }
+            assertEquals("新0", workbook.getSheetAt(0).getRow(2).getCell(0).getStringCellValue());
+            assertEquals("新1", workbook.getSheetAt(2).getRow(1).getCell(0).getStringCellValue());
+            assertEquals("新2", workbook.getSheetAt(2).getRow(2).getCell(0).getStringCellValue());
+        }
+        assertArrayEquals(original, Files.readAllBytes(existing));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3})
+    public void headerlessAppendUsesEveryRowOfNewSheets(int limit) throws Exception {
+        Path existing = temporaryDirectory.resolve("headerless.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(existing)) {
+            var data = seed.createSheet("原表");
+            for (int row = 0; row < limit; row++) {
+                data.createRow(row).createCell(0).setCellValue("旧" + row);
+            }
+            seed.write(output);
+        }
+        byte[] original = Files.readAllBytes(existing);
+        Object[][] rows = {{"新增0"}, {"新增1"}, {"新增2"}, {"新增3"}, {"新增4"}};
+        try (XSSFWorkbook workbook = export(DBPDataKind.STRING,
+            Map.of("appendStrategy", "use existing sheets", "splitByRowCount", limit, "header", "none"),
+            existing, rows)) {
+            assertEquals(1 + (rows.length + limit - 1) / limit, workbook.getNumberOfSheets());
+            assertEquals(limit, workbook.getSheetAt(0).getPhysicalNumberOfRows());
+            for (int row = 0; row < limit; row++) {
+                assertEquals("旧" + row, workbook.getSheetAt(0).getRow(row).getCell(0).getStringCellValue());
+            }
+            for (int sheet = 1; sheet < workbook.getNumberOfSheets(); sheet++) {
+                int start = (sheet - 1) * limit;
+                int count = Math.min(limit, rows.length - start);
+                assertEquals(count, workbook.getSheetAt(sheet).getPhysicalNumberOfRows());
+                for (int row = 0; row < count; row++) {
+                    assertEquals(rows[start + row][0],
+                        workbook.getSheetAt(sheet).getRow(row).getCell(0).getStringCellValue());
+                }
+            }
+        }
+        assertArrayEquals(original, Files.readAllBytes(existing));
+    }
+
     @Test
     public void emptyImportedSheetStartsWithHeaderAtZero() throws Exception {
         Path existing = temporaryDirectory.resolve("empty.xlsx");

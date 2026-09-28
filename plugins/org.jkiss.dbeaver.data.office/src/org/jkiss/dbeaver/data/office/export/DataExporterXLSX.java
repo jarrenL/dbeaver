@@ -118,6 +118,7 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
     private int splitByCol = 0;
     private int rowCount = 0;
     private int sheetIndex = 0;
+    private int importedSheetCount = 0;
 
     private XSSFCellStyle style;
     private XSSFCellStyle styleDate;
@@ -167,6 +168,7 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
         if (wb == null) {
             wb = new SXSSFWorkbook(ROW_WINDOW);
         }
+        importedSheetCount = wb.getNumberOfSheets();
 
         worksheets = new HashMap<>(1);
         styleHeader = (XSSFCellStyle) wb.createCellStyle();
@@ -397,21 +399,25 @@ public class DataExporterXLSX extends StreamExporterAbstract implements IAppenda
     private Worksheet createSheet(DBCResultSet resultSet, Object colValue) throws DBException {
         final Sheet sheet;
         final Worksheet worksheet;
-        if (appendStrategy == AppendStrategy.USE_EXISTING_SHEETS && sheetIndex < wb.getNumberOfSheets()) {
-            sheet = wb.getSheetAt(sheetIndex++);
-            Sheet originalSheet = wb.getXSSFWorkbook().getSheetAt(wb.getSheetIndex(sheet));
+        while (appendStrategy == AppendStrategy.USE_EXISTING_SHEETS && sheetIndex < importedSheetCount) {
+            Sheet imported = wb.getSheetAt(sheetIndex++);
+            Sheet originalSheet = wb.getXSSFWorkbook().getSheetAt(wb.getSheetIndex(imported));
             // Physical row count excludes gaps. SXSSF can only append after the last imported row.
             int nextRow = originalSheet.getPhysicalNumberOfRows() == 0 ? 0 : originalSheet.getLastRowNum() + 1;
-            worksheet = new Worksheet(sheet, colValue, nextRow);
-        } else {
-            if (CommonUtils.toBoolean(getSite().getProperties().get(PROP_USE_DEFAULT_SPREADSHEET_NAMES), true)) {
-                sheet = wb.createSheet();
-            } else {
-                sheet = wb.createSheet(WorksheetUtils.makeUniqueSheetName(wb, exportTableName));
+            if (nextRow >= splitByRowCount) {
+                continue;
             }
-
-            worksheet = new Worksheet(sheet, colValue, 0);
+            Worksheet reused = new Worksheet(imported, colValue, nextRow);
+            printHeader(resultSet, reused);
+            return reused;
         }
+        // Newly generated streaming sheets are never imported/reused on the next rollover.
+        if (CommonUtils.toBoolean(getSite().getProperties().get(PROP_USE_DEFAULT_SPREADSHEET_NAMES), true)) {
+            sheet = wb.createSheet();
+        } else {
+            sheet = wb.createSheet(WorksheetUtils.makeUniqueSheetName(wb, exportTableName));
+        }
+        worksheet = new Worksheet(sheet, colValue, 0);
         printHeader(resultSet, worksheet);
         return worksheet;
     }
