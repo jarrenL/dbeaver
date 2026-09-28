@@ -1,0 +1,647 @@
+{
+  "sourceCommit": "814d6322b6",
+  "scope": "Explicit compiled overlays using resolved OSGi dependencies; not full product or database acceptance",
+  "total": 1327,
+  "runs": [
+    {
+      "module": "core",
+      "log": "/tmp/array-family-core-20260929.log",
+      "scope": "existing OSGi bundles with explicit compiled overlays; not a full build or live-database run",
+      "excludedLiveClasses": [
+        "GaussDBReviewLiveTest",
+        "GaussDBDumpAllLiveTest",
+        "GaussDBNativeLiveTest"
+      ],
+      "classes": [
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.GaussDBDataSourceProviderTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.edit.GaussDBDatabaseManagerTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.edit.GaussDBProcedureManagerTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.edit.GaussDBTablespaceContractTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.DBCompatibilityEnumTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBBackupAllSanitizerTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBBackupPublicationTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBBackupPublishTest",
+          "tests": 33,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBCSVReplacementTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDialectTest",
+          "tests": 32,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBExcelExportTest",
+          "tests": 74,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBInsertFromDataTest",
+          "tests": 52,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBInsertReplaceMethodTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBMetadataErrorHandlerTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBNativeOutputTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBNativePasswordTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageCompileBatchTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageCompilerTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageSourceLinesTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPredicateScannerTest",
+          "tests": 34,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedureTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProjectionMetadataTest",
+          "tests": 89,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBResultSetEditabilityTest",
+          "tests": 37,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBSQLSafetyTest",
+          "tests": 51,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBSchemaTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBServerInfoTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBStreamExportFailureTest",
+          "tests": 49,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBTablePartitionTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.GaussDBTableTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.PostgreLockManagerCompatibilityTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.PostgreServerGaussDBTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.data.GaussDBBinaryValueHandlerTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.data.GaussDBCompositeBindingTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.model.data.GaussDBVectorValueHandlerTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 638
+    },
+    {
+      "module": "debug",
+      "log": "/tmp/array-family-debug-20260929.log",
+      "scope": "existing OSGi bundles with explicit compiled overlays; not a full build or live-database run",
+      "excludedLiveClasses": [
+        "GaussDBSessionLiveTest",
+        "GaussDBHistoricalJdbcLiveTest"
+      ],
+      "classes": [
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.DatabaseBreakpointRoutingTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.DatabaseThreadSnapshotTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.DatabaseWatchLifecycleTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.DebugSourceNavigationTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.DebugTransactionCompletionTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBCrossSchemaTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugArgumentsTest",
+          "tests": 19,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugEligibilityTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.QueryHistoryPageTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.ResultSetErrorMessagesTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.SQLFoldingRevisionTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugProtocolTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugRoleTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugSessionTest",
+          "tests": 34,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBRemovedBreakpointTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 112
+    },
+    {
+      "module": "pg",
+      "log": "/tmp/array-family-pg-20260929.log",
+      "scope": "existing OSGi bundles with explicit compiled overlays; not a full build or live-database run",
+      "excludedLiveClasses": [],
+      "classes": [
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.PostgreArrayNullSyntaxTest",
+          "tests": 22,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.PostgreCompositeArrayRoundTripTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.PostgreNumericPrecisionTest",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.PostgreValueParserTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.model.data.PostgreArrayTextBindingTest",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.model.plan.PostgrePlanResponseTest",
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.model.plan.PostgrePlanTransactionTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreSavedPlanTest",
+          "tests": 23,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreXmlPlanHierarchyTest",
+          "tests": 26,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 159
+    },
+    {
+      "module": "platform",
+      "log": "/tmp/array-family-platform-20260929.log",
+      "scope": "existing OSGi bundles with explicit compiled overlays; not a full build or live-database run",
+      "excludedLiveClasses": [],
+      "classes": [
+        {
+          "class": "org.jkiss.dbeaver.model.AuthProfileSecretStorageTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.ConnectionFilterSerializationTest",
+          "tests": 36,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.NetworkProfileContractsTest",
+          "tests": 24,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.data.storage.BytesContentStorageTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.data.storage.StringContentStorageTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.data.storage.TemporaryContentStorageTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.exec.ExecutionContextReplacementTest",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.impl.data.formatters.DateTimeDataFormatterLocaleTest",
+          "tests": 51,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.impl.jdbc.data.JDBCCollectionCloneTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOBReadTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBytesReadTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentCLOBReadTest",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentXMLReadTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.model.sql.SQLQueryRecoveryPolicyTest",
+          "tests": 51,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.registry.UserFilterExportRoundTripTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.runtime.qm.PersistentQueryHistoryTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.runtime.qm.QueryHistoryEventMapperTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.runtime.qm.QueryHistoryPersistenceServiceTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.runtime.qm.QueryHistoryStoreTest",
+          "tests": 29,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.utils.DatabaseExceptionContractTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.utils.ProgressMonitorContractTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.utils.VersionUtilsTest",
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 375
+    },
+    {
+      "module": "editor",
+      "log": "/tmp/array-family-editor-20260929.log",
+      "scope": "existing OSGi bundles with explicit compiled overlays; not a full build or live-database run",
+      "excludedLiveClasses": [],
+      "classes": [
+        {
+          "class": "org.jkiss.dbeaver.acceptance.BinaryEditorContentReloadTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.acceptance.TextEditorContentReloadTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "org.jkiss.dbeaver.ui.editors.content.ContentEditorFileImportTest",
+          "tests": 35,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "total": 43
+    }
+  ]
+}

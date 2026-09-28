@@ -1,5 +1,22 @@
 # 跨模块组件回归记录（2026-09-29）
 
+## 最新复验：数组、复合值与复制隔离修复后
+
+基线 `814d6322b6`，共享入口带 `--sql-editor --gauss-core --gauss-debug --compile-only` 重编译，输出 `/tmp/shared-focused-sVlPxL`；编辑器专项重新编译输出 `/tmp/hex-content-test-dywiZ7`。随后五模块在各自独立 OSGi 配置运行：
+
+| 模块 | 类数 | 通过数 |
+|---|---:|---:|
+| GaussDB 核心 | 35 | 638 |
+| GaussDB 调试 | 15 | 112 |
+| 平台共享 | 22 | 375 |
+| PostgreSQL 解析/绑定/计划 | 9 | 159 |
+| 数据编辑器 | 3 | 43 |
+| 合计 | 84 | 1327 |
+
+全部零失败、错误、跳过，逐类报告门控通过。详见 [本轮机器可读证据](evidence/ARRAY_FAMILY_REGRESSION_20260929.json)。前置编辑器/JDBC 59 项、共享专项 888 项及下方旧快照与本批重叠，不能相加。
+
+本轮完整 Maven 入口 `results/run-CgFUha/maven.log` 仍在 Tycho 缓存锁等待 10 秒后失败，测试未执行；Docker API 拒绝访问，辅助审核因日志路径权限失败未形成报告。没有删除锁或修改这些系统权限。此处不是完整构建、真库、GUI 或整包验收，剩余需求仍按覆盖清单处理。
+
 ## 结论与范围
 
 以代码提交 `59aadfcbe2` 为基线，重新编译指定生产源码与测试，通过现有解析依赖启动独立 OSGi 配置。五个模块共 **77 类、1,230 项，全部通过，零失败、错误、跳过**。逐类结果见 [回归证据](evidence/OSGI_COMPONENT_REGRESSION_20260929.json)。
