@@ -94,12 +94,14 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                 DBPPlatform platform = DBWorkbench.getPlatform();
                 if (contentLength < platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)) {
                     try {
+                        final DBDContentStorage newStorage;
                         try (InputStream bs = blob.getBinaryStream()) {
-                            storage = BytesContentStorage.createFromStream(
+                            newStorage = BytesContentStorage.createFromStream(
                                 bs,
                                 contentLength,
                                 getDefaultEncoding());
                         }
+                        storage = newStorage;
                     } catch (IOException e) {
                         throw new DBCException("IO error while reading content", e);
                     } catch (Throwable e) {

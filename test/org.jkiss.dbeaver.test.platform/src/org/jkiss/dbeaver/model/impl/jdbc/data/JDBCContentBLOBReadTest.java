@@ -53,6 +53,49 @@ class JDBCContentBLOBReadTest {
         workbenchField.set(null, originalWorkbench);
     }
     @ParameterizedTest
+    @ValueSource(strings = {"success", "read", "first-close", "second-close"})
+    void memoryReadDoesNotPublishBeforeAllStreamClosesSucceed(String stage) throws Exception {
+        var blob = mock(Blob.class);
+        var original = new byte[] {0, -1, 7, 127};
+        var replacement = new byte[] {4, 3, 2, 1};
+        when(blob.length()).thenReturn(4L);
+        var failure = new IOException("memory stream failure");
+        var closes = new java.util.concurrent.atomic.AtomicInteger();
+        var stream = new FilterInputStream(new ByteArrayInputStream(original)) {
+            @Override public int read(byte[] target, int offset, int length) throws IOException {
+                if (stage.equals("read")) throw failure;
+                return super.read(target, offset, length);
+            }
+            @Override public void close() throws IOException {
+                int count = closes.incrementAndGet();
+                super.close();
+                if (stage.equals("first-close") && count == 1 || stage.equals("second-close") && count == 2) {
+                    throw failure;
+                }
+            }
+        };
+        when(blob.getBinaryStream()).thenReturn(stream);
+        var monitor = mock(DBRProgressMonitor.class);
+        var content = new JDBCContentBLOB(mock(DBCExecutionContext.class), blob) {
+            @Override protected String getDefaultEncoding() { return "UTF-8"; }
+        };
+        if (!stage.equals("success")) {
+            var thrown = assertThrows(DBException.class, () -> content.getContents(monitor));
+            assertSame(failure, thrown.getCause().getCause());
+            verify(blob, never()).free();
+            when(blob.getBinaryStream()).thenReturn(new ByteArrayInputStream(replacement));
+        }
+        var storage = content.getContents(monitor);
+        assertArrayEquals(stage.equals("success") ? original : replacement, storage.getContentStream().readAllBytes());
+        assertTrue(closes.get() > 0);
+        verify(blob, times(stage.equals("success") ? 1 : 2)).getBinaryStream();
+        verify(blob).free();
+        assertSame(storage, content.getContents(monitor));
+        content.release();
+        verify(blob).free();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"success", "read", "close", "cancel"})
     void diskCopyPreservesBytesAndCleansFailureBeforeRetry(String stage) throws Exception {
         when(platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)).thenReturn(0);
