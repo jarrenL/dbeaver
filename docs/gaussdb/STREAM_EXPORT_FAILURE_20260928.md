@@ -55,3 +55,11 @@
 新增4项：表尾、dispose、ZIP finish失败分别经公开finishTransfer返回DBException，抑制列表中的错误与事件收到的错误一致，cause为注入的原始IOException；成功对照在非最终回调完成表尾和关闭但不通知，在最终汇总回调发送一次FINISH且不再次关闭。
 
 最新 `/tmp/stream-event-routing-final.log`：26/26通过、0跳过、0失败。此轮无新增生产修改。使用生产分派代码和模拟注册表/描述符/事件处理器，不是OSGi扩展实例、脚本通知、系统弹窗或完整DataTransferJob调度验证；这些验收边界保持未完成。
+
+## 任务层原始错误保留
+
+进一步调用DataTransferJob私有transferData生产方法，模拟生产者抛数据库DBException或DBInterruptedException，结束回调分别正常返回、抛DBException、抛运行时异常、重新抛同一异常，共8项。校验原错误身份、附加异常、结束回调及monitor.done。
+
+红测 `/tmp/stream-job-primary-red.log` 为34项中30通过、4失败：两类原错误均被通知阶段的受检/运行时异常覆盖。DataTransferJob修复为捕获结束回调异常，附加到原错误（排除自身），继续记录并重新抛出原错误。取消异常类型得到保留，但尚未运行调度器验证最终CANCEL状态。
+
+绿测 `/tmp/stream-job-primary-green.log` 为34/34通过、0跳过、0失败。专项脚本同时编译当前DataTransferJob和StreamTransferConsumer源码；测试绕过Job构造及调度，用反射调用真实transferData，生产者、消费器、日志和monitor为模拟对象。不等同真实数据库断连、操作系统调度或GUI通知验收。

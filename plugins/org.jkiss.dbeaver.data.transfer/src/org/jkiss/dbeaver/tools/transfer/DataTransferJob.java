@@ -165,7 +165,14 @@ public class DataTransferJob extends AbstractJob {
 
             consumer.finishTransfer(monitor, false);
         } catch (Exception e) {
-            consumer.finishTransfer(monitor, e, task, false);
+            try {
+                consumer.finishTransfer(monitor, e, task, false);
+            } catch (Exception finishError) {
+                // Reporting/cleanup must not replace the database failure or cancellation.
+                if (finishError != e) {
+                    e.addSuppressed(finishError);
+                }
+            }
             log.error("Error transferring data from " + inputName + " to " + outputName, e);
             throw e;
         } finally {

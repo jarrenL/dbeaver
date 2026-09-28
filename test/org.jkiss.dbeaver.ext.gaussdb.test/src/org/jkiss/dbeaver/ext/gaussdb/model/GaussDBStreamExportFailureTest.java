@@ -35,6 +35,48 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 public class GaussDBStreamExportFailureTest {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"false,none", "false,checked", "false,runtime", "false,same",
+        "true,none", "true,checked", "true,runtime", "true,same"})
+    public void transferJobKeepsProducerErrorWhenErrorNotificationFails(boolean cancelled, String notification) throws Exception {
+        Class<?> jobType = org.jkiss.dbeaver.tools.transfer.DataTransferJob.class;
+        var job = mock(org.jkiss.dbeaver.tools.transfer.DataTransferJob.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.DataTransferSettings.class);
+        var producer = mock(org.jkiss.dbeaver.tools.transfer.IDataTransferProducer.class);
+        var consumer = mock(org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var logger = mock(org.jkiss.dbeaver.Log.class);
+        for (var entry : java.util.Map.of("settings", settings, "log", logger).entrySet()) {
+            Field field = jobType.getDeclaredField(entry.getKey());
+            field.setAccessible(true);
+            field.set(job, entry.getValue());
+        }
+        when(producer.getObjectFullName(monitor)).thenReturn("synthetic-source");
+        when(consumer.getObjectFullName(monitor)).thenReturn("synthetic-output");
+        DBException original = cancelled
+            ? new org.jkiss.dbeaver.runtime.DBInterruptedException("synthetic cancellation")
+            : new DBException("synthetic database read failure");
+        Exception secondary = switch (notification) {
+            case "checked" -> new DBException("synthetic notification failure");
+            case "runtime" -> new IllegalStateException("synthetic extension failure");
+            case "same" -> original;
+            default -> null;
+        };
+        doThrow(original).when(producer).transferData(monitor, consumer, null, null, null, -1);
+        if (secondary != null) doThrow(secondary).when(consumer).finishTransfer(monitor, original, null, false);
+        var pipe = new org.jkiss.dbeaver.tools.transfer.DataTransferPipe(producer, consumer);
+        Method transfer = jobType.getDeclaredMethod("transferData", DBRProgressMonitor.class,
+            org.jkiss.dbeaver.tools.transfer.DataTransferPipe.class);
+        transfer.setAccessible(true);
+        InvocationTargetException thrown = assertThrows(InvocationTargetException.class,
+            () -> transfer.invoke(job, monitor, pipe));
+        assertSame(original, thrown.getCause());
+        assertArrayEquals(secondary == null || secondary == original ? new Throwable[0] : new Throwable[]{secondary},
+            original.getSuppressed());
+        verify(consumer).finishTransfer(monitor, original, null, false);
+        verify(monitor).done();
+    }
+
     @Test
     public void successEventIsSentOnlyOnFinalSummaryAfterFileIsClosed() throws Exception {
         var consumer = new StreamTransferConsumer();
