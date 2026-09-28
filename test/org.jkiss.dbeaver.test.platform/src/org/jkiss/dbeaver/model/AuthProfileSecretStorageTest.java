@@ -33,6 +33,49 @@ import static org.mockito.Mockito.*;
 class AuthProfileSecretStorageTest {
     private static final String KEY = "fixture/auth-profile";
 
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"user\":null,\"password\":null,\"properties\":null}"})
+    void explicitEmptySecretObjectStillClearsCredentials(String json) throws Exception {
+        var controller = mock(DBSSecretController.class);
+        when(controller.getPrivateSecretValue(KEY)).thenReturn(json);
+        var source = profile(true);
+        source.resolveSecrets(controller);
+        assertNull(source.getUserName());
+        assertNull(source.getUserPassword());
+        assertTrue(source.getProperties().isEmpty());
+        assertTrue(source.isSavePassword());
+        verify(controller).getPrivateSecretValue(KEY);
+        verifyNoMoreInteractions(controller);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "null", "[]", "{\"user\":[\"synthetic-sensitive-marker\"]}",
+        "{\"password\":{\"token\":\"synthetic-sensitive-marker\"}}",
+        "{\"user\":\"changed\",\"properties\":[\"synthetic-sensitive-marker\"]}",
+        "{\"properties\":{\"token\":{\"nested\":\"synthetic-sensitive-marker\"}}}",
+        "{\"password\":\"synthetic-sensitive-marker\""
+    })
+    void corruptedSecretPreservesRuntimeStateAndAllowsCorrectedRetry(String json) throws Exception {
+        var controller = mock(DBSSecretController.class);
+        when(controller.getPrivateSecretValue(KEY)).thenReturn(json,
+            "{\"user\":\"recovered-user\",\"password\":\"synthetic-recovered\",\"properties\":{\"realm\":\"recovered\"}}");
+        var source = profile(true);
+        var failure = assertThrows(DBException.class, () -> source.resolveSecrets(controller));
+        var errors = new java.io.StringWriter();
+        failure.printStackTrace(new java.io.PrintWriter(errors));
+        assertFalse(errors.toString().contains("synthetic-sensitive-marker"), "Malformed payload must not leak into diagnostics");
+        assertEquals("中文用户", source.getUserName());
+        assertEquals("synthetic-profile-secret", source.getUserPassword());
+        assertEquals(Map.of("realm", "fixture-domain"), source.getProperties());
+        source.resolveSecrets(controller);
+        assertEquals("recovered-user", source.getUserName());
+        assertEquals("synthetic-recovered", source.getUserPassword());
+        assertEquals(Map.of("realm", "recovered"), source.getProperties());
+        verify(controller, times(2)).getPrivateSecretValue(KEY);
+        verifyNoMoreInteractions(controller);
+    }
+
     private DBAAuthProfile profile(boolean save) {
         var profile = spy(new DBAAuthProfile());
         doReturn(KEY).when(profile).getSecretKeyId();

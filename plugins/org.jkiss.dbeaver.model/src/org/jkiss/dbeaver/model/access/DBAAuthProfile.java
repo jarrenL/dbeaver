@@ -17,6 +17,8 @@
 
 package org.jkiss.dbeaver.model.access;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
@@ -30,7 +32,6 @@ import org.jkiss.dbeaver.model.secret.DBSSecretController;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.utils.CommonUtils;
 
-import java.io.StringReader;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -145,10 +146,31 @@ public class DBAAuthProfile extends DBPConfigurationProfile {
             return;
         }
 
-        Map<String, Object> props = JSONUtils.parseMap(DBInfoUtils.SECRET_GSON, new StringReader(secretValue));
+        Map<String, Object> props;
+        try {
+            JsonElement json = DBInfoUtils.SECRET_GSON.fromJson(secretValue, JsonElement.class);
+            if (json == null || !json.isJsonObject()) {
+                throw new DBException("Invalid authentication profile secret");
+            }
+            props = DBInfoUtils.SECRET_GSON.fromJson(json, JSONUtils.MAP_TYPE_TOKEN);
+        } catch (JsonParseException e) {
+            // Parser exception text may contain credentials from the malformed payload.
+            throw new DBException("Invalid authentication profile secret");
+        }
+        if ((props.get("user") != null && !(props.get("user") instanceof String))
+            || (props.get("password") != null && !(props.get("password") instanceof String))) {
+            throw new DBException("Invalid authentication profile secret");
+        }
+        Object extensions = props.get("properties");
+        if (extensions != null && (!(extensions instanceof Map<?, ?> values)
+            || values.values().stream().anyMatch(value -> value != null && !(value instanceof String)))) {
+            throw new DBException("Invalid authentication profile secret");
+        }
+        // Validate and convert the entire record before replacing any runtime credentials.
+        Map<String, String> properties = JSONUtils.deserializeStringMap(props, "properties");
         userName = JSONUtils.getString(props, "user");
         userPassword = JSONUtils.getString(props, "password");
-        setProperties(JSONUtils.deserializeStringMap(props, "properties"));
+        setProperties(properties);
     }
 
     private void loadFromLegacySecret(@NotNull DBSSecretController secretController) throws DBException {
