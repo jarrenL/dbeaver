@@ -35,6 +35,43 @@ class PostgrePlanResponseTest {
         + "<Plan-Rows>1</Plan-Rows></Plan></Query></explain>";
 
     @ParameterizedTest
+    @ValueSource(strings = {"valid", "malformed", "read"})
+    void sqlXmlReleaseFailureDoesNotHideOriginalFailure(String stage) throws Exception {
+        var plan = new PostgreExecutionPlan(false, false, "SELECT 1", new DBCQueryPlannerConfiguration());
+        var session = mock(JDBCSession.class);
+        when(session.getExecutionContext()).thenReturn(mock(org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext.class));
+        when(session.getAutoCommit()).thenReturn(true);
+        var statement = mock(JDBCStatement.class);
+        var result = mock(JDBCResultSet.class);
+        var xml = mock(SQLXML.class);
+        when(session.createStatement()).thenReturn(statement);
+        when(statement.executeQuery(plan.getPlanQueryString())).thenReturn(result);
+        when(result.next()).thenReturn(true, false);
+        when(result.getSQLXML(1)).thenReturn(xml);
+        String payload = stage.equals("malformed") ? "<" : VALID;
+        when(xml.getBinaryStream()).thenReturn(new ByteArrayInputStream(payload.getBytes(StandardCharsets.UTF_8)));
+        when(xml.getString()).thenReturn(payload);
+        var readFailure = new java.sql.SQLException("synthetic XML read failure");
+        if (stage.equals("read")) when(xml.getString()).thenThrow(readFailure);
+        var releaseFailure = new java.sql.SQLException("synthetic XML release failure");
+        doThrow(releaseFailure).when(xml).free();
+        var failure = assertThrows(DBCException.class, () -> plan.explain(session));
+        if (stage.equals("valid")) assertSame(releaseFailure, failure.getCause());
+        else {
+            if (stage.equals("read")) assertSame(readFailure, failure.getCause());
+            assertArrayEquals(new Throwable[]{releaseFailure}, failure.getCause().getSuppressed());
+        }
+        var order = inOrder(xml, result, statement, session);
+        order.verify(xml).free();
+        order.verify(result).close();
+        order.verify(statement).close();
+        order.verify(session).rollback();
+        order.verify(session).setAutoCommit(true);
+        assertTrue(plan.getPlanNodes(Map.of()).isEmpty());
+        assertNull(plan.getPlanSourceData());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"no-row", "null-xml", "<", "<explain/>", "<explain><Query/></explain>", "read-source"})
     void invalidResponseIsReportedClearsPreviousPlanAndCanRetry(String response) throws Exception {
         var plan = new PostgreExecutionPlan(false, false, "SELECT 1", new DBCQueryPlannerConfiguration());
@@ -58,8 +95,8 @@ class PostgrePlanResponseTest {
         when(session.createStatement()).thenReturn(statement);
         when(statement.executeQuery(plan.getPlanQueryString())).thenReturn(result);
         when(result.next()).thenReturn(!response.equals("no-row"), false);
+        SQLXML xml = mock(SQLXML.class);
         if (!response.equals("null-xml")) {
-            SQLXML xml = mock(SQLXML.class);
             String payload = response.equals("read-source") ? VALID : response;
             when(xml.getString()).thenReturn(payload);
             if (response.equals("read-source")) {
@@ -70,6 +107,7 @@ class PostgrePlanResponseTest {
         }
         if (fails) assertThrows(DBCException.class, () -> plan.explain(session));
         else plan.explain(session);
+        if (!response.equals("null-xml") && !response.equals("no-row")) verify(xml).free();
         verify(result).close();
         verify(statement).close();
         verify(session).rollback();

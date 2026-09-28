@@ -2569,6 +2569,81 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             true, "Recursive Union", "WorkTable Scan"));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void realPlanAnalysisPreservesPendingUserWrites(boolean queryFails) throws Exception {
+        inIsolatedSchema((connection, schema) -> {
+            String table = schema + ".plan_transaction";
+            execute(connection, "CREATE TABLE " + table + "(id integer)");
+            execute(connection, "INSERT INTO " + table + " VALUES(0)");
+            connection.setAutoCommit(false);
+            execute(connection, "INSERT INTO " + table + " VALUES(1)");
+            var session = livePlanSession(connection);
+            var configuration = new org.jkiss.dbeaver.model.exec.plan.DBCQueryPlannerConfiguration();
+            configuration.getParameters().put("ANALYZE", true);
+            var plan = new org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreExecutionPlan(false, false,
+                queryFails ? "SELECT missing_column FROM " + table : "INSERT INTO " + table + " VALUES(2)", configuration);
+            if (queryFails) {
+                assertThrows(org.jkiss.dbeaver.model.exec.DBCException.class, () -> plan.explain(session));
+            } else {
+                plan.explain(session);
+                assertFalse(plan.getPlanNodes(java.util.Map.of()).isEmpty());
+            }
+            assertFalse(connection.getAutoCommit());
+            assertPlanFixtureIds(connection, table, List.of(0, 1));
+            verify(session, never()).rollback();
+            verify(session, never()).commit();
+            // A subsequent user rollback proves the pending row was not committed by analysis.
+            connection.rollback();
+            assertPlanFixtureIds(connection, table, List.of(0));
+            connection.rollback();
+            connection.setAutoCommit(true);
+            var autoPlan = new org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreExecutionPlan(false, false,
+                "INSERT INTO " + table + " VALUES(3)", configuration);
+            autoPlan.explain(session);
+            assertTrue(connection.getAutoCommit());
+            assertPlanFixtureIds(connection, table, List.of(0));
+        });
+    }
+
+    private static void assertPlanFixtureIds(Connection connection, String table, List<Integer> expected) throws Exception {
+        try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT id FROM " + table + " ORDER BY id")) {
+            var actual = new java.util.ArrayList<Integer>();
+            while (rows.next()) {
+                actual.add(rows.getInt(1));
+            }
+            assertEquals(expected, actual);
+        }
+    }
+
+    /** Forward SQL and transaction operations to the real JDBC connection, not a prefetched XML payload. */
+    private static org.jkiss.dbeaver.model.exec.jdbc.JDBCSession livePlanSession(Connection connection) throws Exception {
+        var session = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        when(session.getExecutionContext()).thenReturn(mock(org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext.class));
+        when(session.getAutoCommit()).thenAnswer(i -> connection.getAutoCommit());
+        doAnswer(i -> { connection.setAutoCommit(i.getArgument(0)); return null; }).when(session).setAutoCommit(anyBoolean());
+        when(session.setSavepoint()).thenAnswer(i -> connection.setSavepoint());
+        doAnswer(i -> { connection.rollback(); return null; }).when(session).rollback();
+        doAnswer(i -> { connection.rollback(i.getArgument(0)); return null; }).when(session).rollback(any(java.sql.Savepoint.class));
+        doAnswer(i -> { connection.releaseSavepoint(i.getArgument(0)); return null; }).when(session).releaseSavepoint(any());
+        when(session.createStatement()).thenAnswer(i -> {
+            var actual = connection.createStatement();
+            actual.setQueryTimeout(15);
+            var statement = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement.class);
+            doAnswer(call -> { actual.close(); return null; }).when(statement).close();
+            when(statement.executeQuery(anyString())).thenAnswer(call -> {
+                var result = actual.executeQuery(call.getArgument(0));
+                var rows = mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+                when(rows.next()).thenAnswer(read -> result.next());
+                when(rows.getSQLXML(1)).thenAnswer(read -> result.getSQLXML(1));
+                doAnswer(read -> { result.close(); return null; }).when(rows).close();
+                return rows;
+            });
+            return statement;
+        });
+        return session;
+    }
+
     private static void assertRealPlan(Connection c, String query, boolean analyze, String... requiredNodeTypes) throws Exception {
         // Dedicated fixture session only: expose the operator tree instead of an opaque shipped query.
         execute(c, "SET enable_fast_query_shipping = off");
@@ -3428,7 +3503,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             properties.load(input);
         }
         String url = properties.getProperty("url");
-        String driverClass = properties.getProperty("driverClass");
+        String driverClass = properties.getProperty("driverClass", System.getenv("GAUSSDB_HISTORY_DRIVER_CLASS"));
         assertNotNull(url);
         assertNotNull(driverClass);
         properties.remove("url");

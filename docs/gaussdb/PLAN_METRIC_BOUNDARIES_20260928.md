@@ -1,5 +1,25 @@
 # 执行计划统计字段与缺失节点类型验证
 
+## 2026-09-28最新补验结论
+
+计划专项现为72/72通过、0跳过、0失败（`/tmp/plan-cleanup-boundaries.log`）。包含既有61项、SQLXML释放错误3项及事务清理边界8项，不是新增72项，也不并入旧完整回归1882项。
+
+### SQLXML生命周期
+
+成功、坏XML、取源码失败等既有响应路径增加SQLXML.free恰好一次断言；新增正常解析/解析失败/读取失败三种释放异常。红测64项中55通过、9失败（`/tmp/plan-xml-release-red.log`），修复try-with-resources后64/64通过（`/tmp/plan-xml-release-green.log`）。释放失败显式报告，解析或读取的原始错误优先，释放错误附加为suppressed；随后仍关闭结果集、语句并清理分析事务。输入流单独所有权仍非本轮结论。
+
+### 事务清理与不支持保存点
+
+新增8项：手动事务rollback(savepoint)失败、releaseSavepoint失败、自动提交恢复失败，各分别覆盖计划成功和XML解析失败；另测保存点返回null和SQLFeatureNotSupportedException。验证错误身份与suppressed、无成功计划残留、不提交、不用全局回滚替代保存点、保存点回滚失败时不释放。全部组件测试通过，无需额外生产修复。
+
+### 真库入口与本轮未验范围
+
+新增两项参数化真库场景`realPlanAnalysisPreservesPendingUserWrites`：已提交基线行0，用户未提交行1；生产explain执行ANALYZE INSERT行2或真实错误查询，之后应仅见0/1且仍为手动事务；用户rollback后只见0，再验证自动提交分析INSERT行3无残留。JDBCSession/Statement/ResultSet适配器模拟，SQL、SQLXML与事务操作全部转发真实JDBC连接，不使用预取XML替代事务。finally仅清理本测试随机schema。此用例尚未获得通过结果。
+
+找回本地原有隔离配置，允许通过GAUSSDB_HISTORY_DRIVER_CLASS补充其未包含的driverClass字段，密码不写入代码或文档。首次按驱动服务描述设置org.postgresql.Driver失败，检查jar实际类后修正为com.huawei.gauss200.jdbc.Driver。正确驱动下直接编译成功，但4项计划回归＋2项事务测试均在建立连接时被SocketException: Operation not permitted拒绝（`/tmp/live-plan-transaction-driver-20260928.log`）；0通过、6失败、0跳过，未执行测试DDL。Docker容器内只读gsql连接检查成功不能替代JDBC产品链路验收。
+
+再次尝试本机Hermes只读审查，因会话目录不可写及Operation not permitted初始化失败（`/tmp/hermes-plan-review-20260928.log`），未获得审查结论。完整构建、真实事务数据断言、Linux GUI和最新推送仍待，不以此专项结果宣称全量验收。
+
 对应历史清单7.1–7.2，使用GaussDB复用的PostgrePlanNodeXML/PostgrePlanNodeBase生产解析器。输入为独立构造的XML，不冒充服务器实测计划。
 
 ## 新增场景

@@ -23,11 +23,13 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlannerConfiguration;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.SQLXML;
+import java.sql.SQLFeatureNotSupportedException;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -99,6 +101,68 @@ class PostgrePlanTransactionTest {
         else assertSame(rollback, failure.getCause());
         verify(session).setAutoCommit(false);
         verify(session, never()).setAutoCommit(true);
+        verify(session, never()).commit();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"rollback,false", "rollback,true", "release,false", "release,true", "restore,false", "restore,true"})
+    void cleanupFailurePreservesOriginalErrorAndNeverCommits(String stage, boolean malformed) throws Exception {
+        var session = session();
+        Savepoint savepoint = mock(Savepoint.class);
+        SQLException cleanup = new SQLException("synthetic " + stage + " failure");
+        boolean autoCommit = stage.equals("restore");
+        when(session.getAutoCommit()).thenReturn(autoCommit);
+        when(session.setSavepoint()).thenReturn(savepoint);
+        switch (stage) {
+            case "rollback" -> doThrow(cleanup).when(session).rollback(savepoint);
+            case "release" -> doThrow(cleanup).when(session).releaseSavepoint(savepoint);
+            case "restore" -> doThrow(cleanup).when(session).setAutoCommit(true);
+            default -> throw new AssertionError(stage);
+        }
+        var plan = plan(session, malformed);
+        DBCException failure = assertThrows(DBCException.class, () -> plan.explain(session));
+        if (malformed) {
+            assertArrayEquals(new Throwable[]{cleanup}, failure.getSuppressed());
+        } else {
+            assertSame(cleanup, failure.getCause());
+        }
+        assertTrue(plan.getPlanNodes(java.util.Map.of()).isEmpty());
+        assertNull(plan.getPlanSourceData());
+        var order = inOrder(session);
+        if (autoCommit) {
+            order.verify(session).setAutoCommit(false);
+            order.verify(session).rollback();
+            order.verify(session).setAutoCommit(true);
+            verify(session, never()).setSavepoint();
+        } else {
+            order.verify(session).setSavepoint();
+            order.verify(session).rollback(savepoint);
+            if (stage.equals("release")) {
+                order.verify(session).releaseSavepoint(savepoint);
+            } else {
+                verify(session, never()).releaseSavepoint(any());
+            }
+            verify(session, never()).rollback();
+            verify(session, never()).setAutoCommit(anyBoolean());
+        }
+        verify(session, never()).commit();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void unavailableSavepointRefusesAnalysisWithoutGlobalRollback(boolean unsupported) throws Exception {
+        var session = session();
+        if (unsupported) {
+            when(session.setSavepoint()).thenThrow(new SQLFeatureNotSupportedException("synthetic unsupported savepoint"));
+        }
+        var plan = new PostgreExecutionPlan(false, false, "SELECT 1", new DBCQueryPlannerConfiguration());
+        var failure = assertThrows(DBCException.class, () -> plan.explain(session));
+        assertInstanceOf(SQLException.class, failure.getCause());
+        verify(session, never()).createStatement();
+        verify(session, never()).rollback();
+        verify(session, never()).rollback(any(Savepoint.class));
+        verify(session, never()).releaseSavepoint(any());
+        verify(session, never()).setAutoCommit(anyBoolean());
         verify(session, never()).commit();
     }
 }

@@ -174,8 +174,10 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
                             if (planXML == null) {
                                 throw new DBCException("Server returned a null execution plan");
                             }
-                            parsePlanXML(session, planXML);
-                            planText = planXML.getString();
+                            try (PlanXMLResource resource = new PlanXMLResource(planXML)) {
+                                parsePlanXML(session, resource.xml());
+                                planText = resource.xml().getString();
+                            }
                         } else {
                             throw new DBCException("Server returned no execution plan");
                         }
@@ -219,6 +221,13 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
                 connection.rollback(savepoint);
                 connection.releaseSavepoint(savepoint);
             }
+        }
+    }
+
+    private record PlanXMLResource(SQLXML xml) implements AutoCloseable {
+        @Override
+        public void close() throws SQLException {
+            xml.free();
         }
     }
 
