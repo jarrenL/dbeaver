@@ -343,7 +343,8 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
         } catch (IOException e) {
             throw new DBException("Error reading content from file", e);
         }
-        valueController.updateValue(str, false);
+        // Import is an editor-local change. Only updateContentFromFile, called by
+        // an explicit save, may publish it to the result set value controller.
         stringStorage.setString(str);
     }
 
