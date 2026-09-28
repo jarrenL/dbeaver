@@ -1,5 +1,13 @@
 # GaussDB 空 bytea 参数绑定修复
 
+## 2026-09-28：非空文件与绑定失败重试补验
+
+新增6项：1、256、65537字节的真实中文空格文件，各执行正常绑定和模拟PreparedStatement读完流后抛SQLException再重试。实际TemporaryContentStorage、JDBCContentBLOB、GaussDBBinaryValueHandler参与；驱动替身逐字节校验完整数据（含0和255），验证参数编号3、无额外NULL/空值绑定、原SQLException cause、旧流在重试时关闭、新流从头读取、release关闭末次流且原文件内容不变。
+
+初轮3项失败来自测试夹具未配置JDBCSession执行上下文，补齐正确JDBCExecutionContext模拟后通过，未作为生产缺陷统计。本轮无生产修改。显式编译当前handler/provider及JDBCContentBLOB，既有12项亦复跑；联合`/tmp/shared-binary-file-final2-20260928.log`为648/648通过、0跳过、0失败，该类18项。
+
+不是实际驱动/网络流中断、批量执行或GUI保存；65537字节测试不是大LOB性能结论。Docker API复查仍permission denied，空二进制值界面验收未恢复，未提交未验收的GUI辅助脚本。本节不改变下方历史真库结论及其范围。
+
 ## 复现与原因范围
 
 集中式 A 兼容测试库与分布式 507 均用同一连接创建临时表进行独立对照：

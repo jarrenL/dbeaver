@@ -28,6 +28,52 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBBinaryValueHandlerTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"1,false", "256,false", "65537,false", "1,true", "256,true", "65537,true"})
+    void nonemptyFileBindsCompleteBytesAndCanRetryAfterDriverFailure(
+        int length, boolean failFirst, @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory
+    ) throws Exception {
+        when(session.getExecutionContext()).thenReturn(mock(org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext.class));
+        byte[] expected = new byte[length];
+        for (int i = 0; i < length; i++) {
+            expected[i] = (byte) i;
+        }
+        var file = directory.resolve("中文 数据.bin");
+        java.nio.file.Files.write(file, expected);
+        var storage = new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(
+            mock(org.jkiss.dbeaver.model.app.DBPPlatform.class), file, "UTF-8", false);
+        var content = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(mock(DBCExecutionContext.class), null);
+        content.updateContents(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), storage);
+        var streams = new java.util.ArrayList<java.io.InputStream>();
+        var failure = new java.sql.SQLException("synthetic stream binding failure", "08006");
+        doAnswer(invocation -> {
+            java.io.InputStream stream = invocation.getArgument(1);
+            streams.add(stream);
+            assertArrayEquals(expected, stream.readAllBytes());
+            if (failFirst && streams.size() == 1) {
+                throw failure;
+            }
+            return null;
+        }).when(statement).setBinaryStream(eq(3), any(java.io.InputStream.class));
+        try {
+            if (failFirst) {
+                var error = assertThrows(DBCException.class,
+                    () -> GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 2, content));
+                assertSame(failure, error.getCause());
+            }
+            GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 2, content);
+            verify(statement, times(failFirst ? 2 : 1)).setBinaryStream(eq(3), any(java.io.InputStream.class));
+            verifyNoMoreInteractions(statement);
+            if (failFirst) {
+                assertThrows(java.io.IOException.class, () -> streams.getFirst().read());
+            }
+        } finally {
+            content.release();
+        }
+        assertThrows(java.io.IOException.class, () -> streams.getLast().read());
+        assertArrayEquals(expected, java.nio.file.Files.readAllBytes(file));
+    }
+
     private final JDBCSession session = mock(JDBCSession.class);
     private final JDBCPreparedStatement statement = mock(JDBCPreparedStatement.class);
     private final DBSTypedObject type = mock(DBSTypedObject.class);
