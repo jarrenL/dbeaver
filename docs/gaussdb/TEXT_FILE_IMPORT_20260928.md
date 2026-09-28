@@ -2,6 +2,22 @@
 
 日期：2026-09-28。关联历史清单9.1导入、9.8值编辑、11.1字符类型。本记录为组件验收，不代表数据库连接、界面和完整产品验收。
 
+## 最新Linux界面验证：文本页刷新未通过
+
+独立副本 `/opt/hex-refresh-gui-20260928` 停止旧Java进程19940后确认退出，原始验收进程18377保留。data插件安装当前ContentEditorInput补丁，SHA-256 `06f3b02863897639c7d46f5b0b4f49dd79c4d47f2195b07a6f7f9326c075ab83` 在容器内外一致，重新启动成功；不是完整产品构建。
+
+普通测试账号对旧二进制schema没有CREATE权限，首次建表被服务端拒绝，未绕过授权。只读权限查询确认账号有建schema权限后，通过客户端新建 `dbv_text_import_20260928.payload(id integer PRIMARY KEY, note varchar(100))`，插入 `(1,'original')` 并查询确认。新schema初始元数据缓存未刷新时，值编辑器只读，Load from File禁用；刷新连接、重新执行SELECT、关闭旧值编辑器后再打开，进入可写编辑器。
+
+通过真实文件选择器导入UTF-8文本文件，内容为 `中文导入'quote\end` 加一个换行。导入后没有空指针错误、出现未保存星号，但等待异步更新后的 `refresh-queue/61.cmd.result` 中可见462 StyledText仍为 `original`，截图亦一致。**文本页刷新未通过，组件15项通过不能代替此界面结果。** 本轮没有保存该导入，不确认数据库最终值发生变更。专用测试表保留以便后续复验，完成后需要清理。
+
+![导入后文本页仍显示旧值](images/text-import-stale-20260928.png)
+
+源码线索：`ContentEditorInput.refreshContentParts` 及 `ContentPagePart` 仅向实现IRefreshablePart的编辑页转发；实际文本页 `TextEditorPart` 继承BaseTextEditor，两者均未实现该接口，FileRefDocumentProvider文档没有重载。本轮只定位并记录，尚未修改文本页刷新实现。需要补源码修复、文档重新加载测试、可写/只读/空文本及保存读回GUI验证。
+
+测试驱动47（把TreeItem作为键盘Control）和50（把CTabItem作为Shell关闭）失败，未算产品缺陷；之后按实际Tree控制及编辑器焦点/菜单操作继续。首次启动更新提示打断的建表操作，通过目录查询确认计数0后才重试，未盲目重复DDL。
+
+完整构建重试：run-HSaZEP误用系统Java11，在Tycho类版本加载处失败；指定JDK25的run-yCiwsC在 `.m2/repository/.meta/p2-artifacts.properties.tycholock` 获取锁10000ms超时处失败。两次均没有新的JUnit验收结果。独立组件测试仍未纳入正式Tycho模块，不记为完整门控通过。
+
 ## 后续：二进制导入失败保护
 
 同一生产导入入口新增5项二进制场景，首次全部失败：缺失路径/目录仍被安装成惰性ExternalContentStorage；更新抛错时旧临时文件已删除；选择旧文件本身或者指向它的符号链接也删除了实际数据。不是二进制显示控件的加载测试，而是其上游输入替换问题。
