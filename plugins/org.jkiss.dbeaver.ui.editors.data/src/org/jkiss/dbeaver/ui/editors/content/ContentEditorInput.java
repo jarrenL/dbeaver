@@ -59,6 +59,7 @@ import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.IOUtils;
 
 import java.io.*;
+import java.nio.charset.Charset;
 
 /**
  * ContentEditorInput
@@ -303,11 +304,11 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
         throws CoreException
     {
         try {
-            release();
-            contentFile = extFile;
-            contentDetached = true;
             Object value = getValue();
             if (value instanceof DBDContent) {
+                release();
+                contentFile = extFile;
+                contentDetached = true;
                 ((DBDContent)value).updateContents(
                     new DefaultProgressMonitor(monitor),
                     new ExternalContentStorage(DBWorkbench.getPlatform(), extFile.toPath()));
@@ -322,14 +323,14 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
     }
 
     private void updateStringValueFromFile(File extFile) throws DBException {
-        try (FileReader is = new FileReader(extFile)) {
-            String str = IOUtils.readToString(is);
-            stringStorage.setString(str);
-            valueController.updateValue(str, false);
-
+        final String str;
+        try (FileReader is = new FileReader(extFile, Charset.forName(fileCharset))) {
+            str = IOUtils.readToString(is);
         } catch (IOException e) {
             throw new DBException("Error reading content from file", e);
         }
+        valueController.updateValue(str, false);
+        stringStorage.setString(str);
     }
 
     void refreshContentParts(Object source) {
