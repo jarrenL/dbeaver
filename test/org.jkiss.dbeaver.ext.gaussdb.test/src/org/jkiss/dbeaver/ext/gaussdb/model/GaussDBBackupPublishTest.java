@@ -24,6 +24,51 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"stderr-only", "stderr-dual", "stdout-dual"})
+    void logReadFailureCannotBecomeSuccessfulTask(String stream) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));
+        var failure = new IOException("synthetic pipe read failure");
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var broken = new java.io.InputStream() {
+            @Override public int read() throws IOException { throw failure; }
+            @Override public void close() { closed.set(true); }
+        };
+        var loggedProcess = mock(Process.class);
+        when(loggedProcess.getInputStream()).thenReturn(stream.equals("stdout-dual") ? broken : java.io.InputStream.nullInputStream());
+        when(loggedProcess.getErrorStream()).thenReturn(stream.equals("stdout-dual") ? java.io.InputStream.nullInputStream() : broken);
+        var settings = mock(PostgreDatabaseBackupSettings.class, RETURNS_DEEP_STUBS);
+        var writer = new java.io.PrintStream(new java.io.ByteArrayOutputStream());
+        when(settings.getLogWriter()).thenReturn(writer);
+        var info = mock(PostgreDatabaseBackupInfo.class);
+        when(settings.getOutputFile(info)).thenReturn(directory.resolve("unused.dump").toString());
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected boolean isLogInputStream() { return !stream.equals("stderr-only"); }
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/usr/bin/true");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log)
+                throws IOException, org.jkiss.dbeaver.DBException {
+                // Real process lifecycle, fault-injected output pipes, production asynchronous readers.
+                super.startProcessHandler(m, t, s, a, b, loggedProcess, log);
+            }
+        };
+        var monitor = mock(DBRProgressMonitor.class);
+        try {
+            var actual = assertThrows(IOException.class, () -> handler.executeProcess(monitor,
+                mock(DBTTask.class, RETURNS_DEEP_STUBS), settings, info, mock(Log.class)));
+            assertSame(failure, actual.getCause());
+            assertTrue(closed.get());
+            verify(monitor).done();
+        } finally {
+            writer.close();
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"stdout", "stderr", "cancel-wait", "cancel-retry"})
     void processCompletionWaitsForActualAsyncLogReader(String outcome) throws Exception {
         boolean diagnostic = !outcome.equals("stdout");

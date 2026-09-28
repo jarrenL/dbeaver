@@ -1,5 +1,13 @@
 # 原生工具命令参数与认证失败边界
 
+## 异步输出读取I/O失败传播（后续）
+
+新增stderr单流、双流stderr失败、双流stdout失败三项：实际true子进程用于生命周期，替换交给生产异步日志读取器的管道为确定性IOException输入流。断言任务不能成功、原IOException为cause、故障流已关闭及monitor.done。不是操作系统真实管道损坏或网络故障注入。
+
+红测`/tmp/native-log-io-red-20260928.log`48项中45通过、3失败，读取异常均被吞掉。修复LogReaderJob按执行实例记录读取错误，在进程完成且读取器退出后抛IOException保留cause；stdout线程在stderr异常时也通过finally等待，避免在其结果确定前判定。多次读取错误有同步收集及suppressed处理，但多重同时失败尚未单独验收。
+
+`/tmp/shared-log-io-green-20260928.log`342/342通过、0跳过、0失败，包含原339项。本轮完整构建run-WXzqkw仍在Tycho p2-artifacts.properties.tycholock等待10000ms超时，未执行完整测试。共享代码仍需完整构建、真库及客户端验收；不可中断读取与永久阻塞输出未由本轮证明。
+
 ## 取消后迟到日志与立即重试隔离（后续）
 
 新增cancel-retry场景：实际旧日志线程在第一轮取消后仍被测试锁存器阻塞；第二轮已进入executeProcess并重置状态后，才允许旧线程输出错误并确认其退出，新子进程随后无错误正常完成。红测`/tmp/native-late-retry-red-20260928.log`45项中44通过、1失败：新任务被旧错误判失败。

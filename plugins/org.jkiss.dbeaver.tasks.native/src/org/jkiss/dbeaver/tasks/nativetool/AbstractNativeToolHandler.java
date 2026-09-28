@@ -275,6 +275,9 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                     }
                     logReaderJob.join(100);
                 }
+                if (logReaderJob.readFailure != null) {
+                    throw new IOException("Cannot read native tool output", logReaderJob.readFailure);
+                }
                 taskErrorMessage = logReaderJob.errorMessage;
             }
         } catch (IOException e) {
@@ -523,6 +526,15 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         // Keep diagnostics owned by this execution's reader. A canceled reader
         // finishing late must not overwrite the next execution's status.
         private String errorMessage;
+        private IOException readFailure;
+
+        private synchronized void recordReadFailure(IOException failure) {
+            if (readFailure == null) {
+                readFailure = failure;
+            } else if (readFailure != failure) {
+                readFailure.addSuppressed(failure);
+            }
+        }
 
         protected LogReaderJob(DBTTask task, SETTINGS settings, ProcessBuilder processBuilder, Process stream, boolean isLogInputStream) {
             super("Log reader for " + task.getName());
@@ -565,22 +577,27 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                             try {
                                 readStream(input.getInputStream());
                             } catch (IOException e) {
+                                recordReadFailure(e);
                                 logWriter.println(e.getMessage() + lf);
                             }
                         }
                     };
                     readInputThread.start();
-                    errorMessage = readStream(input.getErrorStream());
                     try {
-                        readInputThread.join();
-                    } catch (InterruptedException ignore) {
-                        // ignore
+                        errorMessage = readStream(input.getErrorStream());
+                    } finally {
+                        try {
+                            readInputThread.join();
+                        } catch (InterruptedException e) {
+                            recordReadFailure(new IOException("Interrupted while reading native tool output", e));
+                            Thread.currentThread().interrupt();
+                        }
                     }
                 } else {
                     readStream(input.getErrorStream());
                 }
             } catch (IOException e) {
-                // just skip
+                recordReadFailure(e);
                 logWriter.println(e.getMessage() + lf);
             } finally {
                 logWriter.print(NLS.bind(NativeToolMessages.native_tool_handler_log_finished_task, task.getName(),
