@@ -2,6 +2,14 @@
 
 日期：2026-09-28。关联历史清单9.1导入、9.8值编辑、11.1字符类型。本记录分别列出组件及限定环境下的界面/数据库验收，不代表完整产品验收。
 
+## 读取中断、旧值保护与重试
+
+正式 `JDBCContentBytesReadTest` 新增3项：构造257字节输入流，分别在读取0、1、128字节后抛出同一个IOException。调用实际生产 `updateContents`，断言错误cause身份、实际已读字节数、流已关闭、原值完整保留；同一对象换用合法输入重试后逐字节一致，`resetContents` 又恢复原始值。测试不是简单让mock直接抛错，而是让标准 `readNBytes` 经过分段读取后遇到错误。
+
+本轮无生产修改。共享专项714/714、导入专项36/36均无失败或跳过；真实OSGi平台14类282/282、逐类门控通过，其中读取类9/9。日志分别为 `/tmp/shared-bytes-readfailure-20260928.log`、`/tmp/hex-bytes-readfailure-20260928.log`、`/tmp/platform-bytes-readfailure-20260928.log`，OSGi报告位于 `/tmp/gauss-existing-osgi-3IcLyO/reports/`。这些批次包含同一组测试，不相加。
+
+范围：确定性组件故障注入，不证明真实磁盘损坏、网络中断、GUI错误提示或最终安装包。辅助只读审核在初始化日志写入时被运行环境拒绝并退出1，本轮没有独立审核报告，不计审核通过。
+
 ## 正式测试接入：JDBC完整读取回归
 
 将独立导入夹具中6项无UI依赖的读取场景迁入正式模块 `org.jkiss.dbeaver.test.platform` 的 `JDBCContentBytesReadTest`，原夹具删除相同方法，两个专项运行器共同引用正式源码，不复制第二套测试：分段1/7/64字节读取3项、提前EOF保留原值并重试1项、负长度及超过int上限拒绝2项。保持模型/UI分层，没有为这些场景增加SWT依赖。

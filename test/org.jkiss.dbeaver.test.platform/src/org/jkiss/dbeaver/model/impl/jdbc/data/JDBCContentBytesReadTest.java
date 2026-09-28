@@ -29,6 +29,64 @@ import static org.mockito.Mockito.*;
 
 public class JDBCContentBytesReadTest {
     @ParameterizedTest
+    @ValueSource(ints = {0, 1, 128})
+    void readFailureClosesStreamPreservesValueAndAllowsRetry(int failAfter) throws Exception {
+        var original = new byte[] {9, 8, 7};
+        var content = new JDBCContentBytes(mock(DBCExecutionContext.class), original);
+        var expected = new byte[257];
+        for (int i = 0; i < expected.length; i++) {
+            expected[i] = (byte) i;
+        }
+        var failure = new java.io.IOException("Injected read failure");
+        var consumed = new java.util.concurrent.atomic.AtomicInteger();
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var stream = new java.io.InputStream() {
+            @Override
+            public int read() throws java.io.IOException {
+                if (consumed.get() >= failAfter) {
+                    throw failure;
+                }
+                return Byte.toUnsignedInt(expected[consumed.getAndIncrement()]);
+            }
+
+            @Override
+            public int read(byte[] target, int offset, int length) throws java.io.IOException {
+                java.util.Objects.checkFromIndexSize(offset, length, target.length);
+                if (length == 0) {
+                    return 0;
+                }
+                if (consumed.get() >= failAfter) {
+                    throw failure;
+                }
+                int count = Math.min(length, failAfter - consumed.get());
+                System.arraycopy(expected, consumed.get(), target, offset, count);
+                consumed.addAndGet(count);
+                return count;
+            }
+
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+        var storage = mock(DBDContentStorage.class);
+        when(storage.getContentStream()).thenReturn(stream);
+        when(storage.getContentLength()).thenReturn((long) expected.length);
+        var thrown = assertThrows(DBException.class,
+            () -> content.updateContents(new VoidProgressMonitor(), storage));
+        assertSame(failure, thrown.getCause());
+        assertEquals(failAfter, consumed.get());
+        assertTrue(closed.get());
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+
+        when(storage.getContentStream()).thenReturn(new java.io.ByteArrayInputStream(expected));
+        content.updateContents(new VoidProgressMonitor(), storage);
+        assertArrayEquals(expected, content.getContentStream().readAllBytes());
+        content.resetContents();
+        assertArrayEquals(original, content.getContentStream().readAllBytes());
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {1, 7, 64})
     void binaryValueReadsCompleteChunkedStreams(int chunk) throws Exception {
         var content = new JDBCContentBytes(mock(DBCExecutionContext.class), new byte[] {9});
