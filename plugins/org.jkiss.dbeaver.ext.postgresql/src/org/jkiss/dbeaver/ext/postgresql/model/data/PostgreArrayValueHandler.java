@@ -217,6 +217,11 @@ public class PostgreArrayValueHandler extends JDBCArrayValueHandler {
                 case '"':
                 case ',':
                 case ' ':
+                case '\t':
+                case '\n':
+                case '\r':
+                case '\f':
+                case '\u000b':
                 case '\\':
                     return true;
                 default:
