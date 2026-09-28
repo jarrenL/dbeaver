@@ -58,6 +58,7 @@ import java.util.*;
 public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeToolSettings<BASE_OBJECT>, BASE_OBJECT extends DBSObject, PROCESS_ARG> implements DBTTaskHandler {
 
     private String taskErrorMessage;
+    private LogReaderJob logReaderJob;
 
     @Override
     @NotNull
@@ -196,7 +197,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         Process process,
         Log log
     ) throws IOException, DBException {
-        LogReaderJob logReaderJob = new LogReaderJob(
+        logReaderJob = new LogReaderJob(
             task,
             settings,
             processBuilder,
@@ -213,6 +214,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         Log log
     ) throws IOException, InterruptedException {
         taskErrorMessage = null;
+        logReaderJob = null;
         monitor.beginTask(task.getType().getName(), 1);
         Process process = null;
         try {
@@ -264,7 +266,16 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                 }
                 break;
             }
-            //process.waitFor();
+            // Process termination does not imply its asynchronous log reader has
+            // drained the pipes. Join before evaluating diagnostics or publishing output.
+            if (logReaderJob != null) {
+                while (logReaderJob.isAlive()) {
+                    if (monitor.isCanceled()) {
+                        throw new InterruptedException();
+                    }
+                    logReaderJob.join(100);
+                }
+            }
         } catch (IOException e) {
             log.error("IO error: " + e.getMessage());
             throw e;

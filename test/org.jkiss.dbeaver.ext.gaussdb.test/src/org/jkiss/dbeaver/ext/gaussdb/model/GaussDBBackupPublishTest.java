@@ -24,6 +24,88 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"stdout", "stderr", "cancel-wait"})
+    void processCompletionWaitsForActualAsyncLogReader(String outcome) throws Exception {
+        boolean diagnostic = outcome.equals("stderr");
+        assumeTrue(Files.isExecutable(Path.of("/bin/sh")));
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var reader = new java.util.concurrent.atomic.AtomicReference<Thread>();
+        var output = new java.io.ByteArrayOutputStream();
+        var writer = new java.io.PrintStream(output, true, java.nio.charset.StandardCharsets.UTF_8) {
+            @Override public void print(String value) {
+                if (reader.compareAndSet(null, Thread.currentThread())) {
+                    entered.countDown();
+                    try {
+                        if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("Log release timed out");
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(e);
+                    }
+                }
+                super.print(value);
+            }
+        };
+        var settings = mock(PostgreDatabaseBackupSettings.class, RETURNS_DEEP_STUBS);
+        when(settings.getLogWriter()).thenReturn(writer);
+        var info = mock(PostgreDatabaseBackupInfo.class);
+        when(settings.getOutputFile(info)).thenReturn(directory.resolve("unused.dump").toString());
+        var child = new java.util.concurrent.atomic.AtomicReference<Process>();
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected boolean isLogInputStream() { return true; }
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/bin/sh", "-c", diagnostic ? "printf 'delayed diagnostic' >&2" : "printf 'normal output'");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log)
+                throws IOException, org.jkiss.dbeaver.DBException {
+                child.set(p);
+                super.startProcessHandler(m, t, s, a, b, p, log);
+            }
+        };
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        var monitor = mock(DBRProgressMonitor.class);
+        var canceled = new java.util.concurrent.atomic.AtomicBoolean();
+        when(monitor.isCanceled()).thenAnswer(i -> canceled.get());
+        try {
+            var result = executor.submit(() -> handler.executeProcess(monitor,
+                mock(DBTTask.class, RETURNS_DEEP_STUBS), settings, info, mock(Log.class)));
+            assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
+            assertThrows(java.util.concurrent.TimeoutException.class, () -> result.get(500, java.util.concurrent.TimeUnit.MILLISECONDS),
+                "Process exit alone must not finish the task while logs are still unread");
+            if (outcome.equals("cancel-wait")) {
+                canceled.set(true);
+                var failure = assertThrows(java.util.concurrent.ExecutionException.class,
+                    () -> result.get(2, java.util.concurrent.TimeUnit.SECONDS));
+                assertInstanceOf(InterruptedException.class, failure.getCause());
+            } else {
+                release.countDown();
+                assertEquals(!diagnostic, result.get(2, java.util.concurrent.TimeUnit.SECONDS));
+                assertTrue(output.toString(java.nio.charset.StandardCharsets.UTF_8)
+                    .contains(diagnostic ? "delayed diagnostic" : "normal output"));
+            }
+            verify(monitor).done();
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+            if (child.get() != null) {
+                child.get().destroyForcibly();
+                assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            if (reader.get() != null) {
+                reader.get().join(2000);
+                assertFalse(reader.get().isAlive());
+            }
+            assertTrue(executor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS));
+            writer.close();
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void completedErrorLogDoesNotPoisonRetryAndKeepsFinalUnterminatedLine(boolean newline) throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/bin/sh")));
