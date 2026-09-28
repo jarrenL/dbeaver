@@ -34,6 +34,73 @@ import static org.mockito.Mockito.*;
 
 class NetworkProfileContractsTest {
     @ParameterizedTest
+    @ValueSource(strings = {"none", "user", "password", "property", "list-second"})
+    void legacyMigrationReadsWholeProfileBeforeUpdating(String failureAt) throws Exception {
+        var project = mock(org.jkiss.dbeaver.model.app.DBPProject.class);
+        when(project.getId()).thenReturn("fixture-project");
+        var profile = new DBWNetworkProfile(project);
+        profile.setProfileId("fixture");
+        var ssh = handler("ssh");
+        var ssl = handler("ssl");
+        profile.updateConfiguration(ssh);
+        profile.updateConfiguration(ssl);
+        var controller = mock(DBSSecretController.class,
+            withSettings().extraInterfaces(org.jkiss.dbeaver.model.secret.DBSSecretBrowser.class));
+        var browser = (org.jkiss.dbeaver.model.secret.DBSSecretBrowser) controller;
+        var failure = new DBException("synthetic legacy storage failure");
+        String prefix = "projects/fixture-project/network/";
+        for (String id : List.of("ssh", "ssl")) {
+            when(browser.listSecrets(prefix + id + "/profile/fixture")).thenReturn(List.of(
+                new org.jkiss.dbeaver.model.secret.DBSSecret(id + "-user", "user"),
+                new org.jkiss.dbeaver.model.secret.DBSSecret(id + "-password", "password"),
+                new org.jkiss.dbeaver.model.secret.DBSSecret(id + "-property", "fixture-key"),
+                new org.jkiss.dbeaver.model.secret.DBSSecret(id + "-name", "name")));
+            for (String key : List.of("user", "password", "property")) {
+                when(controller.getPrivateSecretValue(id + "-" + key)).thenReturn("new-" + id + "-" + key);
+            }
+        }
+        if (failureAt.equals("list-second")) {
+            when(browser.listSecrets(prefix + "ssl/profile/fixture")).thenThrow(failure).thenReturn(List.of());
+        } else if (!failureAt.equals("none")) {
+            when(controller.getPrivateSecretValue("ssl-" + failureAt))
+                .thenThrow(failure).thenReturn("new-ssl-" + failureAt);
+        }
+        {
+            if (!failureAt.equals("none")) {
+                assertSame(failure, assertThrows(DBException.class, () -> resolveLegacy(profile, controller)));
+                for (var cfg : List.of(ssh, ssl)) {
+                    assertEquals("中文-" + cfg.getId(), cfg.getUserName());
+                    assertEquals("synthetic-" + cfg.getId(), cfg.getPassword());
+                    assertEquals("synthetic-key-" + cfg.getId(), cfg.getSecureProperty("fixture-key"));
+                }
+            }
+            resolveLegacy(profile, controller);
+        }
+        assertSame(ssh, profile.getConfiguration("ssh"));
+        assertEquals("new-ssh-user", ssh.getUserName());
+        assertEquals("new-ssh-password", ssh.getPassword());
+        assertEquals("new-ssh-property", ssh.getSecureProperty("fixture-key"));
+        assertEquals(failureAt.equals("list-second") ? "synthetic-ssl" : "new-ssl-password", ssl.getPassword());
+        verify(controller, never()).getPrivateSecretValue("ssh-name");
+        verify(controller, never()).getPrivateSecretValue("ssl-name");
+        verify(controller, never()).flushChanges();
+    }
+
+    private void resolveLegacy(DBWNetworkProfile profile, DBSSecretController controller) throws Exception {
+        // Exercise legacy loading without replacing the global application workbench.
+        var method = DBWNetworkProfile.class.getDeclaredMethod("loadFromLegacySecret", DBSSecretController.class);
+        method.setAccessible(true);
+        try {
+            method.invoke(profile, controller);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (e.getCause() instanceof Exception cause) {
+                throw cause;
+            }
+            throw e;
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"{}", "{\"handlers\":null}", "{\"handlers\":[]}"})
     void emptyHandlerRecordsPreserveExistingCredentials(String record) throws Exception {
         var profile = new DBWNetworkProfile();

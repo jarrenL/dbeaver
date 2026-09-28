@@ -206,17 +206,19 @@ public class DBWNetworkProfile extends DBPConfigurationProfile {
         if (!(secretController instanceof DBSSecretBrowser secretBrowser) || getProject() == null) {
             return;
         }
+        Map<DBWHandlerConfiguration, DBWHandlerConfiguration> resolved = new IdentityHashMap<>();
         for (DBWHandlerConfiguration cfg : configurations) {
+            DBWHandlerConfiguration loaded = new DBWHandlerConfiguration(cfg);
             String prefix = "projects/" + getProject().getId() + "/network/" + cfg.getId() + "/profile/" + getProfileId();
             Map<String, String> secureProps = new LinkedHashMap<>();
             for (DBSSecret secret : secretBrowser.listSecrets(prefix)) {
                 String secretId = secret.getId();
                 switch (secret.getName()) {
                     case "user":
-                        cfg.setUserName(secretController.getPrivateSecretValue(secretId));
+                        loaded.setUserName(secretController.getPrivateSecretValue(secretId));
                         break;
                     case "password":
-                        cfg.setPassword(secretController.getPrivateSecretValue(secretId));
+                        loaded.setPassword(secretController.getPrivateSecretValue(secretId));
                         break;
                     case "name":
                         // Skip it
@@ -227,8 +229,17 @@ public class DBWNetworkProfile extends DBPConfigurationProfile {
                 }
             }
             if (!secureProps.isEmpty()) {
-                cfg.setSecureProperties(secureProps);
+                loaded.setSecureProperties(secureProps);
             }
+            resolved.put(cfg, loaded);
+        }
+        // A failure reading a later handler must not partially migrate earlier credentials.
+        for (Map.Entry<DBWHandlerConfiguration, DBWHandlerConfiguration> entry : resolved.entrySet()) {
+            DBWHandlerConfiguration target = entry.getKey();
+            DBWHandlerConfiguration loaded = entry.getValue();
+            target.setUserName(loaded.getUserName());
+            target.setPassword(loaded.getPassword());
+            target.setSecureProperties(loaded.getSecureProperties());
         }
     }
 
