@@ -103,4 +103,54 @@ class ExecutionContextReplacementTest {
         assertNull(DBExecUtils.findReplacementInstance(dataSource, null));
         verifyNoInteractions(dataSource);
     }
+
+    @Test
+    void databaseNamesAreMatchedExactlyRatherThanFoldedOrTrimmed() {
+        DBSInstance owner = owner();
+        when(owner.getName()).thenReturn("Business");
+        DBSInstance exact = instance("Business");
+        DBSInstance lowerCase = instance("business");
+        DBSInstance trailingSpace = instance("Business ");
+        doReturn(List.of(lowerCase, trailingSpace))
+            .doReturn(List.of(lowerCase, exact, trailingSpace))
+            .when(dataSource).getAvailableInstances();
+        assertNull(DBExecUtils.findReplacementInstance(dataSource, context));
+        assertSame(exact, DBExecUtils.findReplacementInstance(dataSource, context));
+        verify(dataSource, never()).getDefaultInstance();
+    }
+
+    @Test
+    void cacheRepopulationIsReevaluatedAfterAnEmptySnapshot() {
+        owner();
+        DBSInstance replacement = instance("业务库");
+        doReturn(List.of()).doReturn(List.of(replacement)).when(dataSource).getAvailableInstances();
+        assertNull(DBExecUtils.findReplacementInstance(dataSource, context));
+        assertSame(replacement, DBExecUtils.findReplacementInstance(dataSource, context));
+    }
+
+    @Test
+    void successiveRefreshesUseTheLatestInstanceAndStopAfterRebinding() throws Exception {
+        owner();
+        DBSInstance first = instance("业务库");
+        DBSInstance second = instance("业务库");
+        doReturn(List.of(first)).doReturn(List.of(second)).when(dataSource).getAvailableInstances();
+        assertSame(first, DBExecUtils.findReplacementInstance(dataSource, context));
+        when(context.getOwnerInstance()).thenReturn(first);
+        assertSame(second, DBExecUtils.findReplacementInstance(dataSource, context));
+        when(context.getOwnerInstance()).thenReturn(second);
+        assertNull(DBExecUtils.findReplacementInstance(dataSource, context));
+        verify(context, never()).close();
+        verify(context, never()).isConnected();
+        verify(dataSource, never()).getDefaultInstance();
+    }
+
+    @Test
+    void ambiguousSnapshotDoesNotPreventLaterUniqueReplacement() {
+        owner();
+        DBSInstance first = instance("业务库");
+        DBSInstance second = instance("业务库");
+        doReturn(List.of(first, second)).doReturn(List.of(second)).when(dataSource).getAvailableInstances();
+        assertNull(DBExecUtils.findReplacementInstance(dataSource, context));
+        assertSame(second, DBExecUtils.findReplacementInstance(dataSource, context));
+    }
 }
