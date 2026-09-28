@@ -36,6 +36,43 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    @Test
+    void realOwnSessionPreservesBackendIdentityAndDatabase() throws Exception {
+        assumeTrue(System.getenv("GAUSSDB_HISTORY_CONNECTION") != null,
+            "Live connection not configured; not a passing database test");
+        assertNotNull(System.getenv("GAUSSDB_HISTORY_JDBC"), "Vendor JDBC jar required");
+        withIndependentConnection(connection -> {
+            String expectedId;
+            String expectedDatabase;
+            try (var statement = connection.createStatement()) {
+                statement.setQueryTimeout(10);
+                try (var rows = statement.executeQuery("SELECT pg_backend_pid()::text,current_database()")) {
+                    assertTrue(rows.next());
+                    expectedId = rows.getString(1);
+                    expectedDatabase = rows.getString(2);
+                    assertFalse(rows.next());
+                }
+            }
+            var manager = new org.jkiss.dbeaver.ext.postgresql.model.session.PostgreSessionManager(mock(GaussDBDataSource.class));
+            String sql = manager.generateSessionReadQuery(java.util.Map.of(
+                org.jkiss.dbeaver.ext.postgresql.model.session.PostgreSessionManager.OPTION_SHOW_IDLE, true))
+                + " WHERE sa.pid=pg_backend_pid()";
+            try (var statement = connection.createStatement()) {
+                statement.setQueryTimeout(10);
+                try (var rows = statement.executeQuery(sql)) {
+                    assertTrue(rows.next(), "Own backend must be visible in pg_stat_activity");
+                    var model = new org.jkiss.dbeaver.ext.postgresql.model.session.PostgreSession(rows);
+                    assertEquals(expectedId, model.getSessionId());
+                    assertEquals(Long.parseLong(expectedId), model.getPid());
+                    assertTrue(model.getPid() > 0);
+                    assertEquals(expectedDatabase, model.getDb());
+                    assertFalse(rows.next(), "Own backend must appear exactly once");
+                }
+            }
+            assertRows(connection, "SELECT 42", List.of(List.of("42")));
+        });
+    }
+
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"UNION", "UNION ALL", "INTERSECT", "EXCEPT"})
     void parenthesizedSetResultsPreserveLabelsTypesNullsAndOrder(String operation) throws Exception {
