@@ -15,6 +15,85 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBPackageCompileBatchTest {
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> targetsAndCancellation() {
+        return java.util.Arrays.stream(GaussDBPackageCompileTarget.values()).flatMap(target ->
+            java.util.stream.Stream.of(org.junit.jupiter.params.provider.Arguments.of(target, false),
+                org.junit.jupiter.params.provider.Arguments.of(target, true)));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("targetsAndCancellation")
+    void retainsFailingObjectsOwnDiagnosticsAndSeparateCancellationFlag(
+        GaussDBPackageCompileTarget requested, boolean cancel
+    ) {
+        var monitor = mock(DBRProgressMonitor.class);
+        var first = mock(GaussDBPackage.class);
+        var second = mock(GaussDBPackage.class);
+        var third = mock(GaussDBPackage.class);
+        when(first.getName()).thenReturn("same_package");
+        when(second.getName()).thenReturn("same_package");
+        var failure = new DBException("diagnostics interrupted");
+        var visits = new java.util.ArrayList<GaussDBPackage>();
+        var result = GaussDBPackageCompileBatch.compile(monitor, List.of(first, second, third), requested,
+            (m, log, object, target) -> {
+                assertSame(requested, target);
+                visits.add(object);
+                log.error(new GaussDBPackageCompileError(target, object == first ? "first error" : "second error", 2));
+                if (object == second) {
+                    log.error(new GaussDBPackageCompileError(target, "second additional error", 3));
+                    when(monitor.isCanceled()).thenReturn(cancel);
+                    throw failure;
+                }
+            });
+        assertEquals(List.of(first, second), visits);
+        assertEquals(1, result.completed());
+        assertEquals(3, result.total());
+        assertSame(second, result.stoppedAt());
+        assertSame(failure, result.failure());
+        assertEquals(cancel, result.canceled());
+        assertTrue(result.interrupted());
+        assertEquals(3, result.diagnostics().size());
+        assertSame(first, result.diagnostics().get(0).object());
+        assertSame(second, result.diagnostics().get(1).object());
+        assertSame(second, result.diagnostics().get(2).object());
+        assertEquals(List.of("first error", "second error", "second additional error"),
+            result.diagnostics().stream().map(d -> d.error().getMessage()).toList());
+        verify(monitor).worked(1);
+        verifyNoInteractions(third);
+    }
+
+    @Test
+    void cancellationBetweenObjectsKeepsCompletedCountAndDoesNotStartNext() {
+        var monitor = mock(DBRProgressMonitor.class);
+        var canceled = new java.util.concurrent.atomic.AtomicBoolean();
+        when(monitor.isCanceled()).thenAnswer(call -> canceled.get());
+        doAnswer(call -> { canceled.set(true); return null; }).when(monitor).worked(1);
+        var first = mock(GaussDBPackage.class);
+        var second = mock(GaussDBPackage.class);
+        var visits = new java.util.ArrayList<GaussDBPackage>();
+        var result = GaussDBPackageCompileBatch.compile(monitor, List.of(first, second),
+            GaussDBPackageCompileTarget.ALL, (m, log, object, target) -> visits.add(object));
+        assertEquals(List.of(first), visits);
+        assertEquals(1, result.completed());
+        assertEquals(2, result.total());
+        assertSame(second, result.stoppedAt());
+        assertNull(result.failure());
+        assertTrue(result.canceled());
+        verifyNoInteractions(second);
+    }
+
+    @Test
+    void resultDiagnosticListIsAnIndependentImmutableSnapshot() {
+        var source = new java.util.ArrayList<GaussDBPackageCompileBatch.Diagnostic>();
+        var diagnostic = new GaussDBPackageCompileBatch.Diagnostic(mock(GaussDBPackage.class),
+            new GaussDBPackageCompileError(GaussDBPackageCompileTarget.BODY, "bad", 2));
+        source.add(diagnostic);
+        var result = new GaussDBPackageCompileBatch.Result(source, 1, 1, null, null, false);
+        source.clear();
+        assertEquals(List.of(diagnostic), result.diagnostics());
+        assertThrows(UnsupportedOperationException.class, () -> result.diagnostics().clear());
+    }
+
     @Test
     void emptyBatchDoesNotInvokeCompiler() {
         var result = GaussDBPackageCompileBatch.compile(mock(DBRProgressMonitor.class), List.of(),
