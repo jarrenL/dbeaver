@@ -29,6 +29,63 @@ import static org.mockito.Mockito.*;
 
 class GaussDBBinaryValueHandlerTest {
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void lengthOverloadFallbackRestartsFile(boolean useInt, @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory)
+        throws Exception {
+        byte[] expected = new byte[257];
+        for (int i = 0; i < expected.length; i++) {
+            expected[i] = (byte) i;
+        }
+        var file = directory.resolve("overloads.bin");
+        java.nio.file.Files.write(file, expected);
+        var storage = new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(
+            mock(org.jkiss.dbeaver.model.app.DBPPlatform.class), file, "UTF-8", false);
+        var content = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(mock(DBCExecutionContext.class), null);
+        content.updateContents(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), storage);
+        var streams = new java.util.ArrayList<java.io.InputStream>();
+        var received = new java.util.ArrayList<byte[]>();
+        doAnswer(call -> {
+            java.io.InputStream stream = call.getArgument(1);
+            streams.add(stream);
+            stream.readNBytes(3);
+            throw new AbstractMethodError("synthetic unavailable overload");
+        }).when(statement).setBinaryStream(eq(1), any(java.io.InputStream.class));
+        doAnswer(call -> {
+            java.io.InputStream stream = call.getArgument(1);
+            streams.add(stream);
+            if (useInt) {
+                stream.readNBytes(5);
+                throw new AbstractMethodError("synthetic unavailable long overload");
+            }
+            received.add(stream.readAllBytes());
+            return null;
+        }).when(statement).setBinaryStream(eq(1), any(java.io.InputStream.class), eq(257L));
+        doAnswer(call -> {
+            java.io.InputStream stream = call.getArgument(1);
+            streams.add(stream);
+            received.add(stream.readAllBytes());
+            return null;
+        }).when(statement).setBinaryStream(eq(1), any(java.io.InputStream.class), eq(257));
+        try {
+            GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+            assertEquals(1, received.size());
+            assertArrayEquals(expected, received.getFirst());
+            verify(statement).setBinaryStream(eq(1), any(java.io.InputStream.class));
+            verify(statement).setBinaryStream(eq(1), any(java.io.InputStream.class), eq(257L));
+            if (useInt) {
+                verify(statement).setBinaryStream(eq(1), any(java.io.InputStream.class), eq(257));
+            }
+            verifyNoMoreInteractions(statement);
+        } finally {
+            content.release();
+        }
+        for (var stream : streams) {
+            assertThrows(java.io.IOException.class, stream::read);
+        }
+        assertArrayEquals(expected, java.nio.file.Files.readAllBytes(file));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"256,0", "256,7", "65537,0", "65537,7"})
     void unsupportedStreamFallbackMustBindEntireFile(
         int length, int consumed, @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory

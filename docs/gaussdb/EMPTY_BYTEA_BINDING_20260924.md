@@ -1,5 +1,13 @@
 # GaussDB 空 bytea 参数绑定修复
 
+## 2026-09-28：带长度流重载的完整性
+
+新增2项真实257字节文件测试：普通流重载消费3字节后抛AbstractMethodError，转long重载成功；或long再消费5字节并抛同类错误，转int重载成功。驱动为替身，捕获最终接收数据后逐字节比较，并检查参数长度、调用顺序对应的次数、所有打开流释放、原文件不变。
+
+红测`/tmp/shared-binary-overload-red-20260928.log`：654项中652通过、2失败，long仅收到254字节、int仅收到249字节。共享JDBCContentBLOB在storage分支每次流重载切换前关闭并重新打开流，绿测`/tmp/shared-binary-overload-green-20260928.log`：654/654通过、0跳过、0失败。该类现24项。
+
+覆盖storage分支重载切换，不证明真实驱动会以该顺序消费，也未覆盖服务器Blob分支、超过int长度的值、重新打开失败或真实GUI。普通SQLException不作自动重试的原有测试继续通过。
+
 ## 2026-09-28：流式绑定降级的完整性
 
 新增4项实际文件测试：256/65537字节×驱动读取0/7字节后抛SQLFeatureNotSupportedException。生产BLOB进入字节数组降级分支，验证setBytes收到完整原文件、参数索引及原文件保留。

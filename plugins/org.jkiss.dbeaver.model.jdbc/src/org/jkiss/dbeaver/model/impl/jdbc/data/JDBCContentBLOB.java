@@ -181,12 +181,16 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                             throw (SQLException)e;
                         } else {
                             try {
+                                releaseTempStream();
+                                tmpStream = storage.getContentStream();
                                 preparedStatement.setBinaryStream(paramIndex, tmpStream, storage.getContentLength());
                             }
                             catch (Throwable e1) {
                                 if (e1 instanceof SQLException) {
                                     throw (SQLException)e1;
                                 } else {
+                                    releaseTempStream();
+                                    tmpStream = storage.getContentStream();
                                     preparedStatement.setBinaryStream(paramIndex, tmpStream, (int)storage.getContentLength());
                                 }
                             }

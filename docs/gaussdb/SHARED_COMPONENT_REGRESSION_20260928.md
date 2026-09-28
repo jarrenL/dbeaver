@@ -2,13 +2,13 @@
 
 ## 执行范围
 
-生产代码基线：主仓3778b4d8ee，另含本轮二进制流降级修复和4项新增测试。测试仓`scripts/run-shared-focused.mjs`同一次javac与同一次JUnit进程运行22个类，避免仅凭各专项独立进程的历史成功结果推断组合运行也成功。显式编译过滤器相关类及DBAAuthProfile、DBPConfigurationProfile、DBWNetworkProfile、DBWHandlerConfiguration，以及SQLQuery、SQLSelectItem、GaussDBDialect、SQLQueryRecoveryPolicy、SQLSemanticProcessor、GaussDBBinaryValueHandler、GaussDBValueHandlerProvider和JDBCContentBLOB。
+生产代码基线：主仓576b12cb3c，另含本轮二进制流重载修复和2项新增测试。测试仓`scripts/run-shared-focused.mjs`同一次javac与同一次JUnit进程运行22个类，避免仅凭各专项独立进程的历史成功结果推断组合运行也成功。显式编译过滤器相关类及DBAAuthProfile、DBPConfigurationProfile、DBWNetworkProfile、DBWHandlerConfiguration，以及SQLQuery、SQLSelectItem、GaussDBDialect、SQLQueryRecoveryPolicy、SQLSemanticProcessor、GaussDBBinaryValueHandler、GaussDBValueHandlerProvider和JDBCContentBLOB。
 
 显式编译当前执行计划解析/保存、日期时间格式、版本选择、三类数据库异常、三类进度监视器、XLSX/CSV导出器、流式消费器和DataTransferJob源码，以及对应测试。其他依赖仍使用已有target/classes和只读依赖jar，不是完整Tycho/OSGi重新构建。
 
 ## 最新结果
 
-`/tmp/shared-binary-fallback-green-20260928.log`：652项全部通过，0跳过、0失败、0中止。下方分组表已更新为本次结果。历史增量记录仅供追溯，不应累加。
+`/tmp/shared-binary-overload-green-20260928.log`：654项全部通过，0跳过、0失败、0中止。下方分组表已更新为本次结果。历史增量记录仅供追溯，不应累加。
 
 ### 历史增量（非当前总数）
 
@@ -48,9 +48,9 @@
 | SQL投影、别名来源、DML目标、集合分类、文本替换及安全判断 | 89 |
 | SQL自动重试策略与文本切换 | 51 |
 | GaussDB危险SQL检测 | 51 |
-| 二进制NULL/空值/文件绑定、重试及降级 | 22 |
+| 二进制NULL/空值/文件绑定、重试及降级 | 24 |
 
-上述为最新本次不重叠分组计数，合计652；本轮新增4项文件降级，其余648项复跑。历次159至648项结果均被本次覆盖，不叠加，也不能与历史1882完整回归累计。
+上述为最新本次不重叠分组计数，合计654；本轮新增2项文件流重载，其余652项复跑。历次159至652项结果均被本次覆盖，不叠加，也不能与历史1882完整回归累计。
 
 脚本使用独立临时输出目录，JUnit XML报告写入该目录reports中；报告可能包含运行环境元数据，不直接发布原始XML。完整回归入口继续通过脱敏导出器仅输出测试身份和结果，并要求20个关键类确实运行通过，不能以缺失/跳过代替通过。依赖Unix可执行文件的BackupPublish测试未作为Windows必需门控，但本次确实执行且无跳过。
 
