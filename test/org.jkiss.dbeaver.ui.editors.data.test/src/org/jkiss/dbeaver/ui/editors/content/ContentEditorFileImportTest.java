@@ -45,6 +45,70 @@ class ContentEditorFileImportTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"text-canceled", "text-missing", "binary-canceled", "binary-missing"})
+    void failedSecondImportPreservesFirstPendingValueAndAllowsRetry(String scenario) throws Exception {
+        boolean binary = scenario.startsWith("binary");
+        var controller = mock(IValueController.class);
+        var input = input(controller, "UTF-8");
+        var original = new byte[] {1, 2, 3};
+        var content = spy(new JDBCContentBytes(mock(DBCExecutionContext.class), original));
+        if (binary) {
+            when(controller.getValue()).thenReturn(content);
+            field(input, "stringStorage", null);
+        }
+        var first = directory.resolve("first.txt");
+        var second = directory.resolve("second.txt");
+        Files.writeString(first, "中文 first\n");
+        Files.writeString(second, "second replacement\n");
+        try (var workbench = mockStatic(DBWorkbench.class)) {
+            workbench.when(DBWorkbench::getPlatform).thenReturn(mock(DBPPlatform.class));
+            input.loadFromExternalFile(first.toFile(), new NullProgressMonitor());
+            if (scenario.endsWith("canceled")) {
+                var checks = new java.util.concurrent.atomic.AtomicInteger();
+                var canceled = new NullProgressMonitor() {
+                    @Override public boolean isCanceled() {
+                        return checks.incrementAndGet() == 2;
+                    }
+                };
+                assertThrows(InterruptedException.class,
+                    () -> input.loadFromExternalFile(second.toFile(), canceled));
+                assertEquals(2, checks.get());
+            } else {
+                assertThrows(CoreException.class, () -> input.loadFromExternalFile(
+                    directory.resolve("missing.txt").toFile(), new NullProgressMonitor()));
+            }
+            verify(controller, never()).updateValue(any(), anyBoolean());
+            verify(content, never()).updateContents(any(), any());
+            if (binary) {
+                assertEquals(first.toFile(), field(input, "contentFile"));
+                assertEquals(Boolean.TRUE, field(input, "externalContentPending"));
+                assertArrayEquals(original, content.getContentStream().readAllBytes());
+            } else {
+                assertEquals(Files.readString(first),
+                    ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
+            }
+            input.updateContentFromFile(new VoidProgressMonitor(), binary ? content : "original");
+            if (binary) {
+                assertArrayEquals(Files.readAllBytes(first), content.getContentStream().readAllBytes());
+            } else {
+                verify(controller).updateValue(Files.readString(first), false);
+            }
+            input.loadFromExternalFile(second.toFile(), new NullProgressMonitor());
+            input.updateContentFromFile(new VoidProgressMonitor(), binary ? content : "original");
+            if (binary) {
+                assertArrayEquals(Files.readAllBytes(second), content.getContentStream().readAllBytes());
+                verify(content, times(2)).updateContents(any(), any());
+            } else {
+                verify(controller).updateValue(Files.readString(second), false);
+                verify(controller, times(2)).updateValue(any(), eq(false));
+            }
+            input.release();
+        }
+        assertEquals("中文 first\n", Files.readString(first));
+        assertEquals("second replacement\n", Files.readString(second));
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"binary", "text-before-read", "text-between-chunks"})
     void cancellationDuringImportPreservesInput(String stage) throws Exception {
         var controller = mock(IValueController.class);
