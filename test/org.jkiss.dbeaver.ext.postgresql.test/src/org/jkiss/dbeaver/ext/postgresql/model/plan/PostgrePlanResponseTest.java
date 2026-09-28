@@ -35,6 +35,80 @@ class PostgrePlanResponseTest {
         + "<Plan-Rows>1</Plan-Rows></Plan></Query></explain>";
 
     @ParameterizedTest
+    @ValueSource(strings = {"no-row", "null", "empty", "spaces", "orphan-child"})
+    void legacyTextInvalidResponseClearsPlanAndAllowsRetry(String response) throws Exception {
+        var plan = new PostgreExecutionPlan(true, false, "SELECT 1", new DBCQueryPlannerConfiguration());
+        executeText(plan, "valid", false);
+        assertEquals(1, plan.getPlanNodes(Map.of()).size());
+        assertNotNull(plan.getPlanNodes(Map.of()).getFirst());
+        executeText(plan, response, true);
+        assertTrue(plan.getPlanNodes(Map.of()).isEmpty());
+        assertNull(plan.getPlanSourceData());
+        executeText(plan, "valid", false);
+        assertEquals(1, plan.getPlanNodes(Map.of()).size());
+        assertNotNull(plan.getPlanSourceData());
+    }
+
+    private void executeText(PostgreExecutionPlan plan, String response, boolean fails) throws Exception {
+        var session = mock(JDBCSession.class);
+        var statement = mock(JDBCStatement.class);
+        var result = mock(JDBCResultSet.class);
+        when(session.getAutoCommit()).thenReturn(true);
+        when(session.createStatement()).thenReturn(statement);
+        when(statement.executeQuery(plan.getPlanQueryString())).thenReturn(result);
+        when(result.next()).thenReturn(!response.equals("no-row"), false);
+        when(result.getString(1)).thenReturn(switch (response) {
+            case "null" -> null;
+            case "empty" -> "";
+            case "spaces" -> "   ";
+            case "orphan-child" -> "  -> Result  (cost=0.00..0.01 rows=1 width=4)";
+            default -> "Result  (cost=0.00..0.01 rows=1 width=4)";
+        });
+        if (fails) {
+            assertThrows(DBCException.class, () -> plan.explain(session));
+        } else {
+            plan.explain(session);
+        }
+        verify(result).close();
+        verify(statement).close();
+        verify(result, never()).getSQLXML(anyInt());
+        verify(session).rollback();
+        verify(session).setAutoCommit(true);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "empty", "spaces"})
+    void legacyTextIgnoresBlankRowsWithoutDiscardingHierarchy(String blankKind) throws Exception {
+        String blank = switch (blankKind) {
+            case "null" -> null;
+            case "empty" -> "";
+            default -> " \t ";
+        };
+        String rootText = "Aggregate  (cost=1.00..2.00 rows=1 width=8)";
+        String childText = "  ->  Seq Scan on example  (cost=0.00..1.00 rows=2 width=4)";
+        var plan = new PostgreExecutionPlan(true, false, "SELECT count(*) FROM example", new DBCQueryPlannerConfiguration());
+        var session = mock(JDBCSession.class);
+        var statement = mock(JDBCStatement.class);
+        var result = mock(JDBCResultSet.class);
+        when(session.getAutoCommit()).thenReturn(true);
+        when(session.createStatement()).thenReturn(statement);
+        when(statement.executeQuery(plan.getPlanQueryString())).thenReturn(result);
+        when(result.next()).thenReturn(true, true, true, true, true, false);
+        when(result.getString(1)).thenReturn(blank, rootText, blank, childText, blank);
+        plan.explain(session);
+        assertEquals(rootText + "\n" + childText, plan.getPlanSourceData());
+        assertEquals(1, plan.getPlanNodes(Map.of()).size());
+        var root = plan.getPlanNodes(Map.of()).getFirst();
+        assertNull(root.getParent());
+        assertEquals(1, root.getNested().size());
+        assertSame(root, root.getNested().iterator().next().getParent());
+        verify(result).close();
+        verify(statement).close();
+        verify(session).rollback();
+        verify(session).setAutoCommit(true);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"valid", "malformed", "read"})
     void sqlXmlReleaseFailureDoesNotHideOriginalFailure(String stage) throws Exception {
         var plan = new PostgreExecutionPlan(false, false, "SELECT 1", new DBCQueryPlannerConfiguration());

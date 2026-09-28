@@ -162,7 +162,7 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
                         List<String> planLines = new ArrayList<>();
                         while (dbResult.next()) {
                             String planLine = dbResult.getString(1);
-                            if (!CommonUtils.isEmpty(planLine)) {
+                            if (planLine != null && !planLine.isBlank()) {
                                 planLines.add(planLine);
                             }
                         }
@@ -246,7 +246,10 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
         }
     }
 
-    private void parsePlanText(DBCSession session, List<String> lines) {
+    private void parsePlanText(DBCSession session, List<String> lines) throws DBCException {
+        if (lines.isEmpty()) {
+            throw new DBCException("Server returned no execution plan");
+        }
         DBPDataSource dataSource = session.getDataSource();
         List<PostgrePlanNodeText> nodes = new ArrayList<>(lines.size());
         PostgrePlanNodeText rootNode = null, curNode = null, curParentNode = null;
@@ -258,6 +261,9 @@ public class PostgreExecutionPlan extends AbstractExecutionPlan {
                     break;
                 }
                 lineIndent++;
+            }
+            if (rootNode == null && lineIndent > 0) {
+                throw new DBCException("Execution plan text contains no root node");
             }
             if (curIndent == 0 && lineIndent == 0) {
                 // Root node
