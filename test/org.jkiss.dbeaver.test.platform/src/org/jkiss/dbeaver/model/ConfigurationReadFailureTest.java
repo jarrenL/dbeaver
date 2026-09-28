@@ -396,6 +396,67 @@ class ConfigurationReadFailureTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"rename", "delete", "no-password"})
+    void freshConfigurationSaveRemovesObsoleteNetworkCredentialPayload(String operation) throws Exception {
+        configure(false);
+        when(storage.isDefault()).thenReturn(true);
+        when(storage.getStorageSubId()).thenReturn("");
+        when(manager.isTrusted()).thenReturn(true);
+        var profiles = mock(DBWNetworkProfileManager.class);
+        when(registry.getNetworkProfiles()).thenReturn(profiles);
+        var profile = new DBWNetworkProfile(registry.getProject());
+        profile.setProfileId("stable-profile");
+        profile.setProfileName("旧配置名称");
+        var descriptor = NetworkHandlerRegistry.getInstance().getDescriptor("ssh_tunnel");
+        assertNotNull(descriptor);
+        var handler = new DBWHandlerConfiguration(descriptor, null);
+        handler.setEnabled(true);
+        handler.setSavePassword(true);
+        handler.setUserName("fixture-user");
+        handler.setPassword("fixture-old-password");
+        profile.updateConfiguration(handler);
+        when(profiles.getProfiles()).thenReturn(List.of(profile));
+        var writes = new HashMap<String, byte[]>();
+        doAnswer(call -> {
+            byte[] bytes = call.getArgument(1);
+            writes.put(call.getArgument(0), bytes == null ? null : bytes.clone());
+            return null;
+        }).when(manager).writeConfiguration(anyString(), nullable(byte[].class));
+        var constructor = DataSourceSerializerModern.class.getDeclaredConstructor(DataSourceRegistry.class);
+        constructor.setAccessible(true);
+        var first = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        first.saveDataSources(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of());
+        byte[] initialBytes = writes.get(credentialsName());
+        assertNotNull(initialBytes);
+        String initial = new String(encryptor.decryptValue(initialBytes), StandardCharsets.UTF_8);
+        assertTrue(initial.contains("fixture-old-password"));
+        assertTrue(initial.contains("network/ssh_tunnel/profile/旧配置名称"));
+        assertFalse(new String(writes.get("fixture.json"), StandardCharsets.UTF_8).contains("fixture-old-password"));
+        switch (operation) {
+            case "rename" -> profile.setProfileName("新配置名称");
+            case "delete" -> when(profiles.getProfiles()).thenReturn(List.of());
+            default -> handler.setSavePassword(false);
+        }
+        writes.clear();
+        var second = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        second.saveDataSources(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of());
+        assertTrue(writes.containsKey(credentialsName()));
+        byte[] replacement = writes.get(credentialsName());
+        if ("delete".equals(operation)) {
+            assertNull(replacement, "An empty credential set must remove the old file");
+        } else {
+            assertNotNull(replacement);
+            String decoded = new String(encryptor.decryptValue(replacement), StandardCharsets.UTF_8);
+            assertEquals("rename".equals(operation), decoded.contains("fixture-old-password"));
+            assertEquals("rename".equals(operation), decoded.contains("network/ssh_tunnel/profile/新配置名称"));
+            assertEquals(!"rename".equals(operation), decoded.contains("network/ssh_tunnel/profile/旧配置名称"));
+            assertTrue(decoded.contains("fixture-user"));
+        }
+        assertEquals("fixture-old-password", handler.getPassword(), "Saving must not clear the in-memory password");
+        assertEquals(initial, new String(encryptor.decryptValue(initialBytes), StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
     @CsvSource({"ssh_tunnel, false", "ssh_tunnel, true", "postgre_ssl, false", "postgre_ssl, true"})
     void untrustedNetworkExportContainsOnlyHandlerReferenceAndDoesNotModifySource(String handlerId, boolean secure)
         throws Exception {
