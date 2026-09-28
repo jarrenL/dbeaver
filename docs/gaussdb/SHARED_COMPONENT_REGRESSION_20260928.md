@@ -1,5 +1,22 @@
 # 近期共享组件修复的联合回归
 
+## 最新同批编译：核心与调试OSGi分层回归
+
+主仓3239ae538b，测试仓新增`--gauss-debug`及`--compile-only`。同批编译49个非Live测试类，另显式编译GaussDB debug.core/debug.ui以及共享debug.core全部Java源码；其他未显式选择的生产依赖仍用已有产物。编译目录`/tmp/shared-focused-6ecVTN`，编译日志`/tmp/gauss-both-compile-20260928.log`。仅编译不计任何测试通过。
+
+| OSGi模块 | 选定类 | 执行/通过 | 失败/错误/跳过 | 日志 |
+| --- | ---: | ---: | --- | --- |
+| GaussDB核心 | 34 | 629/629 | 0/0/0 | `/tmp/osgi-core-combined-20260928.log` |
+| GaussDB调试 | 15 | 112/112 | 0/0/0 | `/tmp/osgi-debug-combined-20260928.log` |
+
+两个独立Equinox进程均正常退出0，逐类报告门控均通过。本批共49个不同测试类、741次测试执行；不与其他专项或历史回归数相加。核心报告目录`/tmp/gauss-existing-osgi-JP6h9Y`，调试报告目录`/tmp/gauss-existing-osgi-Qaoky4`，各有只含类名/计数/范围的verified-results.json，原始XML不直接发布。
+
+调试15类包含断点路由/删除、监视生命周期、线程快照、源码导航、事务完成、跨schema、参数/能力门控、协议/权限/会话、历史分页、折叠和错误消息。它们使用组件夹具，不证明快捷键点击、真正附着数据库、会话提交/回滚对话框等端到端行为。GaussDBSessionLiveTest和GaussDBHistoricalJdbcLiveTest未执行，核心三个Live类也未执行，未列入“0跳过”。
+
+复现：测试仓执行`node scripts/run-shared-focused.mjs --gauss-core --gauss-debug --compile-only`，用打印的编译目录分别执行`node scripts/run-existing-osgi.mjs <编译目录> --module=org.jkiss.dbeaver.ext.gaussdb.test --all-module`及`node scripts/run-existing-osgi.mjs <编译目录> --module=org.jkiss.dbeaver.ext.gaussdb.debug.test --all-module`。每次改源码后重新编译。普通classpath直接执行调试模块会加载到不匹配的GTK依赖并中止，故使用真实OSGi平台选择而非删减断言。
+
+仍需完整Tycho构建、GaussDB真库、Linux GUI、Hermes审核及验证后推送；本批不表示总目标完成。
+
 ## 最新OSGi复验：34类629项通过
 
 使用测试仓`run-existing-osgi.mjs`读取已有Tycho解析出的bundle配置，在独立临时configuration/data目录启动真实Equinox及DBeaver headless应用。依赖jar只读引用；编译产物通过compiled-sources.json按源码所属bundle分目录覆盖，不把所有类混装到一个bundle。未改动原测试断言、未模拟Platform.getBundle。
