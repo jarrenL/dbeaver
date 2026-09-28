@@ -116,6 +116,9 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                     try (OutputStream os = Files.newOutputStream(tempFile)) {
                         try (InputStream bs = blob.getBinaryStream()) {
                             ContentUtils.copyStreams(bs, contentLength, os, monitor);
+                            if (monitor.isCanceled()) {
+                                throw new java.io.InterruptedIOException("BLOB content copy canceled");
+                            }
                         }
                     } catch (IOException e) {
                         ContentUtils.deleteTempFile(tempFile);
