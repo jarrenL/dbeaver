@@ -28,6 +28,47 @@ class GaussDBNativePasswordTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedRestorePreparationRemovesUnregisteredTemporaryCopy(boolean directoryFormat) throws Exception {
+        var settings = settings(true, "Synthetic!password");
+        when(settings.getFormat()).thenReturn(directoryFormat
+            ? PostgreBackupRestoreSettings.ExportFormat.DIRECTORY : PostgreBackupRestoreSettings.ExportFormat.CUSTOM);
+        Path missing = directory.resolve("missing-source.dump");
+        when(settings.getInputFile()).thenReturn(missing.toString());
+        Path homePath = Files.createDirectory(directory.resolve("client"));
+        Files.createFile(homePath.resolve("gs_restore"));
+        var home = mock(DBPNativeClientLocation.class);
+        when(home.getPath()).thenReturn(homePath.toFile());
+        when(settings.getClientHome()).thenReturn(home);
+        Path transfer = directory.resolve("owned-temporary-copy");
+        var handler = new Restore() {
+            @Override protected boolean requiresLocalTransferFile(PostgreDatabaseRestoreSettings s, String file) {
+                return true;
+            }
+            @Override protected Path createLocalTransferFile(PostgreDatabaseRestoreSettings s) throws IOException {
+                return directoryFormat ? Files.createDirectory(transfer) : Files.createFile(transfer);
+            }
+        };
+        IOException error = assertThrows(IOException.class,
+            () -> handler.fillProcessParameters(settings, null, new ArrayList<>()));
+        assertInstanceOf(NoSuchFileException.class, error);
+        assertFalse(Files.exists(transfer), "Copy failure must clean its temporary path before registration");
+        assertTrue(Files.isDirectory(homePath));
+        assertFalse(Files.exists(missing));
+        byte[] payload = "retry 中文".getBytes(StandardCharsets.UTF_8);
+        if (directoryFormat) {
+            Files.createDirectory(missing);
+            Files.write(missing.resolve("payload.dat"), payload);
+        } else {
+            Files.write(missing, payload);
+        }
+        handler.fillProcessParameters(settings, mock(PostgreDatabaseRestoreInfo.class), new ArrayList<>());
+        assertArrayEquals(payload, Files.readAllBytes(directoryFormat ? transfer.resolve("payload.dat") : transfer));
+        Restore.cleanup(transfer);
+        assertArrayEquals(payload, Files.readAllBytes(directoryFormat ? missing.resolve("payload.dat") : missing));
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {0, 7, 65537})
     void localTransferFilePreservesBytesAndCleanupOnlyRemovesCopy(int length) throws Exception {
         byte[] payload = new byte[length];

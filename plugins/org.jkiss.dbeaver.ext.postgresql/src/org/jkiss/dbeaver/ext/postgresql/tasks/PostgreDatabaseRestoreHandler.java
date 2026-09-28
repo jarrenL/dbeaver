@@ -104,10 +104,14 @@ public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<Post
             } catch (DBException e) {
                 throw new IOException("Cannot resolve restore input path", e);
             }
-            Path localFile = settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY
-                ? Files.createTempDirectory("dbeaver-gaussdb-restore-")
-                : Files.createTempFile("dbeaver-gaussdb-restore-", ".dump");
-            copyTransferPath(source, localFile);
+            Path localFile = createLocalTransferFile(settings);
+            try {
+                copyTransferPath(source, localFile);
+            } catch (IOException | RuntimeException e) {
+                // Not registered yet, so executeProcess's finally cannot find this path.
+                deleteLocalTransferPath(localFile);
+                throw e;
+            }
             localTransferFiles.put(arg, localFile);
         }
 
@@ -128,6 +132,12 @@ public class PostgreDatabaseRestoreHandler extends PostgreNativeToolHandler<Post
     @Override
     protected boolean isExportWizard() {
         return false;
+    }
+
+    protected Path createLocalTransferFile(PostgreDatabaseRestoreSettings settings) throws IOException {
+        return settings.getFormat() == PostgreBackupRestoreSettings.ExportFormat.DIRECTORY
+            ? Files.createTempDirectory("dbeaver-gaussdb-restore-")
+            : Files.createTempFile("dbeaver-gaussdb-restore-", ".dump");
     }
 
     @Override
