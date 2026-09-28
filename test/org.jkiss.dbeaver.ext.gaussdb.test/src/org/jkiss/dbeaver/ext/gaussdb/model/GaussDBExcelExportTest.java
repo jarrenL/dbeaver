@@ -20,6 +20,7 @@ import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.jkiss.dbeaver.data.office.export.DataExporterXLSX;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.DBPDataKind;
 import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBPNamedObject;
@@ -387,6 +388,63 @@ public class GaussDBExcelExportTest {
         assertArrayEquals(original, Files.readAllBytes(existing));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"empty", "plain-text", "truncated", "unrelated-zip", "directory"})
+    public void invalidAppendFileFailsWithoutChangingInputAndSameExporterCanRetry(String kind) throws Exception {
+        Path valid = temporaryDirectory.resolve("valid.xlsx");
+        try (XSSFWorkbook seed = new XSSFWorkbook(); var output = Files.newOutputStream(valid)) {
+            var data = seed.createSheet("原表");
+            data.createRow(0).createCell(0).setCellValue("原表头");
+            data.createRow(1).createCell(0).setCellValue("原数据");
+            seed.write(output);
+        }
+        byte[] good = Files.readAllBytes(valid);
+        byte[] broken = switch (kind) {
+            case "empty", "directory" -> new byte[0];
+            case "plain-text" -> "这不是Excel文件".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            case "truncated" -> java.util.Arrays.copyOf(good, 32);
+            default -> {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                try (var zip = new java.util.zip.ZipOutputStream(bytes)) {
+                    zip.putNextEntry(new java.util.zip.ZipEntry("readme.txt"));
+                    zip.write(new byte[]{1, 2, 3});
+                    zip.closeEntry();
+                }
+                yield bytes.toByteArray();
+            }
+        };
+        Path invalid = temporaryDirectory.resolve("invalid.xlsx");
+        if ("directory".equals(kind)) {
+            Files.createDirectory(invalid);
+        } else {
+            Files.write(invalid, broken);
+        }
+        IStreamDataExporterSite site = mock(IStreamDataExporterSite.class);
+        when(site.getOutputFile()).thenReturn(invalid);
+        DataExporterXLSX exporter = new DataExporterXLSX();
+        DBException failure = assertThrows(DBException.class, () -> exporter.importData(site));
+        assertNotNull(failure.getCause(), "Preserve the parser or IO cause");
+        if ("directory".equals(kind)) {
+            assertTrue(Files.isDirectory(invalid));
+            try (var children = Files.list(invalid)) {
+                assertEquals(0, children.count());
+            }
+        } else {
+            assertArrayEquals(broken, Files.readAllBytes(invalid));
+        }
+        verify(site, never()).getOutputStream();
+        try (XSSFWorkbook workbook = export(exporter, DBPDataKind.STRING,
+            Map.of("appendStrategy", "use existing sheets"), valid, new Object[]{"重试追加"})) {
+            assertEquals(1, workbook.getNumberOfSheets());
+            var data = workbook.getSheetAt(0);
+            assertEquals(3, data.getPhysicalNumberOfRows());
+            assertEquals("原表头", data.getRow(0).getCell(0).getStringCellValue());
+            assertEquals("原数据", data.getRow(1).getCell(0).getStringCellValue());
+            assertEquals("重试追加", data.getRow(2).getCell(0).getStringCellValue());
+        }
+        assertArrayEquals(good, Files.readAllBytes(valid));
+    }
+
     @Test
     public void emptyImportedSheetStartsWithHeaderAtZero() throws Exception {
         Path existing = temporaryDirectory.resolve("empty.xlsx");
@@ -698,6 +756,11 @@ public class GaussDBExcelExportTest {
 
     private XSSFWorkbook export(DBPDataKind kind, Map<String, Object> overrides, Path existing, Object[]... rows)
         throws Exception {
+        return export(new DataExporterXLSX(), kind, overrides, existing, rows);
+    }
+
+    private XSSFWorkbook export(DataExporterXLSX exporter, DBPDataKind kind, Map<String, Object> overrides,
+        Path existing, Object[]... rows) throws Exception {
         IStreamDataExporterSite site = mock(IStreamDataExporterSite.class);
         var properties = DataExporterXLSX.getDefaultProperties();
         properties.putAll(overrides);
@@ -728,7 +791,6 @@ public class GaussDBExcelExportTest {
         when(session.getProgressMonitor()).thenReturn(new VoidProgressMonitor());
         DBCResultSet resultSet = mock(DBCResultSet.class);
         when(resultSet.getSession()).thenReturn(session);
-        DataExporterXLSX exporter = new DataExporterXLSX();
         if (existing != null) {
             exporter.importData(site);
         }

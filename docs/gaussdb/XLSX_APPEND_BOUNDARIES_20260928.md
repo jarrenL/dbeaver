@@ -33,4 +33,10 @@
 
 2026-09-28最新直接编译专项运行：69项开始、69通过、0跳过、0失败，日志 `/tmp/xlsx-focused-mixed.log`，编译目录 `/tmp/xlsx-focused-l0Xkk2`。此数字是整类执行数，不是新增69项，更不计入旧的1882项完整回归。
 
+## 损坏文件和读取失败后的恢复
+
+`invalidAppendFileFailsWithoutChangingInputAndSameExporterCanRetry` 新增5项：零字节文件、普通中文文本、截断的真实XLSX、仅包含readme的ZIP、目录路径。实际调用生产importData，断言DBException保留原始原因、不请求输出流、不修改原文件字节或目录内容。随后用**同一个导出器实例**加载正常工作簿并追加，重新打开产物确认旧表头/旧数据/新行与表数准确，正常输入文件也保持原字节。
+
+本批没有修改生产逻辑。最新整类74项全部通过、0跳过、0失败，日志 `/tmp/xlsx-focused-file-errors.log`，编译目录 `/tmp/xlsx-focused-ypK373`。使用与上文相同的直接编译专项脚本；不是完整OSGi、GUI错误弹窗、文件权限拒绝、加密XLSX、超大文件或网络盘故障的验收。此前73项是尚未加入目录路径时的中间结果。
+
 本轮环境同时拒绝 Docker socket 访问，因此未续跑 Linux GUI 和真库。空二进制的 GUI 保存仍待验收，不能由此前参数绑定的真库结果代替。
