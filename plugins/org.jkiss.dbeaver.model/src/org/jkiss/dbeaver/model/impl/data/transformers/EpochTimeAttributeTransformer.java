@@ -35,6 +35,7 @@ import org.jkiss.utils.CommonUtils;
 
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -59,14 +60,20 @@ public class EpochTimeAttributeTransformer implements DBDAttributeTransformer {
     private static final double SQLITE_JULIAN_OFFSET = 2440587.5;  // select julianday(0, "unixepoch")
     private static final int SECONDS_IN_DAY = 24 * 3600;
 
-    private static final DateTimeFormatter SECONDS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH);
-    private static final DateTimeFormatter MILLIS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ENGLISH);
-    private static final DateTimeFormatter MICROS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS", Locale.ENGLISH);
-    private static final DateTimeFormatter NANOS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.nnnnnnnnn", Locale.ENGLISH);
+    private static final DateTimeFormatter SECONDS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter MILLIS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.SSS");
+    private static final DateTimeFormatter MICROS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.SSSSSS");
+    private static final DateTimeFormatter NANOS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.nnnnnnnnn");
     // 10 us precision
-    private static final DateTimeFormatter SQLITE_JULIAN_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.nnnnn", Locale.ENGLISH);
+    private static final DateTimeFormatter SQLITE_JULIAN_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.nnnnn");
     // 100 ns precision
-    private static final DateTimeFormatter DOTNET_TICKS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.nnnnnnn", Locale.ENGLISH);
+    private static final DateTimeFormatter DOTNET_TICKS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.nnnnnnn");
+
+    @NotNull
+    private static DateTimeFormatter createFormatter(@NotNull String pattern) {
+        // Reject impossible calendar dates instead of silently adjusting edited values.
+        return DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT);
+    }
 
     private enum EpochUnit {
         seconds {

@@ -146,6 +146,44 @@ public class EpochTimeAttributeTransformerTest extends DBeaverUnitTest {
         Assertions.assertEquals(-1L, getValue("1970-01-01 00:59:59"));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "seconds|2023-02-29 12:00:00",
+        "milliseconds|2023-02-29 12:00:00.000",
+        "microseconds|2023-02-29 12:00:00.000000",
+        "nanoseconds|2023-02-29 12:00:00.000000000",
+        "dotnet|2023-02-29 12:00:00.0000000",
+        "w32filetime|2023-02-29 12:00:00.0000000",
+        "oadate|2023-02-29 12:00:00.000000000",
+        "sqliteJulian|2023-02-29 12:00:00.00000",
+        "seconds|2024-02-30 12:00:00",
+        "seconds|2024-04-31 12:00:00",
+        "seconds|2024-01-01 24:00:00",
+        "seconds|2024-01-01 12:00:60"
+    })
+    void impossibleDatesAndTimesAreRejectedWithoutNormalization(String unit, String text) {
+        setOptions(unit, "UTC");
+        DBCException failure = Assertions.assertThrows(DBCException.class,
+            () -> proxyHandler.getValueFromObject(session, column, text, false, true));
+        Assertions.assertInstanceOf(java.time.DateTimeException.class, failure.getCause());
+        // Failure must not poison the handler or reject an ordinary valid date for this unit.
+        Object raw = getValue(getDisplayString(0L));
+        Assertions.assertInstanceOf(Number.class, raw);
+        Assertions.assertEquals(0.0, ((Number) raw).doubleValue());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "Asia/Shanghai|2024-03-01 07:59:59.123456",
+        "Asia/Kathmandu|2024-03-01 05:44:59.123456",
+        "America/St_Johns|2024-02-29 20:29:59.123456"
+    })
+    void microsecondsRoundTripAcrossNonUtcDayBoundaries(String zone, String expected) {
+        setOptions("microseconds", zone);
+        Assertions.assertEquals(expected, getDisplayString(1709251199123456L));
+        Assertions.assertEquals(1709251199123456L, getValue(expected));
+    }
+
     @Test
     public void testNanosAndUTC() {
         setOptions(NANOS, "UTC");
