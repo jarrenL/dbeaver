@@ -26,6 +26,52 @@ import java.sql.SQLException;
 public class GaussDBPackageCompilerTest {
 
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"next", "field", "result-close", "statement-close"})
+    void partialDiagnosticsSurviveReadAndCleanupFailures(String stage) throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(object.getObjectId()).thenReturn(42L);
+        Mockito.when(schema.getObjectId()).thenReturn(99L);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(result);
+        Mockito.when(result.next()).thenReturn(true, false);
+        Mockito.when(result.getString("type")).thenReturn("package body");
+        Mockito.when(result.getString("src")).thenReturn("first body diagnostic");
+        Mockito.when(result.getInt("line")).thenReturn(7);
+        SQLException failure = new SQLException("failure at " + stage, "08006");
+        switch (stage) {
+            case "next" -> Mockito.when(result.next()).thenReturn(true).thenThrow(failure);
+            case "field" -> {
+                Mockito.when(result.next()).thenReturn(true, true, false);
+                Mockito.when(result.getString("src")).thenReturn("first body diagnostic").thenThrow(failure);
+            }
+            case "result-close" -> Mockito.doThrow(failure).when(result).close();
+            case "statement-close" -> Mockito.doThrow(failure).when(statement).close();
+            default -> throw new AssertionError(stage);
+        }
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        var actual = Assertions.assertThrows(org.jkiss.dbeaver.DBException.class,
+            () -> GaussDBPackageCompiler.readCompilationDiagnostics(session, log, object, GaussDBPackageCompileTarget.ALL));
+        Assertions.assertSame(failure, actual.getCause());
+        Assertions.assertEquals(1, log.getErrorStack().size());
+        var diagnostic = (GaussDBPackageCompileError) log.getErrorStack().iterator().next();
+        Assertions.assertEquals("first body diagnostic", diagnostic.getMessage());
+        Assertions.assertEquals(7, diagnostic.getLine());
+        Assertions.assertSame(GaussDBPackageCompileTarget.BODY, diagnostic.getSourcePart());
+        Mockito.verify(result).close();
+        Mockito.verify(statement).close();
+        Mockito.verify(statement).setLong(1, 42L);
+        Mockito.verify(statement).setLong(2, 99L);
+        // The caller owns this session; only resources opened by logErrors are closed here.
+        Mockito.verify(session, Mockito.never()).close();
+        Mockito.verify(object, Mockito.never()).refreshObjectState(Mockito.any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"type", "src", "definition", "line"})
     void diagnosticColumnReadFailureIsNotInventedAsSourceError(String column) throws Exception {
         var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
