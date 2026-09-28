@@ -30,6 +30,40 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DateTimeDataFormatterLocaleTest {
     @ParameterizedTest
+    @ValueSource(strings = {"noon", "n'n", "中文n"})
+    void quotedNanoLettersHaveSameLiteralMeaningForJdbcAndTemporal(String literal) {
+        var formatter = new DateTimeDataFormatter();
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd '" + literal.replace("'", "''") + "' HH:mm:ss"));
+        var local = LocalDateTime.of(2024, 2, 29, 12, 34, 56);
+        String expected = "2024-02-29 " + literal + " 12:34:56";
+        assertEquals(expected, formatter.formatValue(local));
+        assertEquals(expected, formatter.formatValue(Timestamp.valueOf(local)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UTC", "Asia/Shanghai", "America/New_York"})
+    void reinitializationReplacesZoneLocaleAndPattern(String zone) throws Exception {
+        var formatter = formatter(Locale.FRENCH, "UTC");
+        var instant = java.time.Instant.parse("2024-02-29T20:34:56Z");
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd HH:mm:ss XXX", "timezone", zone));
+        var expected = instant.atZone(java.time.ZoneId.of(zone));
+        String text = formatter.formatValue(Timestamp.from(instant));
+        assertEquals(expected.toOffsetDateTime(), formatter.parseValue(text, java.time.OffsetDateTime.class));
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "dd MMMM yyyy HH:mm:ss"));
+        assertNull(formatter.getZone());
+        assertEquals("29 February 2024 12:34:56", formatter.formatValue(LocalDateTime.of(2024, 2, 29, 12, 34, 56)));
+    }
+
+    @Test
+    void invalidZoneCanBeFollowedBySuccessfulReinitialization() {
+        var formatter = formatter(Locale.ENGLISH, "UTC");
+        assertThrows(java.time.DateTimeException.class,
+            () -> formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd", "timezone", "Invalid/Zone")));
+        formatter.init(null, Locale.ENGLISH, Map.of("pattern", "yyyy-MM-dd", "timezone", "UTC"));
+        assertEquals("2024-02-29", formatter.formatValue(java.sql.Date.valueOf("2024-02-29")));
+    }
+
+    @ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({
         "UTC,date", "Asia/Shanghai,date", "America/New_York,date",
         "UTC,time", "Asia/Shanghai,time", "America/New_York,time"

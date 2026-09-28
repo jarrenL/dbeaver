@@ -58,7 +58,16 @@ public class DateTimeDataFormatter implements DBDDataFormatter {
         pattern = CommonUtils.toString(properties.get(PROP_PATTERN));
         final String timezone = CommonUtils.toString(properties.get(PROP_TIMEZONE));
         zone = CommonUtils.isEmptyTrimmed(timezone) ? null : ZoneId.of(timezone);
-        String sdfPattern = pattern.replace("n", "f");
+        StringBuilder legacyPattern = new StringBuilder(pattern.length());
+        boolean literal = false;
+        for (int i = 0; i < pattern.length(); i++) {
+            char symbol = pattern.charAt(i);
+            if (symbol == '\'') {
+                literal = !literal;
+            }
+            legacyPattern.append(!literal && symbol == 'n' ? 'f' : symbol);
+        }
+        String sdfPattern = legacyPattern.toString();
         dateFormat = new ExtendedDateFormat(
             sdfPattern,
             locale);
