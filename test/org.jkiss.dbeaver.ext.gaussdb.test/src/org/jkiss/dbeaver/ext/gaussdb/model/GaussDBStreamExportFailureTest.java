@@ -34,6 +34,82 @@ import static org.mockito.Mockito.*;
 public class GaussDBStreamExportFailureTest {
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
+    public void zipMultipleFailuresPreserveFirstAndStillReleaseResources(boolean reuseException) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var zip = mock(java.util.zip.ZipOutputStream.class);
+        IOException entry = new IOException("entry failure");
+        IOException finish = reuseException ? entry : new IOException("finish failure");
+        IOException flush = reuseException ? entry : new IOException("flush failure");
+        IOException shutdown = reuseException ? entry : new IOException("close failure");
+        doThrow(entry).when(zip).closeEntry();
+        doThrow(finish).when(zip).finish();
+        doThrow(flush).when(zip).flush();
+        doThrow(shutdown).when(zip).close();
+        set(consumer, "zipStream", zip);
+        set(consumer, "outputStream", zip);
+        IOException actual = assertThrows(IOException.class, () -> invokeNoArgs(consumer, "closeOutputStreams"));
+        assertSame(entry, actual);
+        assertArrayEquals(reuseException ? new Throwable[0] : new Throwable[]{finish, flush, shutdown},
+            actual.getSuppressed());
+        var order = inOrder(zip);
+        order.verify(zip).closeEntry();
+        order.verify(zip).finish();
+        order.verify(zip).flush();
+        order.verify(zip).close();
+        assertNull(get(consumer, "zipStream"));
+        assertNull(get(consumer, "outputStream"));
+        invokeNoArgs(consumer, "closeOutputStreams");
+        verifyNoMoreInteractions(zip);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"entry", "finish", "flush"})
+    public void zipFinalizationFailureIsReportedWithoutSkippingClose(String stage) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var zip = mock(java.util.zip.ZipOutputStream.class);
+        IOException failure = new IOException("synthetic zip " + stage);
+        switch (stage) {
+            case "entry" -> doThrow(failure).when(zip).closeEntry();
+            case "finish" -> doThrow(failure).when(zip).finish();
+            default -> doThrow(failure).when(zip).flush();
+        }
+        set(consumer, "zipStream", zip);
+        set(consumer, "outputStream", zip);
+        assertSame(failure, assertThrows(IOException.class, () -> invokeNoArgs(consumer, "closeOutputStreams")));
+        verify(zip).closeEntry();
+        verify(zip).finish();
+        verify(zip).close();
+        assertNull(get(consumer, "zipStream"));
+        assertNull(get(consumer, "outputStream"));
+        invokeNoArgs(consumer, "closeOutputStreams");
+        verify(zip, times(1)).close();
+    }
+
+    @Test
+    public void successfulZipFinalizationProducesReadableUnicodeEntry() throws Exception {
+        var consumer = new StreamTransferConsumer();
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        var zip = new java.util.zip.ZipOutputStream(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        zip.putNextEntry(new java.util.zip.ZipEntry("导出.csv"));
+        String value = "标题,内容\r\n1,中文𠀀😀\r\n";
+        var writer = new PrintWriter(new OutputStreamWriter(zip, java.nio.charset.StandardCharsets.UTF_8));
+        writer.write(value);
+        set(consumer, "writer", writer);
+        set(consumer, "zipStream", zip);
+        set(consumer, "outputStream", zip);
+        invokeNoArgs(consumer, "closeOutputStreams");
+        try (var input = new java.util.zip.ZipInputStream(new ByteArrayInputStream(bytes.toByteArray()),
+            java.nio.charset.StandardCharsets.UTF_8)) {
+            assertEquals("导出.csv", input.getNextEntry().getName());
+            assertEquals(value, new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            assertNull(input.getNextEntry());
+        }
+        assertNull(get(consumer, "writer"));
+        assertNull(get(consumer, "outputStream"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     public void headerFailureIsNotIgnored(boolean ioFailure) throws Exception {
         var consumer = new StreamTransferConsumer();
         var processor = mock(IStreamDataExporter.class);
@@ -238,7 +314,11 @@ public class GaussDBStreamExportFailureTest {
     }
 
     private static void close(StreamTransferConsumer consumer) throws Exception {
-        Method method = StreamTransferConsumer.class.getDeclaredMethod("closeExporter");
+        invokeNoArgs(consumer, "closeExporter");
+    }
+
+    private static void invokeNoArgs(StreamTransferConsumer consumer, String name) throws Exception {
+        Method method = StreamTransferConsumer.class.getDeclaredMethod(name);
         method.setAccessible(true);
         try {
             method.invoke(consumer);

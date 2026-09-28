@@ -592,8 +592,13 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
 
     private void closeOutputStreams() throws IOException {
         log.debug("\tClose output stream");
+        IOException failure = null;
         if (this.writer != null) {
             this.writer.flush();
+            if (this.writer.checkError()) {
+                failure = new IOException("Error writing exported text data");
+            }
+            this.writer = null;
         }
 
         // Finish zip stream
@@ -601,12 +606,12 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
             try {
                 zipStream.closeEntry();
             } catch (IOException e) {
-                log.debug(e);
+                failure = collectOutputFailure(failure, e);
             }
             try {
                 zipStream.finish();
             } catch (IOException e) {
-                log.debug(e);
+                failure = collectOutputFailure(failure, e);
             }
             zipStream = null;
         }
@@ -615,11 +620,29 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
             try {
                 outputStream.flush();
             } catch (IOException e) {
-                log.debug(e);
+                failure = collectOutputFailure(failure, e);
             }
-            outputStream.close();
-            outputStream = null;
+            try {
+                outputStream.close();
+            } catch (IOException e) {
+                failure = collectOutputFailure(failure, e);
+            } finally {
+                outputStream = null;
+            }
         }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private static IOException collectOutputFailure(@Nullable IOException primary, @NotNull IOException next) {
+        if (primary == null) {
+            return next;
+        }
+        if (primary != next) {
+            primary.addSuppressed(next);
+        }
+        return primary;
     }
 
     private void createNewOutFile(DBRProgressMonitor monitor) throws IOException {
