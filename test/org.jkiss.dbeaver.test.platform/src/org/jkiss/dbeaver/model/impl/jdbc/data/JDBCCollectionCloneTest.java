@@ -153,4 +153,58 @@ class JDBCCollectionCloneTest {
         verify(first, never()).release();
         verify(second, never()).release();
     }
+
+    @Test
+    void laterFailureReleasesClonedResourcesInsideNestedCollections() throws Exception {
+        DBDValueCloneable leaf = mock(DBDValueCloneable.class);
+        DBDValueCloneable leafCopy = mock(DBDValueCloneable.class);
+        when(leaf.cloneValue(monitor)).thenReturn(leafCopy);
+        JDBCCollection inner = collection("placeholder");
+        inner.setItem(0, leaf);
+        JDBCCollection middle = collection("placeholder");
+        middle.setItem(0, inner);
+        JDBCCollection original = collection("placeholder", "placeholder");
+        original.setItem(0, middle);
+        DBDValueCloneable bad = mock(DBDValueCloneable.class);
+        original.setItem(1, bad);
+        DBCException failure = new DBCException("outer clone failed");
+        when(bad.cloneValue(monitor)).thenThrow(failure);
+        assertSame(failure, assertThrows(DBCException.class, () -> original.cloneValue(monitor)));
+        verify(leafCopy).release();
+        verify(leaf, never()).release();
+        assertSame(middle, original.getItem(0));
+        assertSame(inner, middle.getItem(0));
+        assertSame(leaf, inner.getItem(0));
+    }
+
+    @Test
+    void nestedCleanupPreservesSharedLeafAndContinuesAfterReleaseFailure() throws Exception {
+        DBDValueCloneable owned = mock(DBDValueCloneable.class);
+        DBDValueCloneable ownedCopy = mock(DBDValueCloneable.class);
+        DBDValueCloneable shared = mock(DBDValueCloneable.class);
+        DBDValueCloneable sibling = mock(DBDValueCloneable.class);
+        DBDValueCloneable siblingCopy = mock(DBDValueCloneable.class);
+        DBDValueCloneable bad = mock(DBDValueCloneable.class);
+        JDBCCollection nested = collection();
+        nested.setContents(new Object[] {owned, shared});
+        JDBCCollection original = collection();
+        original.setContents(new Object[] {nested, sibling, bad});
+        when(owned.cloneValue(monitor)).thenReturn(ownedCopy);
+        when(shared.cloneValue(monitor)).thenReturn(shared);
+        when(sibling.cloneValue(monitor)).thenReturn(siblingCopy);
+        DBCException failure = new DBCException("outer clone failed");
+        RuntimeException cleanup = new IllegalStateException("nested cleanup failed");
+        when(bad.cloneValue(monitor)).thenThrow(failure);
+        doThrow(cleanup).when(ownedCopy).release();
+        assertSame(failure, assertThrows(DBCException.class, () -> original.cloneValue(monitor)));
+        assertArrayEquals(new Throwable[] {cleanup}, failure.getSuppressed());
+        verify(ownedCopy).release();
+        verify(siblingCopy).release();
+        verify(owned, never()).release();
+        verify(shared, never()).release();
+        verify(sibling, never()).release();
+        verify(bad, never()).release();
+        assertSame(owned, nested.getItem(0));
+        assertSame(shared, nested.getItem(1));
+    }
 }

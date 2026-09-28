@@ -110,19 +110,33 @@ public class JDBCCollection extends AbstractDatabaseList implements DBDValueClon
                 }
             } catch (DBCException | RuntimeException failure) {
                 // A failed editable copy must not silently borrow the original mutable value.
-                for (int i = 0; i < copy.contents.length; i++) {
-                    if (copy.contents[i] != contents[i]) {
-                        try {
-                            DBUtils.releaseValue(copy.contents[i]);
-                        } catch (RuntimeException cleanupFailure) {
-                            failure.addSuppressed(cleanupFailure);
-                        }
-                    }
-                }
+                copy.releaseClonedContents(this, failure);
                 throw failure;
             }
         }
         return copy;
+    }
+
+    private void releaseClonedContents(@NotNull JDBCCollection original, @NotNull Throwable failure) {
+        if (contents == null) {
+            return;
+        }
+        for (int i = 0; i < contents.length; i++) {
+            Object source = original.contents != null && i < original.contents.length ? original.contents[i] : null;
+            Object cloned = contents[i];
+            if (cloned != source) {
+                if (cloned instanceof JDBCCollection nestedCopy && source instanceof JDBCCollection nestedOriginal) {
+                    nestedCopy.releaseClonedContents(nestedOriginal, failure);
+                }
+                try {
+                    DBUtils.releaseValue(cloned);
+                } catch (RuntimeException cleanupFailure) {
+                    if (cleanupFailure != failure) {
+                        failure.addSuppressed(cleanupFailure);
+                    }
+                }
+            }
+        }
     }
 
     @Nullable
