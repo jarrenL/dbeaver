@@ -8,6 +8,8 @@
 
 ## 最新结果
 
+后续目录备份保护回归：`/tmp/shared-directory-green-20260928.log`330/330通过、0跳过、0失败。基于1d951d4f85另含非空目录保护生产修复及三项新增测试；下方327项全部重跑，备份生命周期分组从13增至16，其他不变。详见NATIVE_COMMAND_CONTRACTS_20260928.md。不将330与327叠加。
+
 `/tmp/shared-native-final-20260928.log`：327项，327通过、0跳过、0失败、0错误中止。新增显式编译共享AbstractNativeToolHandler及四个PostgreSQL原生工具处理器。
 
 | 分组 | 同次执行数 |

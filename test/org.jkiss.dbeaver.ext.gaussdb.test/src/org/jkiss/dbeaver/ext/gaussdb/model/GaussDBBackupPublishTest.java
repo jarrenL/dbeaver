@@ -24,6 +24,56 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"absent", "empty", "nonempty"})
+    @SuppressWarnings("unchecked")
+    void directoryPublicationDoesNotMergeWithExistingBackup(String state) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));
+        Path staged = Files.createDirectory(directory.resolve("staged"));
+        Files.writeString(staged.resolve("toc.dat"), "new table of contents");
+        Files.writeString(staged.resolve("new.dat"), "new payload");
+        Path target = directory.resolve("backup");
+        if (!state.equals("absent")) Files.createDirectory(target);
+        if (state.equals("nonempty")) {
+            Files.writeString(target.resolve("toc.dat"), "old table of contents");
+            Files.writeString(target.resolve("old.dat"), "old payload");
+        }
+        var settings = mock(PostgreDatabaseBackupSettings.class);
+        var info = mock(PostgreDatabaseBackupInfo.class);
+        when(settings.getOutputFile(info)).thenReturn(target.toString());
+        var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
+        when(task.getProject()).thenReturn(null);
+        var monitor = mock(DBRProgressMonitor.class);
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/usr/bin/true");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log) {
+            }
+        };
+        var field = PostgreDatabaseBackupHandler.class.getDeclaredField("localTransferFiles");
+        field.setAccessible(true);
+        var paths = (Map<PostgreDatabaseBackupInfo, Path>) field.get(handler);
+        paths.put(info, staged);
+        if (state.equals("nonempty")) {
+            assertThrows(IOException.class, () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class)));
+            assertEquals("old table of contents", Files.readString(target.resolve("toc.dat")));
+            assertEquals("old payload", Files.readString(target.resolve("old.dat")));
+            assertFalse(Files.exists(target.resolve("new.dat")));
+        } else {
+            assertTrue(handler.executeProcess(monitor, task, settings, info, mock(Log.class)));
+            assertEquals("new table of contents", Files.readString(target.resolve("toc.dat")));
+            assertEquals("new payload", Files.readString(target.resolve("new.dat")));
+        }
+        assertFalse(Files.exists(staged));
+        assertTrue(paths.isEmpty());
+        verify(monitor).done();
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void cancelStopsEvenTerminationResistantChildAndReportsInterruption(boolean ignoreTerm) throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/bin/sh")) && Files.isExecutable(Path.of("/bin/sleep")));

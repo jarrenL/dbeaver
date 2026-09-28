@@ -184,6 +184,15 @@ public class PostgreDatabaseBackupHandler extends PostgreNativeToolHandler<Postg
                 } catch (DBException e) {
                     throw new IOException("Cannot resolve backup output path", e);
                 }
+                // A directory archive is one backup, not a tree to merge with an older archive.
+                // Reject before copying anything so an existing backup remains untouched.
+                if (Files.isDirectory(localFile) && Files.isDirectory(target)) {
+                    try (var entries = Files.newDirectoryStream(target)) {
+                        if (entries.iterator().hasNext()) {
+                            throw new java.nio.file.DirectoryNotEmptyException(target.toString());
+                        }
+                    }
+                }
                 copyTransferPath(localFile, target);
             }
             return result;
