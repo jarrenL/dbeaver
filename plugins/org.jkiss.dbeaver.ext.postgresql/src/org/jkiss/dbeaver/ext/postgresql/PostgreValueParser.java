@@ -301,6 +301,7 @@ public class PostgreValueParser {
             int bracePairsCount = 0;
             char[] chars = fieldString.toCharArray();
             StringBuilder buffer = null;
+            StringBuilder pendingWhitespace = new StringBuilder();
             boolean insideString = false;
             boolean wasQuotedOrEscaped = false; // Quoting or escaping makes NULL literal text.
             List<List<Object>> dims = new ArrayList<>(); // array dimension arrays
@@ -365,6 +366,7 @@ public class PostgreValueParser {
                     }
 
                     buffer = new StringBuilder();
+                    pendingWhitespace.setLength(0);
                     continue;
                 } else if (chars[i] == '"') {
                     // quoted element
@@ -372,13 +374,18 @@ public class PostgreValueParser {
                     wasQuotedOrEscaped = true;
                     continue;
                 } else if (!insideString && Character.isWhitespace(chars[i])) {
-                    // white space
+                    // Keep whitespace only when another data character follows it.
+                    // Leading/trailing unquoted whitespace is syntax, internal whitespace is data.
+                    if (buffer != null && !buffer.isEmpty()) {
+                        pendingWhitespace.append(chars[i]);
+                    }
                     continue;
                 } else if ((!insideString && (chars[i] == delim || chars[i] == '}'))
                     || i == chars.length - 1) {
                     // array end or element end
                     // when character that is a part of array element
                     if (chars[i] != '"' && chars[i] != '}' && chars[i] != delim && buffer != null) {
+                        buffer.append(pendingWhitespace);
                         buffer.append(chars[i]);
                     }
 
@@ -390,6 +397,7 @@ public class PostgreValueParser {
                     }
 
                     wasQuotedOrEscaped = false;
+                    pendingWhitespace.setLength(0);
                     buffer = new StringBuilder();
 
                     // when end of an array
@@ -412,6 +420,8 @@ public class PostgreValueParser {
                 }
 
                 if (buffer != null) {
+                    buffer.append(pendingWhitespace);
+                    pendingWhitespace.setLength(0);
                     buffer.append(chars[i]);
                 }
             }

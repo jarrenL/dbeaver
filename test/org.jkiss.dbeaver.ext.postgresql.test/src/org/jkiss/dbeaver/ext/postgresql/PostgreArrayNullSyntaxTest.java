@@ -63,5 +63,24 @@ class PostgreArrayNullSyntaxTest {
         assertEquals(List.of(Arrays.asList(null, ""), List.of("NULL", "中文")),
             PostgreValueParser.parseArrayString("{{NULL,\"\"},{\"NULL\",中文}}", ","));
     }
-}
 
+    @ParameterizedTest
+    @ValueSource(strings = {"a b", "中文  文本", "a\tb", "a\nb"})
+    void internalUnquotedWhitespaceIsPreservedButOuterWhitespaceIsIgnored(String value) throws Exception {
+        assertEquals(List.of(value, "tail"),
+            PostgreValueParser.parseArrayString("{ \t" + value + " \r, tail }", ","));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {" a ", "\t中文\n", "", "  "})
+    void quotedWhitespaceIsPreservedExactly(String value) throws Exception {
+        assertEquals(List.of(value, "tail"),
+            PostgreValueParser.parseArrayString("{ \"" + value + "\" \t,tail}", ","));
+    }
+
+    @Test
+    void escapedBoundarySpacesRemainData() throws Exception {
+        assertEquals(List.of(" a ", "tail"),
+            PostgreValueParser.parseArrayString("{\\ a\\ ,tail}", ","));
+    }
+}
