@@ -194,6 +194,9 @@ public class JDBCContentBLOB extends JDBCContentLOB {
                     } catch (SQLFeatureNotSupportedException | UnsupportedOperationException | IncompatibleClassChangeError e1) {
                         // Stream values seems to be unsupported
                         // Let's try bytes
+                        // A driver may have consumed part of the stream before rejecting the binding.
+                        releaseTempStream();
+                        tmpStream = storage.getContentStream();
                         int contentLength = (int) storage.getContentLength();
                         ByteArrayOutputStream buffer = new ByteArrayOutputStream(contentLength);
                         ContentUtils.copyStreams(tmpStream, contentLength, buffer, session.getProgressMonitor());

@@ -29,6 +29,41 @@ import static org.mockito.Mockito.*;
 
 class GaussDBBinaryValueHandlerTest {
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"256,0", "256,7", "65537,0", "65537,7"})
+    void unsupportedStreamFallbackMustBindEntireFile(
+        int length, int consumed, @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory
+    ) throws Exception {
+        byte[] expected = new byte[length];
+        for (int i = 0; i < length; i++) {
+            expected[i] = (byte) i;
+        }
+        var file = directory.resolve("fallback.bin");
+        java.nio.file.Files.write(file, expected);
+        var storage = new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(
+            mock(org.jkiss.dbeaver.model.app.DBPPlatform.class), file, "UTF-8", false);
+        var content = new org.jkiss.dbeaver.model.impl.jdbc.data.JDBCContentBLOB(mock(DBCExecutionContext.class), null);
+        content.updateContents(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), storage);
+        when(session.getProgressMonitor()).thenReturn(mock(org.jkiss.dbeaver.model.runtime.DBRProgressMonitor.class));
+        var streams = new java.util.ArrayList<java.io.InputStream>();
+        doAnswer(invocation -> {
+            java.io.InputStream stream = invocation.getArgument(1);
+            streams.add(stream);
+            assertEquals(consumed, stream.readNBytes(consumed).length);
+            throw new java.sql.SQLFeatureNotSupportedException("synthetic unsupported streaming");
+        }).when(statement).setBinaryStream(eq(1), any(java.io.InputStream.class));
+        try {
+            GaussDBBinaryValueHandler.INSTANCE.bindValueObject(session, statement, type, 0, content);
+            verify(statement).setBinaryStream(eq(1), any(java.io.InputStream.class));
+            verify(statement).setBytes(1, expected);
+            verifyNoMoreInteractions(statement);
+        } finally {
+            content.release();
+        }
+        assertThrows(java.io.IOException.class, () -> streams.getFirst().read());
+        assertArrayEquals(expected, java.nio.file.Files.readAllBytes(file));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"1,false", "256,false", "65537,false", "1,true", "256,true", "65537,true"})
     void nonemptyFileBindsCompleteBytesAndCanRetryAfterDriverFailure(
         int length, boolean failFirst, @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory

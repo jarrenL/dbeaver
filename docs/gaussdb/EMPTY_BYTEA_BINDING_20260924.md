@@ -1,5 +1,13 @@
 # GaussDB 空 bytea 参数绑定修复
 
+## 2026-09-28：流式绑定降级的完整性
+
+新增4项实际文件测试：256/65537字节×驱动读取0/7字节后抛SQLFeatureNotSupportedException。生产BLOB进入字节数组降级分支，验证setBytes收到完整原文件、参数索引及原文件保留。
+
+首轮因进度监视器查询未初始化OSGi环境而失败，修正为模拟监视器，未作为产品缺陷。红测`/tmp/shared-binary-fallback-red2-20260928.log`为652项中650通过、2失败；消费7字节的两项复现降级使用剩余流、丢失前缀。共享JDBCContentBLOB在字节数组降级前关闭旧流并重新打开存储流，绿测`/tmp/shared-binary-fallback-green-20260928.log`为652/652通过、0跳过、0失败。该类现22项。
+
+依然使用真实文件/生产绑定器和模拟驱动，不证明厂商驱动实际发生过这种部分读取行为。此修复覆盖有storage的字节数组降级，带长度流式重载之间的切换、服务器Blob分支、超过2GB、不可重复读取源和GUI另验。共享修改仍需全量构建和真库验收。
+
 ## 2026-09-28：非空文件与绑定失败重试补验
 
 新增6项：1、256、65537字节的真实中文空格文件，各执行正常绑定和模拟PreparedStatement读完流后抛SQLException再重试。实际TemporaryContentStorage、JDBCContentBLOB、GaussDBBinaryValueHandler参与；驱动替身逐字节校验完整数据（含0和255），验证参数编号3、无额外NULL/空值绑定、原SQLException cause、旧流在重试时关闭、新流从头读取、release关闭末次流且原文件内容不变。
