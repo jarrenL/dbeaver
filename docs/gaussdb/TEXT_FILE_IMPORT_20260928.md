@@ -2,6 +2,30 @@
 
 日期：2026-09-28。关联历史清单9.1导入、9.8值编辑、11.1字符类型。本记录为组件验收，不代表数据库连接、界面和完整产品验收。
 
+## 最新结果：UTF-8文本导入、显示、保存、读回通过
+
+安装下节补丁并重启后，64快照重新查询专用表仍是original，证明此前没有把失败界面的未保存导入写入数据库。通过结果集“编辑单元格”→“打开编辑器”→“Load from File”，选取同一UTF-8文件。稳定71快照可见506 StyledText准确显示 `中文导入'quote\end` 加换行，旧original已替换。
+
+聚焦文本页后菜单保存（72），再点击结果集保存变更（73）；查询管理器记录UPDATE成功影响1行，保存按钮恢复禁用。随后重新执行服务端查询并切换结果为文本（75/76），is_sql_null=false，`encode(convert_to(note,'UTF8'),'hex')` 为 `e4b8ade69687e5afbce585a52771756f74655c656e640a`。将76实际快照复制到本机，与源文件实际字节作十六进制断言，相等且非NULL，断言通过。不是依赖编辑缓存或只看窗口关闭，也未声称使用独立物理JDBC连接。
+
+![修复后导入内容显示正确](images/text-import-refreshed-20260928.png)
+
+![保存后重新查询服务端值](images/text-import-saved-20260928.png)
+
+附加观测：当前连接server_encoding和client_encoding均为UTF8（77）；该环境length、char_length、octet_length对此值均返回23（78）。本轮通过标准是显示文本及UTF-8字节完整往返，**不把23宣称为Unicode字符数**，长度函数语义需后续按兼容模式另核。74命令使用失效控件编号，在执行source前类型检查失败；75用新编号执行只读查询成功，不计产品问题。
+
+本轮闭环仅限上述UTF-8正常路径。空文本/编码切换、取消、读取失败与已释放控件的GUI验收、最新完整产品构建仍未通过；组件覆盖和GUI覆盖分开记录。专用schema/table保留供后续场景使用，最终需清理。下方旧未通过记录保留为修复历史。
+
+## 文本页刷新修复与文档组件回归
+
+TextEditorPart现实现IRefreshablePart，在UI线程对仍存活的文本控件重载文档。使用现有document provider的resetDocument，保留文档对象和关联的监听器；未连接的文档返回IGNORED。通过检查IDocumentProviderExtension状态，识别AbstractDocumentProvider内部捕获但未重新抛出的读取错误，返回CANCELED而不是虚假成功。
+
+新增TextEditorContentReloadTest：接口断言1项，空/普通/中文引号反斜杠换行3个参数场景。使用真实FileRefDocumentProvider连接真实StringStorage，验证文档对象身份不变、内容完整更新；注入IStorage读取失败后旧文档不变、失败状态正确、恢复后同提供器重试成功，disconnect后返回IGNORED。模拟TextEditorPart仅绕过SWT构造，反射调用生产重载方法，不证明UI线程/已释放控件的实际行为。
+
+加入测试但未实现前4项失败，其中3项因尚无重载方法、1项因没有刷新接口，并非4个独立产品缺陷。实现后联合19/19、0跳过通过，包含既有15项。日志 `/tmp/text-refresh-green-20260928.log`。检查现有Eclipse字节码确认resetDocument会将CoreException保存为状态，测试覆盖了该失败模式。
+
+独立Linux副本已停止旧20388进程并确认退出、原18377保留；安装data补丁SHA-256 `d1deb0e2127a645392d52f198c4b59d7da153591247ffb01f58bcd59b0062e52`，容器内外一致，再次启动。上一轮未保存的测试导入随独立副本退出丢弃。GUI复验尚在进行，以下旧失败仍不能提前改为通过。
+
 ## 最新Linux界面验证：文本页刷新未通过
 
 独立副本 `/opt/hex-refresh-gui-20260928` 停止旧Java进程19940后确认退出，原始验收进程18377保留。data插件安装当前ContentEditorInput补丁，SHA-256 `06f3b02863897639c7d46f5b0b4f49dd79c4d47f2195b07a6f7f9326c075ab83` 在容器内外一致，重新启动成功；不是完整产品构建。
