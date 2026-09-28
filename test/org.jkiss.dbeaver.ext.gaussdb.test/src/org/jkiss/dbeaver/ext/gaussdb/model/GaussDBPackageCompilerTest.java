@@ -26,6 +26,46 @@ import java.sql.SQLException;
 public class GaussDBPackageCompilerTest {
 
     @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"42601", "08006"})
+    void statementCloseAfterSuccessfulCompileIsNotASourceDiagnostic(String state) throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var compileStatement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var diagnosticsStatement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        var database = Mockito.mock(GaussDBDatabase.class);
+        var context = Mockito.mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext.class);
+        var dataSource = Mockito.mock(GaussDBDataSource.class);
+        var container = Mockito.mock(org.jkiss.dbeaver.model.DBPDataSourceContainer.class);
+        Mockito.when(object.getParentObject()).thenReturn(schema);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(schema.getParentObject()).thenReturn(database);
+        Mockito.when(database.isInstanceConnected()).thenReturn(true);
+        Mockito.when(database.getDefaultContext(Mockito.any(), Mockito.anyBoolean())).thenReturn(context);
+        Mockito.when(context.openSession(Mockito.any(), Mockito.any(), Mockito.anyString())).thenReturn(session);
+        Mockito.when(object.getDataSource()).thenReturn(dataSource);
+        Mockito.when(dataSource.getContainer()).thenReturn(container);
+        Mockito.when(object.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("public.test_pkg");
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenAnswer(invocation ->
+            invocation.<String>getArgument(0).startsWith("ALTER PACKAGE") ? compileStatement : diagnosticsStatement);
+        Mockito.when(diagnosticsStatement.executeQuery()).thenReturn(result);
+        SQLException failure = new SQLException("statement cleanup failed", state);
+        Mockito.doThrow(failure).when(compileStatement).close();
+        var monitor = new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor();
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        var actual = Assertions.assertThrows(org.jkiss.dbeaver.DBException.class,
+            () -> GaussDBPackageCompiler.compile(monitor, log, object, GaussDBPackageCompileTarget.ALL));
+        Assertions.assertSame(failure, actual.getCause());
+        Assertions.assertTrue(log.getErrorStack().isEmpty());
+        Mockito.verify(compileStatement).execute();
+        Mockito.verify(diagnosticsStatement).executeQuery();
+        Mockito.verify(context).openSession(Mockito.any(), Mockito.any(), Mockito.anyString());
+        Mockito.verify(object).refreshObjectState(monitor);
+        Mockito.verify(session).close();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"next", "field", "result-close", "statement-close"})
     void partialDiagnosticsSurviveReadAndCleanupFailures(String stage) throws Exception {
         var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);

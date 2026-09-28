@@ -57,10 +57,12 @@ public final class GaussDBPackageCompiler {
         }
         String sql = getCompileSQL(object, target);
         compileLog.trace(sql);
+        boolean compileExecuted = false;
         try (JDBCSession session = DBUtils.openUtilSession(monitor, object, "Compile GaussDB package");
              JDBCPreparedStatement statement = session.prepareStatement(sql)) {
             // Keep the JDBC SQLException (executeStatement wraps it in DBCException).
             statement.execute();
+            compileExecuted = true;
             if (monitor.isCanceled()) {
                 return false;
             }
@@ -72,6 +74,11 @@ public final class GaussDBPackageCompiler {
             // Do not issue metadata SQL on a canceled/aborted connection.
             if (monitor.isCanceled()) {
                 return false;
+            }
+            if (compileExecuted) {
+                // A cleanup failure after acknowledged execution is not a source error.
+                // Do not reopen metadata sessions or manufacture a source-line diagnostic.
+                throw new DBException("Package compilation executed, but resource cleanup failed", e);
             }
             String sqlState = e.getSQLState();
             if (isInfrastructureError(sqlState)) {
