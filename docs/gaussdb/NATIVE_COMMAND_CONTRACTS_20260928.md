@@ -1,5 +1,13 @@
 # 原生工具命令参数与认证失败边界
 
+## 备份发布与取消保护（后续）
+
+新增GaussDBBackupPublishTest三项：成功、取消标志已置位但子进程正常退出、子进程非零退出。通过生产executeProcess实际启动本机/usr/bin/true或false；覆盖命令生成、环境设置和异步日志启动以排除数据库和外部服务，反射登记本测试TempDir中的暂存副本。验证只有成功且未取消时覆盖已有目标，失败/取消保留原备份，所有路径移除暂存文件及登记、结束进度。
+
+红测`/tmp/native-publish-overwrite-red.log`23项中22通过、1失败：取消场景返回true，并把“previous valid backup”覆盖为“new bytes”。修复在原生进程返回后同时检查结果和取消标志，拒绝发布失败或已取消的副本；finally仍清理暂存路径。
+
+`/tmp/native-publish-green.log`23/23通过、0跳过、0失败。这里是真实受控本机进程和文件，但不是gs_dump真实备份、网络目标、GUI取消或Windows；也未覆盖在复制已经开始之后才取消、复制途中IO失败的原子替换问题。缺少本机true/false可执行程序的平台明确跳过，不能算通过。
+
 ## 恢复准备阶段失败清理（后续）
 
 新增CUSTOM文件和DIRECTORY目录两项，实际进入生产fillProcessParameters并强制走本地暂存分支；测试只覆盖暂存分支选择和临时路径工厂，将临时路径限定在独立TempDir，路径解析、创建、复制、异常处理和登记均为生产实现。源不存在时应保留NoSuchFileException、删除尚未登记的临时副本，并保留客户端目录。修正源内容后，同一处理器再次准备应成功复制，测试清理副本后原内容仍在。

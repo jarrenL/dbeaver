@@ -175,8 +175,9 @@ public class PostgreDatabaseBackupHandler extends PostgreNativeToolHandler<Postg
     ) throws IOException, InterruptedException {
         try {
             boolean result = super.executeProcess(monitor, task, settings, arg, taskLog);
+            result = result && !monitor.isCanceled();
             Path localFile = localTransferFiles.get(arg);
-            if (localFile != null) {
+            if (result && localFile != null) {
                 Path target;
                 try {
                     target = DBFUtils.resolvePathFromString(monitor, task.getProject(), settings.getOutputFile(arg));
