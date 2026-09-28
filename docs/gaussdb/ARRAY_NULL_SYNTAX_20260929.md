@@ -1,0 +1,43 @@
+# 数组 NULL 与解析异常边界（2026-09-29）
+
+对应历史场景 11.1 数组/NULL 和 6.1 解析异常。测试直接调用实际 `PostgreValueParser.parseArrayString`，没有数据库替身参与解析；但这是客户端方法测试，不是真库或 GUI 验收。
+
+## 新增 13 项场景
+
+| 场景 | 数量 | 预期 |
+|---|---:|---|
+| NULL/null/Null/nUlL 未引用与双引号引用对照 | 4 | 未引用为 Java null，引用后保持原文本 |
+| NULL 文本在三个位置使用反斜杠转义 | 3 | 转义后均为字符串 NULL，不是空值 |
+| 缺失维度等号、末尾反斜杠、未闭合引号 | 3 | 明确抛出 DBCException，不越界或接受部分值 |
+| 空串/SQL NULL/NULL 文本/中文扩展汉字混合 | 1 | 内容与类型各自保留 |
+| 显式下界 `[0:1]={10,20}` | 1 | 低层解析保持元素顺序；不宣称下界元数据被保存 |
+| 嵌套数组中的空值/空串 | 1 | 嵌套结构及元素内容正确 |
+
+NULL 的语义依据 [PostgreSQL 数组输入输出规则](https://www.postgresql.org/docs/current/arrays.html#ARRAYS-IO)：未引用的 NULL 不区分大小写，引用或转义后是普通文本。
+
+## 发现与修改
+
+红测 844 项中 9 项失败：三种大小写 NULL 被当成文本，三种转义 NULL 被当成空值，三种非法输入存在数组越界或未拒绝。修复：
+
+- 用引用/转义标志共同控制 NULL 识别，未引用时不区分大小写。
+- 维度前缀查找等号时检查边界。
+- 读取反斜杠后继字符前检查边界。
+- 结束时拒绝未闭合引号。
+
+修改保留正常输入的既有行为。中间复跑仍有未闭合引号 1 项失败，补齐结束检查后全部通过；没有排除失败项。
+
+## 结果与复现
+
+测试工程运行 `node scripts/run-shared-focused.mjs`：**844/844 通过、0 跳过**。编译目录 `/tmp/shared-focused-qoizkx`，随后执行：
+
+```sh
+node scripts/run-existing-osgi.mjs /tmp/shared-focused-qoizkx --module=org.jkiss.dbeaver.ext.postgresql.test --all-module
+```
+
+真实 OSGi **8 类 133/133 通过，0 失败/错误/跳过**，包括原有解析器、数值精度、文本绑定和执行计划测试。新增类纳入必需类门控，验证器自测 7/7。共享和 OSGi 结果重叠，不累加。
+
+日志 `/tmp/array-null-red-20260929.log`、`/tmp/array-null-green-20260929.log`（中间失败）、`/tmp/array-null-pass-20260929.log`、`/tmp/array-null-osgi-20260929.log`。
+
+## 待验证范围
+
+Docker API 本轮仍拒绝访问，没有新增真库写回或 GUI 通过数。本次仅覆盖指定畸形输入，不证明全部数组语法验证、维度范围一致性、显式下界存储、复合值全部字段转换已完成；高层转换入口对所有失败的展示和保存行为还需验收。

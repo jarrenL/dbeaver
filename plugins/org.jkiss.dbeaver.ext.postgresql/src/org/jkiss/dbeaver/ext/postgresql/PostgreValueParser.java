@@ -302,8 +302,7 @@ public class PostgreValueParser {
             char[] chars = fieldString.toCharArray();
             StringBuilder buffer = null;
             boolean insideString = false;
-            boolean wasInsideString = false; // needed for checking if NULL
-            // value occurred
+            boolean wasQuotedOrEscaped = false; // Quoting or escaping makes NULL literal text.
             List<List<Object>> dims = new ArrayList<>(); // array dimension arrays
             List<Object> curArray = arrayList; // currently processed array
 
@@ -320,8 +319,11 @@ public class PostgreValueParser {
             int startOffset = 0;
             {
                 if (chars[0] == '[') {
-                    while (chars[startOffset] != '=') {
+                    while (startOffset < chars.length && chars[startOffset] != '=') {
                         startOffset++;
+                    }
+                    if (startOffset == chars.length) {
+                        throw new DBCException("Missing array dimensions separator");
                     }
                     startOffset++; // skip =
                 }
@@ -331,7 +333,11 @@ public class PostgreValueParser {
 
                 // escape character that we need to skip
                 if (chars[i] == '\\') {
+                    if (i + 1 == chars.length) {
+                        throw new DBCException("Incomplete array escape sequence");
+                    }
                     i++;
+                    wasQuotedOrEscaped = true;
                 } else if (!insideString && chars[i] == '{') {
                     // subarray start
                     if (dims.isEmpty()) {
@@ -363,7 +369,7 @@ public class PostgreValueParser {
                 } else if (chars[i] == '"') {
                     // quoted element
                     insideString = !insideString;
-                    wasInsideString = true;
+                    wasQuotedOrEscaped = true;
                     continue;
                 } else if (!insideString && Character.isWhitespace(chars[i])) {
                     // white space
@@ -379,11 +385,11 @@ public class PostgreValueParser {
                     String b = buffer == null ? null : buffer.toString();
 
                     // add element to current array
-                    if (b != null && (!b.isEmpty() || wasInsideString)) {
-                        curArray.add(!wasInsideString && b.equals("NULL") ? null : b);
+                    if (b != null && (!b.isEmpty() || wasQuotedOrEscaped)) {
+                        curArray.add(!wasQuotedOrEscaped && b.equalsIgnoreCase("NULL") ? null : b);
                     }
 
-                    wasInsideString = false;
+                    wasQuotedOrEscaped = false;
                     buffer = new StringBuilder();
 
                     // when end of an array
@@ -408,6 +414,9 @@ public class PostgreValueParser {
                 if (buffer != null) {
                     buffer.append(chars[i]);
                 }
+            }
+            if (insideString) {
+                throw new DBCException("Unterminated quoted array element");
             }
             if (bracePairsCount != 0) {
                 throw new DBCException("Amount of array's braces is not equal");
