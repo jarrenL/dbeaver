@@ -103,9 +103,32 @@ class ConfigurationNIOPersistenceTest {
         String withoutPassword = new String(encryptor.decryptValue(read(manager, credentialName)), StandardCharsets.UTF_8);
         assertFalse(withoutPassword.contains("fixture-disk-password"));
         assertTrue(withoutPassword.contains("磁盘用户"));
-        when(registry.getAllAuthProfiles()).thenReturn(List.of());
-        saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
-        saver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of());
+        for (boolean removeCredentials : new boolean[] {false, true}) {
+            byte[] beforeFailure = read(manager, credentialName);
+            Path retainedFile = directory.resolve("retained-credentials-" + removeCredentials);
+            Files.move(metadata.resolve(credentialName), retainedFile);
+            Path obstruction = Files.createDirectory(metadata.resolve(credentialName));
+            Files.writeString(obstruction.resolve("keep.txt"), "保留数据");
+            if (removeCredentials) {
+                when(registry.getAllAuthProfiles()).thenReturn(List.of());
+            }
+            var retrySaver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+            assertThrows(IOException.class,
+                () -> retrySaver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of()));
+            assertEquals("保留数据", Files.readString(obstruction.resolve("keep.txt")));
+            assertArrayEquals(beforeFailure, Files.readAllBytes(retainedFile));
+            assertEquals("fixture-disk-password", profile.getUserPassword());
+            Path retainedDirectory = directory.resolve("retained-directory-" + removeCredentials);
+            Files.move(obstruction, retainedDirectory);
+            retrySaver.saveDataSources(new VoidProgressMonitor(), manager, storage, List.of());
+            assertEquals("保留数据", Files.readString(retainedDirectory.resolve("keep.txt")));
+            assertArrayEquals(beforeFailure, Files.readAllBytes(retainedFile));
+            if (!removeCredentials) {
+                String retried = new String(encryptor.decryptValue(read(manager, credentialName)), StandardCharsets.UTF_8);
+                assertTrue(retried.contains("磁盘用户"));
+                assertFalse(retried.contains("fixture-disk-password"));
+            }
+        }
         assertFalse(Files.exists(metadata.resolve(credentialName)));
         assertNull(manager.readConfiguration(credentialName, null));
         Path backup = metadata.resolve((credentialName.startsWith(".") ? credentialName : "." + credentialName) + ".bak");
