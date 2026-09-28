@@ -90,6 +90,34 @@ class GaussDBPackageStateRefreshTest {
         verify(result).close();
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"object_type,42703", "valid,42703", "object_type,08006", "valid,08006"})
+    void partialCatalogFieldFailureCannotPublishAValidSpecificationOnlyPackage(String column, String state) throws Exception {
+        var dataSource = mock(GaussDBDataSource.class);
+        var container = mock(org.jkiss.dbeaver.model.DBPDataSourceContainer.class);
+        when(result.getSession()).thenReturn(session);
+        when(session.getDataSource()).thenReturn(dataSource);
+        when(dataSource.getContainer()).thenReturn(container);
+        when(container.getId()).thenReturn("package-state-test");
+        when(result.next()).thenReturn(true, true, false);
+        when(result.getString("object_type")).thenReturn("S", "B");
+        when(result.getString("valid")).thenReturn("true", "false");
+        SQLException failure = new SQLException("second catalog row unreadable", state);
+        when(result.getString(column)).thenReturn(column.equals("object_type") ? "S" : "true").thenThrow(failure);
+        if (state.equals("42703")) {
+            assertDoesNotThrow(this::refresh);
+        } else {
+            assertSame(failure, assertThrows(DBCException.class, this::refresh).getCause());
+        }
+        assertSame(DBSObjectState.UNKNOWN, object.getSpecificationState());
+        assertSame(DBSObjectState.UNKNOWN, object.getBodyState());
+        assertSame(DBSObjectState.UNKNOWN, object.getObjectState());
+        assertTrue(object.isBodyPresent(), "failed metadata must not claim the previously present body disappeared");
+        verify(result).close();
+        verify(statement).close();
+        verify(session).close();
+    }
+
     @Test
     void invalidBodyMakesPackageInvalidRegardlessOfRowOrder() throws Exception {
         when(result.next()).thenReturn(true, true, false);

@@ -299,8 +299,8 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
             boolean newBodyPresent = false;
             try (JDBCResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
-                    String type = JDBCUtils.safeGetString(resultSet, "object_type");
-                    DBSObjectState state = readState(JDBCUtils.safeGetString(resultSet, "valid"));
+                    String type = resultSet.getString("object_type");
+                    DBSObjectState state = readState(resultSet.getString("valid"));
                     if ("S".equalsIgnoreCase(type)) {
                         newSpecificationState = state;
                     } else if ("B".equalsIgnoreCase(type)) {
