@@ -167,7 +167,7 @@ class GaussDBBackupPublishTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"success", "canceled", "exit-failure"})
+    @ValueSource(strings = {"success", "canceled", "exit-failure", "missing-staging", "target-parent-is-file"})
     @SuppressWarnings("unchecked")
     void publishesOnlySuccessfulUncanceledBackupAndAlwaysCleansStaging(String outcome) throws Exception {
         String binary = outcome.equals("exit-failure") ? "/usr/bin/false" : "/usr/bin/true";
@@ -176,7 +176,11 @@ class GaussDBBackupPublishTest {
         Path target = Files.writeString(directory.resolve("previous.dump"), "previous valid backup");
         var settings = mock(PostgreDatabaseBackupSettings.class);
         var info = mock(PostgreDatabaseBackupInfo.class);
-        when(settings.getOutputFile(info)).thenReturn(target.toString());
+        when(settings.getOutputFile(info)).thenReturn(
+            outcome.equals("target-parent-is-file") ? target.resolve("child.dump").toString() : target.toString());
+        if (outcome.equals("missing-staging")) {
+            Files.delete(staged);
+        }
         var monitor = mock(DBRProgressMonitor.class);
         when(monitor.isCanceled()).thenReturn(outcome.equals("canceled"));
         var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
@@ -199,7 +203,7 @@ class GaussDBBackupPublishTest {
         field.setAccessible(true);
         var stagedPaths = (Map<PostgreDatabaseBackupInfo, Path>) field.get(handler);
         stagedPaths.put(info, staged);
-        if (outcome.equals("exit-failure")) {
+        if (outcome.equals("exit-failure") || outcome.equals("missing-staging") || outcome.equals("target-parent-is-file")) {
             assertThrows(IOException.class, () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class)));
         } else if (outcome.equals("canceled")) {
             assertThrows(InterruptedException.class, () -> handler.executeProcess(monitor, task, settings, info, mock(Log.class)));

@@ -1,5 +1,11 @@
 # 原生工具命令参数与认证失败边界
 
+## 发布前文件异常（后续）
+
+新增暂存文件消失、目标父路径被已有文件占用两项。实际受控true进程成功后，进入生产备份executeProcess及copyTransferPath，断言IOException传播、原有文件逐字节不变、暂存路径及登记清除、monitor.done执行。所有文件均属于测试临时目录，无数据库访问。
+
+`/tmp/native-publish-failures-20260928.log`原生专项33/33通过；`/tmp/shared-native-final-20260928.log`联合327/327通过，均0跳过、0失败。本轮没有修改生产代码。以上仅覆盖复制开始前的失败，不证明复制中途故障的原子发布、远程文件系统或Windows保护已经完成。
+
 ## 有界取消与终止信号抵抗（后续）
 
 新增两个受控进程：普通sleep，以及shell设置忽略TERM后exec sleep（不创建额外长期子进程）。收到ready后才置取消标志；独立测试线程限4秒完成，finally强制清理进程并确认线程退出。
