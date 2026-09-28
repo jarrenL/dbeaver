@@ -122,6 +122,69 @@ class QueryHistoryStoreTest {
     }
 
     @Test
+    void failedDeleteCanRetryWithoutLosingUnselectedHistory() throws Exception {
+        assertFailedRemovalCanRetry(false);
+    }
+
+    @Test
+    void failedRetentionCanRetryWithoutLosingBoundaryHistory() throws Exception {
+        assertFailedRemovalCanRetry(true);
+    }
+
+    private void assertFailedRemovalCanRetry(boolean retention) throws Exception {
+        var file = directory.resolve("历史 快照.json");
+        var store = new QueryHistoryStore(file, 10);
+        var old = entry(99, "SELECT '旧记录'");
+        var boundary = entry(100, "SELECT '保留🧪'");
+        store.put(old);
+        store.put(boundary);
+        var original = Files.readAllBytes(file);
+        var backup = directory.resolve("saved.json");
+        Files.move(file, backup);
+        Files.createDirectory(file);
+        var unrelated = file.resolve("unrelated.txt");
+        Files.writeString(unrelated, "do not modify");
+        assertThrows(IOException.class, () -> {
+            if (retention) {
+                store.purgeBefore(100);
+            } else {
+                store.delete(List.of(old.id()));
+            }
+        });
+        assertEquals(List.of(old, boundary), store.getEntries());
+        assertArrayEquals(original, Files.readAllBytes(backup));
+        assertEquals("do not modify", Files.readString(unrelated));
+        try (var files = Files.list(directory)) {
+            assertEquals(2, files.count(), "Failure must not leave temporary snapshots");
+        }
+        Files.delete(unrelated);
+        Files.delete(file);
+        Files.move(backup, file);
+        if (retention) {
+            store.purgeBefore(100);
+        } else {
+            store.delete(List.of(old.id()));
+        }
+        assertEquals(List.of(boundary), store.getEntries());
+        assertEquals(List.of(boundary), new QueryHistoryStore(file, 10).getEntries());
+    }
+
+    @Test
+    void duplicateIdentityOnDiskIsRejectedWithoutExposingSqlOrChangingFile() throws Exception {
+        var file = directory.resolve("history.json");
+        new QueryHistoryStore(file, 10).put(entry(100, "SELECT 'private-marker-🧪'"));
+        var json = com.google.gson.JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+        var items = json.getAsJsonArray("entries");
+        items.add(items.get(0).deepCopy());
+        Files.writeString(file, json.toString());
+        var original = Files.readAllBytes(file);
+        var error = assertThrows(IOException.class, () -> new QueryHistoryStore(file, 10));
+        assertFalse(error.getMessage().contains("private-marker"));
+        assertNull(error.getCause());
+        assertArrayEquals(original, Files.readAllBytes(file));
+    }
+
+    @Test
     void snapshotsUsePrivatePermissionsAndLeaveNoTemporaryFiles() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.getFileStore(directory).supportsFileAttributeView("posix"));
         var file = directory.resolve("history.json");
