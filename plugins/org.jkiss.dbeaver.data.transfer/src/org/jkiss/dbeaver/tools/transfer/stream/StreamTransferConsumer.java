@@ -398,8 +398,13 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
     }
 
     private void closeExporter() throws IOException {
+        IOException failure = null;
         if (exportSite != null) {
-            exportSite.flush();
+            try {
+                exportSite.flush();
+            } catch (IOException e) {
+                failure = e;
+            }
         }
 
         if (processor != null) {
@@ -407,11 +412,33 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
             try {
                 processor.dispose();
             } catch (Exception e) {
-                log.debug(e);
+                IOException disposeFailure = e instanceof IOException io
+                    ? io : new IOException("Error finalizing data export", e);
+                if (failure == null) {
+                    failure = disposeFailure;
+                } else if (failure != disposeFailure) {
+                    failure.addSuppressed(disposeFailure);
+                }
+            } finally {
+                processor = null;
             }
-            processor = null;
         }
-        closeOutputStreams();
+        try {
+            closeOutputStreams();
+        } catch (IOException e) {
+            if (failure == null) {
+                failure = e;
+            } else if (failure != e) {
+                failure.addSuppressed(e);
+            }
+        } finally {
+            // Do not retry a partially written export on a subsequent cleanup call.
+            writer = null;
+            outputStream = null;
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
     
     private DataFileConflictBehavior prepareDataFileConflictBehavior(String fileName) {
@@ -1055,6 +1082,9 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
         public void flush() throws IOException {
             if (writer != null) {
                 writer.flush();
+                if (writer.checkError()) {
+                    throw new IOException("Error writing exported text data");
+                }
             }
             if (outputStream != null) {
                 outputStream.flush();
