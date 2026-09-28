@@ -24,9 +24,9 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
-    @ValueSource(strings = {"stdout", "stderr", "cancel-wait"})
+    @ValueSource(strings = {"stdout", "stderr", "cancel-wait", "cancel-retry"})
     void processCompletionWaitsForActualAsyncLogReader(String outcome) throws Exception {
-        boolean diagnostic = outcome.equals("stderr");
+        boolean diagnostic = !outcome.equals("stdout");
         assumeTrue(Files.isExecutable(Path.of("/bin/sh")));
         var entered = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
@@ -51,9 +51,22 @@ class GaussDBBackupPublishTest {
         var info = mock(PostgreDatabaseBackupInfo.class);
         when(settings.getOutputFile(info)).thenReturn(directory.resolve("unused.dump").toString());
         var child = new java.util.concurrent.atomic.AtomicReference<Process>();
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
         var handler = new PostgreDatabaseBackupHandler() {
             @Override protected boolean isLogInputStream() { return true; }
-            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) throws IOException {
+                if (attempts.getAndIncrement() > 0) {
+                    // Finish the previous reader only after the new executeProcess has reset state.
+                    release.countDown();
+                    try {
+                        reader.get().join(2000);
+                        if (reader.get().isAlive()) throw new IOException("Previous reader did not finish");
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException(e);
+                    }
+                    return List.of("/bin/sh", "-c", "exit 0");
+                }
                 return List.of("/bin/sh", "-c", diagnostic ? "printf 'delayed diagnostic' >&2" : "printf 'normal output'");
             }
             @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
@@ -77,18 +90,25 @@ class GaussDBBackupPublishTest {
             assertTrue(child.get().waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
             assertThrows(java.util.concurrent.TimeoutException.class, () -> result.get(500, java.util.concurrent.TimeUnit.MILLISECONDS),
                 "Process exit alone must not finish the task while logs are still unread");
-            if (outcome.equals("cancel-wait")) {
+            if (outcome.startsWith("cancel-")) {
                 canceled.set(true);
                 var failure = assertThrows(java.util.concurrent.ExecutionException.class,
                     () -> result.get(2, java.util.concurrent.TimeUnit.SECONDS));
                 assertInstanceOf(InterruptedException.class, failure.getCause());
+                if (outcome.equals("cancel-retry")) {
+                    canceled.set(false);
+                    var retry = executor.submit(() -> handler.executeProcess(monitor,
+                        mock(DBTTask.class, RETURNS_DEEP_STUBS), settings, info, mock(Log.class)));
+                    assertTrue(retry.get(3, java.util.concurrent.TimeUnit.SECONDS), "Late old diagnostic must not poison retry");
+                    assertTrue(output.toString(java.nio.charset.StandardCharsets.UTF_8).contains("delayed diagnostic"));
+                }
             } else {
                 release.countDown();
                 assertEquals(!diagnostic, result.get(2, java.util.concurrent.TimeUnit.SECONDS));
                 assertTrue(output.toString(java.nio.charset.StandardCharsets.UTF_8)
                     .contains(diagnostic ? "delayed diagnostic" : "normal output"));
             }
-            verify(monitor).done();
+            verify(monitor, times(outcome.equals("cancel-retry") ? 2 : 1)).done();
         } finally {
             release.countDown();
             executor.shutdownNow();
@@ -116,6 +136,7 @@ class GaussDBBackupPublishTest {
         var monitor = mock(DBRProgressMonitor.class);
         var attempt = new java.util.concurrent.atomic.AtomicInteger();
         var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected boolean isLogInputStream() { return true; }
             @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
                 return List.of("/bin/sh", "-c", attempt.getAndIncrement() == 0
                     ? "printf 'synthetic failure" + (newline ? "\\n" : "") + "' >&2" : "exit 0");
@@ -123,21 +144,9 @@ class GaussDBBackupPublishTest {
             @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
                 PostgreDatabaseBackupInfo a, ProcessBuilder b) {
             }
-            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
-                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log) throws IOException {
-                try {
-                    // Run the production reader to completion before evaluating status; this test
-                    // deliberately isolates retry state from asynchronous reader scheduling.
-                    var type = Class.forName("org.jkiss.dbeaver.tasks.nativetool.AbstractNativeToolHandler$LogReaderJob");
-                    var constructor = type.getDeclaredConstructors()[0];
-                    constructor.setAccessible(true);
-                    ((Thread) constructor.newInstance(this, t, s, b, p, true)).run();
-                } catch (ReflectiveOperationException e) {
-                    throw new IOException(e);
-                }
-            }
         };
         var info = mock(PostgreDatabaseBackupInfo.class);
+        when(settings.getOutputFile(info)).thenReturn(directory.resolve("unused.dump").toString());
         assertFalse(handler.executeProcess(monitor, task, settings, info, mock(Log.class)), "stderr diagnostic must be retained");
         assertTrue(output.toString(java.nio.charset.StandardCharsets.UTF_8).contains("synthetic failure"));
         assertTrue(handler.executeProcess(monitor, task, settings, info, mock(Log.class)), "Successful retry must not inherit old failure");

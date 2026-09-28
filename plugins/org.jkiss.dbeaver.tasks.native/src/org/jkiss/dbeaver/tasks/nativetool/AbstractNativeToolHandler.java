@@ -275,6 +275,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                     }
                     logReaderJob.join(100);
                 }
+                taskErrorMessage = logReaderJob.errorMessage;
             }
         } catch (IOException e) {
             log.error("IO error: " + e.getMessage());
@@ -519,6 +520,9 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         private final ProcessBuilder processBuilder;
         private final Process input;
         private final boolean isLogInputStream;
+        // Keep diagnostics owned by this execution's reader. A canceled reader
+        // finishing late must not overwrite the next execution's status.
+        private String errorMessage;
 
         protected LogReaderJob(DBTTask task, SETTINGS settings, ProcessBuilder processBuilder, Process stream, boolean isLogInputStream) {
             super("Log reader for " + task.getName());
@@ -566,10 +570,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                         }
                     };
                     readInputThread.start();
-                    String errorMessage = readStream(input.getErrorStream());
-                    if (!CommonUtils.isEmpty(errorMessage)) {
-                        taskErrorMessage = errorMessage;
-                    }
+                    errorMessage = readStream(input.getErrorStream());
                     try {
                         readInputThread.join();
                     } catch (InterruptedException ignore) {
