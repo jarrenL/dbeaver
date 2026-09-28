@@ -31,6 +31,41 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBProjectionMetadataTest {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "SELECT id FROM public.accounts FOR UPDATE",
+        "SELECT id INTO copied_accounts FROM public.accounts"
+    })
+    void lockingAndIntoSelectsRetainModifyingClassification(String sql) {
+        var query = new SQLQuery(null, sql);
+        assertEquals(SQLQueryType.SELECT, query.getType());
+        assertTrue(query.isModifying());
+        assertFalse(query.isPlainSelect());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "UPDATE public.accounts SET amount=1|true|false|true",
+        "UPDATE public.accounts SET amount=1 WHERE id=1|false|false|true",
+        "DELETE FROM public.accounts|true|false|true",
+        "DELETE FROM public.accounts WHERE id=1|false|false|true",
+        "DROP TABLE public.accounts|false|true|true",
+        "SELECT id FROM public.accounts|false|false|false"
+    })
+    void safetyChecksTrackReplacementAndReset(String replacement, boolean unrestricted, boolean drop, boolean mutating) {
+        var query = new SQLQuery(null, "SELECT id FROM public.accounts");
+        assertFalse(query.isMutatingStatement());
+        query.setText(replacement);
+        assertEquals(unrestricted, query.isDeleteUpdateDangerous());
+        assertEquals(drop, query.isDropDangerous());
+        assertEquals(mutating, query.isMutatingStatement());
+        assertEquals(mutating, query.isModifying());
+        query.reset();
+        assertFalse(query.isDeleteUpdateDangerous());
+        assertFalse(query.isDropDangerous());
+        assertFalse(query.isMutatingStatement());
+    }
+
     @Test
     void parameterExpansionAndResetPreserveExecutionIdentity() {
         String original = "SELECT id FROM public.accounts WHERE id=:id";
@@ -129,6 +164,8 @@ class GaussDBProjectionMetadataTest {
         assertNull(query.getEntityMetadata(false));
         assertNull(query.getEntityMetadata(true));
         assertFalse(query.isPlainSelect(), "Set operations are not simple single-source SELECTs");
+        assertFalse(query.isModifying(), "Classifying a set query as SELECT must not mark it as modifying");
+        assertFalse(query.isMutatingStatement());
         assertEquals(-1, query.getSelectItemAsteriskIndex());
     }
 

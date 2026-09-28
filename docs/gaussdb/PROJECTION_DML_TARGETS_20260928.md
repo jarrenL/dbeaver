@@ -1,5 +1,15 @@
 # SQL别名及DML目标识别回归
 
+## 后续：安全检查及修改语句分类影响
+
+新增6项SELECT→UPDATE/DELETE（有无WHERE）、DROP、SELECT→reset的危险/修改判断；新增2项FOR UPDATE和SELECT INTO保持修改标记。原8项集合查询加强isModifying/isMutatingStatement断言。
+
+影响回归发现此前SetOperationList→SELECT改动的一处遗漏：isModifying在非PlainSelect且非UNKNOWN时默认true。红测`/tmp/shared-query-safety-red-20260928.log`为526项中518通过、集合查询8失败；不是新发现的独立上游缺陷。现明确集合查询返回false，原有带锁/INTO SELECT及DML修改判断保留。最终`/tmp/shared-query-safety-final-20260928.log`为528/528通过、0跳过、0失败，投影类89项。
+
+源码调用点QueryResultsContainer.getSupportedFeatures会依据isModifying添加FEATURE_DATA_MODIFIED_ON_REFRESH；修复保持集合查询不被误标为刷新会修改数据的语句。尚未运行实际刷新确认界面，不能将模型判断等同SQL无副作用（例如查询调用有副作用的函数）。
+
+本轮Hermes只读审查请求仍在初始化时Operation not permitted退出，无审查报告，不能记为审核通过。
+
 ## 后续：替换文本与reset的解析缓存
 
 新增7项：已解析SELECT切换到另一张表、DELETE、UNION、空文本和损坏SQL，再reset恢复；参数填充111→reset→222→reset；JOIN切换到单表并reset时导出名称不残留。

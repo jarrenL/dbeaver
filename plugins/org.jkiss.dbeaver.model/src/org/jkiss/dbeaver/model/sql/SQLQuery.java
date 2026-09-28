@@ -558,6 +558,9 @@ public class SQLQuery implements SQLScriptElement {
         if (getType() == SQLQueryType.UNKNOWN) {
             return false;
         }
+        if (statement instanceof SetOperationList) {
+            return false;
+        }
         if (statement instanceof PlainSelect plainSelect) {
             return plainSelect.getForMode() != null || plainSelect.getIntoTables() != null;
         } else {
