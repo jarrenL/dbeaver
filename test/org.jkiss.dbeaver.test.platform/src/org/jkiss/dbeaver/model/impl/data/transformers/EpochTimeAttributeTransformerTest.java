@@ -204,6 +204,27 @@ public class EpochTimeAttributeTransformerTest extends DBeaverUnitTest {
         Assertions.assertEquals(-1_000_000_420L, getValue("1969-12-31 23:59:58.999999580"));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "dotnet|0|0001-01-01 00:00:00.0000000",
+        "dotnet|1|0001-01-01 00:00:00.0000001",
+        "dotnet|621355968000000001|1970-01-01 00:00:00.0000001",
+        "dotnet|621355967999999999|1969-12-31 23:59:59.9999999",
+        "dotnet|621355968001234567|1970-01-01 00:00:00.1234567",
+        "dotnet|621355968010000001|1970-01-01 00:00:01.0000001",
+        "w32filetime|0|1601-01-01 00:00:00.0000000",
+        "w32filetime|1|1601-01-01 00:00:00.0000001",
+        "w32filetime|116444736000000001|1970-01-01 00:00:00.0000001",
+        "w32filetime|116444735999999999|1969-12-31 23:59:59.9999999",
+        "w32filetime|116444736001234567|1970-01-01 00:00:00.1234567",
+        "w32filetime|116444736010000001|1970-01-01 00:00:01.0000001"
+    })
+    void ticksUseSevenFractionDigitsAndPreserveHundredNanoseconds(String unit, long raw, String expected) {
+        setOptions(unit, "UTC");
+        Assertions.assertEquals(expected, getDisplayString(raw));
+        Assertions.assertEquals(raw, getValue(expected));
+    }
+
     private static class DBDAttributeBindingTestDouble extends DBDAttributeBinding {
         protected DBDAttributeBindingTestDouble(@NotNull DBDValueHandler valueHandler) {
             super(valueHandler);

@@ -67,7 +67,7 @@ public class EpochTimeAttributeTransformer implements DBDAttributeTransformer {
     // 10 us precision
     private static final DateTimeFormatter SQLITE_JULIAN_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.nnnnn");
     // 100 ns precision
-    private static final DateTimeFormatter DOTNET_TICKS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.nnnnnnn");
+    private static final DateTimeFormatter DOTNET_TICKS_FORMATTER = createFormatter("uuuu-MM-dd HH:mm:ss.SSSSSSS");
 
     @NotNull
     private static DateTimeFormatter createFormatter(@NotNull String pattern) {
