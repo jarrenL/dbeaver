@@ -81,3 +81,11 @@
 修复为读取失败立即包装IOException并保留cause，在选择截断或打开输出之前终止。验证文件原始字节保持不变，不调用截断判断；同一消费器修正输入后重试，读取回调确认原文件仍在，普通追加和结构化重写后的完整字节均正确。
 
 `/tmp/stream-append-preservation-retry.log` 为38/38通过、0跳过、0失败。生产文件冲突处理和文件打开/关闭真实执行；解析器用模拟导出器注入异常，结构化重写输出由测试模拟，不能据此宣称真实XLSX文件在完整GUI任务中已验收。此前XLSX导出器单独的坏文件测试不包含消费器吞错，此次补的是上层缺口。分卷完整切换仍待补验。
+
+## 真实 XLSX 消费器桥接补验
+
+新增3项使用真实DataExporterXLSX、StreamTransferConsumer内部StreamExportSite及真实临时文件：空文件、文本伪装、合法工作簿截断。通过生产openOutputStreams触发APPEND和importData，校验IOException → DBException → 底层解析异常链；失败后outputStream为空，坏文件完整字节不变。
+
+随后同一消费器/导出器切换到有效工作簿，通过真实追加读取及文件打开路径，调用真实init/header/row和消费器finishFile；重新以XSSFWorkbook打开磁盘结果，确认单表3行、原表头/原数据和新增“追加中文𠀀😀”全部保留，坏文件仍不变，处理器和输出引用已清空。不是模拟结构化输出。
+
+专项脚本新增编译当前DataExporterXLSX，`/tmp/stream-real-xlsx.log` 为41/41通过、0跳过、0失败。此轮无生产修改。来源对象、列元数据及数据库会话为模拟对象；未经过真实JDBC取行、导出向导、initExporter完整初始化或Eclipse任务调度，完整GUI验收仍待完成。

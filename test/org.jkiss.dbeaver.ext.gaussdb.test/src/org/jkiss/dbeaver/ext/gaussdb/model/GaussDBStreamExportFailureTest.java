@@ -39,6 +39,86 @@ public class GaussDBStreamExportFailureTest {
     java.nio.file.Path temporaryDirectory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"empty", "text", "truncated"})
+    public void realXlsxAppendFailurePreservesFileAndSameConsumerCanRetry(String kind) throws Exception {
+        var valid = temporaryDirectory.resolve("valid.xlsx");
+        try (var seed = new org.apache.poi.xssf.usermodel.XSSFWorkbook(); var out = java.nio.file.Files.newOutputStream(valid)) {
+            var sheet = seed.createSheet("原表");
+            sheet.createRow(0).createCell(0).setCellValue("原表头");
+            sheet.createRow(1).createCell(0).setCellValue("原数据");
+            seed.write(out);
+        }
+        byte[] broken = switch (kind) {
+            case "empty" -> new byte[0];
+            case "text" -> "不是工作簿 中文".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            default -> java.util.Arrays.copyOf(java.nio.file.Files.readAllBytes(valid), 32);
+        };
+        var invalid = temporaryDirectory.resolve("invalid.xlsx");
+        java.nio.file.Files.write(invalid, broken);
+        var consumer = new StreamTransferConsumer();
+        var exporter = new org.jkiss.dbeaver.data.office.export.DataExporterXLSX();
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        var runtime = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.ConsumerRuntimeParameters.class);
+        runtime.dataFileConflictBehavior = org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.DataFileConflictBehavior.APPEND;
+        set(consumer, "processor", exporter);
+        set(consumer, "settings", settings);
+        set(consumer, "runtimeParameters", runtime);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters(true, false));
+        set(consumer, "outputFile", invalid);
+        Class<?> siteType = Class.forName(StreamTransferConsumer.class.getName() + "$StreamExportSite");
+        var constructor = siteType.getDeclaredConstructor(StreamTransferConsumer.class);
+        constructor.setAccessible(true);
+        var site = (org.jkiss.dbeaver.tools.transfer.stream.IStreamDataExporterSite) constructor.newInstance(consumer);
+        set(consumer, "exportSite", site);
+        var monitor = new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor();
+        IOException failure = assertThrows(IOException.class,
+            () -> invoke(consumer, "openOutputStreams", DBRProgressMonitor.class, monitor));
+        assertInstanceOf(DBException.class, failure.getCause());
+        assertNotNull(failure.getCause().getCause());
+        assertArrayEquals(broken, java.nio.file.Files.readAllBytes(invalid));
+        assertNull(get(consumer, "outputStream"));
+
+        // Retry against a valid workbook with the real consumer site, importer and file output.
+        set(consumer, "outputFile", valid);
+        var properties = org.jkiss.dbeaver.data.office.export.DataExporterXLSX.getDefaultProperties();
+        properties.put("appendStrategy", "use existing sheets");
+        set(consumer, "processorProperties", properties);
+        var source = mock(org.jkiss.dbeaver.model.struct.DBSDataContainer.class);
+        when(source.getName()).thenReturn("synthetic source");
+        set(consumer, "dataContainer", source);
+        var column = mock(org.jkiss.dbeaver.model.data.DBDAttributeBinding.class);
+        when(column.getName()).thenReturn("value");
+        when(column.getDataKind()).thenReturn(org.jkiss.dbeaver.model.DBPDataKind.STRING);
+        when(column.getValueHandler()).thenReturn(org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCStringValueHandler.INSTANCE);
+        set(consumer, "columnBindings", new org.jkiss.dbeaver.model.data.DBDAttributeBinding[]{column});
+        when(settings.getValueFormat()).thenReturn(org.jkiss.dbeaver.model.data.DBDDisplayFormat.NATIVE);
+        var session = mock(DBCSession.class);
+        when(session.getProgressMonitor()).thenReturn(monitor);
+        var resultSet = mock(org.jkiss.dbeaver.model.exec.DBCResultSet.class);
+        when(resultSet.getSession()).thenReturn(session);
+        invoke(consumer, "openOutputStreams", DBRProgressMonitor.class, monitor);
+        try {
+            exporter.init(site);
+            exporter.exportHeader(session);
+            exporter.exportRow(session, resultSet, new Object[]{"追加中文𠀀😀"});
+            invoke(consumer, "finishFile", DBRProgressMonitor.class, monitor);
+        } finally {
+            invokeNoArgs(consumer, "closeOutputStreams");
+        }
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(java.nio.file.Files.newInputStream(valid))) {
+            assertEquals(1, workbook.getNumberOfSheets());
+            var sheet = workbook.getSheetAt(0);
+            assertEquals(3, sheet.getPhysicalNumberOfRows());
+            assertEquals("原表头", sheet.getRow(0).getCell(0).getStringCellValue());
+            assertEquals("原数据", sheet.getRow(1).getCell(0).getStringCellValue());
+            assertEquals("追加中文𠀀😀", sheet.getRow(2).getCell(0).getStringCellValue());
+        }
+        assertArrayEquals(broken, java.nio.file.Files.readAllBytes(invalid));
+        assertNull(get(consumer, "outputStream"));
+        assertNull(get(consumer, "processor"));
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {false, true})
     public void failedAppendImportMustNotOpenOrTruncateExistingFile(boolean truncate) throws Exception {
         var consumer = new StreamTransferConsumer();
