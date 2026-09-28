@@ -1,5 +1,15 @@
 # 近期共享组件修复的联合回归
 
+## 最新扩大回归：未通过
+
+主仓a61c57c26e，执行`node scripts/run-shared-focused.mjs --gauss-core`，同次编译全部34个非Live GaussDB核心测试类，并与原共享专项联合执行。结果931项：818通过、113失败、0跳过，进程退出1。日志`/tmp/shared-gauss-core-expanded-20260928.log`。
+
+逐项汇总失败：GaussDBDialectTest 27项因未初始化OSGi应用、SQLSyntaxManager访问workbench失败；GaussDBInsertFromDataTest 52项及GaussDBPredicateScannerTest 34项因Platform.getBundle返回null、无法loadClass。共113项，不排除后重算全绿，也不把环境失败记为跳过或通过。没有据此修改生产逻辑或删减断言。
+
+该模式明确未执行GaussDBReviewLiveTest、GaussDBDumpAllLiveTest、GaussDBNativeLiveTest三个真库类，启动时打印清单；这些没有被JUnit发现，不包含在“0跳过”中。不是全部核心模块验收。其他依赖仍使用已有构建产物，不能替代全量Tycho/OSGi构建。
+
+下方654/654是范围较小的专项结果，不是扩大回归的成功结果；两组包含重叠测试，不相加。下一步需在实际OSGi运行环境中复验这三个失败类及其他测试，而非用模型替身替换其环境。
+
 ## 执行范围
 
 生产代码基线：主仓576b12cb3c，另含本轮二进制流重载修复和2项新增测试。测试仓`scripts/run-shared-focused.mjs`同一次javac与同一次JUnit进程运行22个类，避免仅凭各专项独立进程的历史成功结果推断组合运行也成功。显式编译过滤器相关类及DBAAuthProfile、DBPConfigurationProfile、DBWNetworkProfile、DBWHandlerConfiguration，以及SQLQuery、SQLSelectItem、GaussDBDialect、SQLQueryRecoveryPolicy、SQLSemanticProcessor、GaussDBBinaryValueHandler、GaussDBValueHandlerProvider和JDBCContentBLOB。
