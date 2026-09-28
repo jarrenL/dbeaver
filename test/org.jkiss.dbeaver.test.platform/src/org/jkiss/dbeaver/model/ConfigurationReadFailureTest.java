@@ -31,6 +31,7 @@ import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -308,6 +309,49 @@ class ConfigurationReadFailureTest {
 
     private InputStream encryptedJson(String json) throws Exception {
         return new ByteArrayInputStream(encryptor.encryptValue(json.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, replacement", "true, replacement", "false, absent", "true, absent",
+        "false, invalid", "true, invalid"})
+    void encryptedCredentialPropertiesReloadWithoutAliasingOrStaleValues(boolean encryptedProject, String nextMode)
+        throws Exception {
+        configure(encryptedProject);
+        when(storage.getStorageSubId()).thenReturn("");
+        byte[] config = fixtureConfiguration();
+        byte[] storedConfig = encryptedProject ? encryptor.encryptValue(config) : config;
+        when(manager.readConfiguration("fixture.json", null))
+            .thenAnswer(call -> new ByteArrayInputStream(storedConfig));
+        InputStream initial = encryptedJson("{\"profile:fixture-profile\":{\"#connection\":{"
+            + "\"user\":\"测试用户\",\"password\":\"fixture-password\",\"tenant\":\"旧租户\",\"token\":\"fixture-token\"}}}");
+        when(manager.readConfiguration(credentialsName(), null)).thenReturn(initial);
+        var captured = captureProfiles();
+        parse(new DataSourceParseResults());
+        var original = captured.get().getFirst();
+        assertEquals(Map.of("tenant", "旧租户", "token", "fixture-token"), original.getProperties());
+        original.getProperties().put("local-only", "本地修改");
+
+        if ("invalid".equals(nextMode)) {
+            when(manager.readConfiguration(credentialsName(), null)).thenReturn(new ByteArrayInputStream(new byte[] {1}));
+            var failed = new DataSourceParseResults();
+            assertThrows(DBException.class, () -> parse(failed));
+            assertEmptyResults(failed);
+            assertSame(original, captured.get().getFirst());
+            assertEquals("fixture-password", original.getUserPassword());
+        }
+        InputStream next = "absent".equals(nextMode) ? null : encryptedJson(
+            "{\"profile:fixture-profile\":{\"#connection\":{\"user\":\"新用户\",\"tenant\":\"新租户\"}}}");
+        when(manager.readConfiguration(credentialsName(), null)).thenReturn(next);
+        parse(new DataSourceParseResults());
+        var reloaded = captured.get().getFirst();
+        assertNotSame(original, reloaded);
+        assertEquals("absent".equals(nextMode) ? Map.of() : Map.of("tenant", "新租户"), reloaded.getProperties());
+        assertEquals("absent".equals(nextMode) ? null : "新用户", reloaded.getUserName());
+        assertNull(reloaded.getUserPassword());
+        reloaded.getProperties().put("new-only", "新配置修改");
+        assertEquals(Map.of("tenant", "旧租户", "token", "fixture-token", "local-only", "本地修改"),
+            original.getProperties());
+        assertEquals("fixture-password", original.getUserPassword());
     }
 
     private String credentialsName() {

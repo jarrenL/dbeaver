@@ -1,5 +1,19 @@
 # 认证配置可选属性与完整回归记录
 
+## 后续：附加属性重新加载边界
+
+在普通项目和加密项目两种配置存储下，各执行三个真实解析/解密入口场景，共新增 6 项：
+
+1. 加载含中文 tenant 和 token 的凭据，再替换为仅含新 tenant 的凭据；检查旧 token、密码及本地临时属性没有带入新配置。
+2. 首次成功后凭据文件缺失；检查新配置的用户名、密码为空、属性为空，不恢复旧凭据。
+3. 首次成功后凭据损坏；检查抛出错误、未发布新的解析结果、原配置及密码保持；换成有效凭据后同一加载器重试成功。
+
+三种情况均保留原配置引用，并修改新配置属性，断言原属性和原密码不受影响。使用实际配置加载器方法、加密器与内存输入流，注册表为替身，**不是磁盘安全存储或 GUI 导入验收**。
+
+`ConfigurationReadFailureTest` 现为 32/32，通过、零跳过；本轮没有新增生产修改。完整 73 模块诊断收集 2,491 项：2,321 通过、169 跳过、1 项错误，独立门控仍拒绝通过。错误仍为 `RestTest.restClientServerTest` 的网络权限拒绝，不与前轮计数相加。
+
+逐项证据：[AUTH_PROFILE_RELOAD_REACTOR_20260929.json](evidence/AUTH_PROFILE_RELOAD_REACTOR_20260929.json)。日志 `/tmp/auth-profile-reload-diagnostic-20260929.log`。本轮重新检查 Docker 时 API 再次拒绝访问，保留的待保存行 GUI 现场未操作，不宣称恢复验证通过。
+
 ## 问题与修复
 
 完整 Tycho 回归发现：认证凭据只有用户名、密码，或凭据文件不存在时，`SecureCredentials.getProperties()` 合法返回 `null`；配置加载器将它直接传给要求非空并进行防御性复制的 `DBPConfigurationProfile.setProperties()`，触发空指针异常。
