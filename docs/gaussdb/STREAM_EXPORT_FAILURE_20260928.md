@@ -18,7 +18,7 @@
 
 ## 仍需跟进
 
-分卷完整生命周期、传入已有任务错误时的清理等其他路径仍需跟进。压缩流结束方法的验证见下节，不等同完整压缩导出任务。不能据此宣布全部导出错误已闭环。共享传输消费器受影响，不仅是GaussDB。
+分卷完整生命周期、真实失败任务事件通知及取消操作等其他路径仍需跟进。压缩流结束方法及传入已有错误的组件验证见下节，不等同完整压缩导出任务。不能据此宣布全部导出错误已闭环。共享传输消费器受影响，不仅是GaussDB。
 
 ## 表头/表尾异常补验
 
@@ -39,3 +39,11 @@
 修复closeOutputStreams：检查PrintWriter错误标志，分别尝试closeEntry、finish、flush、close；保留首次IOException，其他不同异常作为suppressed，并清空资源引用。复合故障测试验证错误顺序、所有清理步骤均执行，重复清理无额外调用；同一异常实例不进行自抑制。
 
 最新直接编译专项 `/tmp/stream-zip-multiple-green.log`：18/18通过、0跳过、0失败，包含此前12项。真实ZIP测试使用内存字节流，重新解压验证唯一条目“导出.csv”和完整中文、扩展汉字、emoji内容。异常测试模拟ZipOutputStream故障，不代表实际磁盘满或网络文件系统中断已验收。完整Tycho、传输任务事件及GUI仍需独立回归。
+
+## 已有错误与取消异常的结束路径
+
+读取DataTransferJob确认：生产者抛错或取消检测抛DBInterruptedException后，调用consumer.finishTransfer(monitor, error, task, false)，随后重新抛出原错误。消费器旧实现仅在error为null时结束输出，错误路径遗漏清理。
+
+新增测试直接调用公开finishTransfer，分别传入读取IOException或DBInterruptedException，并组合输出流关闭成功/失败，共4项。首轮读取错误的2项均失败，processor.dispose未被调用（`/tmp/stream-existing-error-red.log`）。修复后，已有错误且非最终汇总回调时调用closeExporter，不调用成功表尾；清理IOException附加到原错误，不替换原错误。重复回调不再次关闭流。
+
+最新 `/tmp/stream-existing-error-cancel-green.log`：22/22通过、0跳过、0失败，包含此前18项。测试替换事件注册表为模拟对象并在finally恢复，配置为空事件列表；不覆盖实际事件扩展、完整DataTransferJob重新抛错、GUI点击取消或文件系统故障。取消异常为人工注入，不声称真实运行中取消已通过。

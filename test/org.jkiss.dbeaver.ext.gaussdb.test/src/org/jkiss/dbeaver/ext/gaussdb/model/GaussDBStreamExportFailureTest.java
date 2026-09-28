@@ -33,6 +33,45 @@ import static org.mockito.Mockito.*;
 
 public class GaussDBStreamExportFailureTest {
     @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    public void failedTransferClosesOutputWithoutWritingSuccessFooter(boolean cancelled, boolean closeFails) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var processor = mock(IStreamDataExporter.class);
+        var output = mock(OutputStream.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        when(settings.getEventProcessors()).thenReturn(java.util.Collections.emptyMap());
+        set(consumer, "settings", settings);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
+        set(consumer, "processor", processor);
+        set(consumer, "outputStream", output);
+        Exception original = cancelled
+            ? new org.jkiss.dbeaver.runtime.DBInterruptedException("synthetic cancellation")
+            : new IOException("source read failed");
+        IOException shutdown = new IOException("output close failed");
+        if (closeFails) doThrow(shutdown).when(output).close();
+        // Restore the global registry after this isolated component test.
+        Class<?> registryType = org.jkiss.dbeaver.tools.transfer.registry.DataTransferRegistry.class;
+        Field singleton = registryType.getDeclaredField("instance");
+        singleton.setAccessible(true);
+        Object previous = singleton.get(null);
+        try {
+            singleton.set(null, mock(registryType));
+            consumer.finishTransfer(monitor, original, null, false);
+            verify(processor).dispose();
+            verify(processor, never()).exportFooter(any());
+            verify(output).close();
+            assertArrayEquals(closeFails ? new Throwable[]{shutdown} : new Throwable[0], original.getSuppressed());
+            assertNull(get(consumer, "processor"));
+            assertNull(get(consumer, "outputStream"));
+            consumer.finishTransfer(monitor, original, null, false);
+            verify(output, times(1)).close();
+        } finally {
+            singleton.set(null, previous);
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {false, true})
     public void zipMultipleFailuresPreserveFirstAndStillReleaseResources(boolean reuseException) throws Exception {
         var consumer = new StreamTransferConsumer();

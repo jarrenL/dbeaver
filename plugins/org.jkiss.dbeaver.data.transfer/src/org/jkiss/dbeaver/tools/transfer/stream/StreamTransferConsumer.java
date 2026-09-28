@@ -702,6 +702,18 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
     ) throws DBException {
         List<Exception> errors = new ArrayList<>(0);
 
+        if (!last && error != null) {
+            // A failed or cancelled producer still owns an open exporter. Release it without
+            // writing a success footer, and keep cleanup failures subordinate to the original error.
+            try {
+                closeExporter();
+            } catch (IOException e) {
+                if (error != e) {
+                    error.addSuppressed(e);
+                }
+            }
+        }
+
         if (!last && error == null) {
             try {
                 finishFile(monitor);
