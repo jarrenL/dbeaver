@@ -34,6 +34,35 @@ class ConnectionFilterSerializationTest {
     private final FilterSerializer<DataSourceDescriptor> serializer = new FilterSerializer<>();
 
     @ParameterizedTest
+    @ValueSource(strings = {
+        "[{\"enabled\":true}]",
+        "[{\"enabled\":true,\"include\":null,\"exclude\":null}]",
+        "[{\"enabled\":true,\"include\":[],\"exclude\":[]}]"
+    })
+    void legacyEmptyPatternRepresentationsRemainValid(String json) {
+        var filter = serializer.deserializeObjectFilterConfig(json).getFirst().filter();
+        assertTrue(filter.isEnabled());
+        assertTrue(filter.getInclude().isEmpty());
+        assertTrue(filter.getExclude().isEmpty());
+        assertTrue(filter.matches("任意对象"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "[null]", "[{\"include\":[null]}]", "[{\"include\":[1]}]",
+        "[{\"include\":[{}]}]", "[{\"exclude\":[true]}]", "[{\"include\":\"A%\"}]"
+    })
+    void invalidFilterMembersAreRejectedBeforeApplyingConfiguration(String json) {
+        assertThrows(com.google.gson.JsonParseException.class,
+            () -> serializer.deserializeObjectFilterConfig(json));
+        var valid = serializer.deserializeObjectFilterConfig(
+            "[{\"type\":\"schema\",\"enabled\":true,\"include\":[\"客户%\"],\"exclude\":[\"客户私有%\"]}]").getFirst();
+        assertTrue(valid.filter().matches("客户业务"));
+        assertFalse(valid.filter().matches("客户私有表"));
+        assertFalse(valid.filter().matches("其他表"));
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void roundTripPreservesSchemaFiltersAndCaseMatching(boolean caseSensitive) throws Exception {
         var filter = new DBSObjectFilter();

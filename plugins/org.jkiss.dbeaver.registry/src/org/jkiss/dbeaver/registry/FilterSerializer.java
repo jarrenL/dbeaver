@@ -18,6 +18,7 @@ package org.jkiss.dbeaver.registry;
 
 import com.google.gson.FormattingStyle;
 import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
 import com.google.gson.stream.JsonWriter;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
@@ -50,6 +51,9 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
 
     @NotNull
     public FilterConfiguration deserializeObjectFilterConfig(@NotNull Map<String, Object> filterCfg) {
+        if (filterCfg == null) {
+            throw new JsonParseException("Filter entry must be an object");
+        }
         String typeName = JSONUtils.getString(filterCfg, RegistryConstants.ATTR_TYPE);
         String objectID = JSONUtils.getString(filterCfg, RegistryConstants.ATTR_ID);
         DBSObjectFilter filter = deserializeObjectFilter(filterCfg);
@@ -58,6 +62,8 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
 
     @NotNull
     public DBSObjectFilter deserializeObjectFilter(@NotNull Map<String, Object> map) {
+        validatePatterns(map, RegistryConstants.TAG_INCLUDE);
+        validatePatterns(map, RegistryConstants.TAG_EXCLUDE);
         DBSObjectFilter filter = new DBSObjectFilter();
         filter.setName(JSONUtils.getString(map, RegistryConstants.ATTR_NAME));
         filter.setDescription(JSONUtils.getString(map, RegistryConstants.ATTR_DESCRIPTION));
@@ -66,6 +72,18 @@ public class FilterSerializer<T extends DataSourceDescriptor> {
         filter.setInclude(JSONUtils.deserializeStringList(map, RegistryConstants.TAG_INCLUDE));
         filter.setExclude(JSONUtils.deserializeStringList(map, RegistryConstants.TAG_EXCLUDE));
         return filter;
+    }
+
+    private static void validatePatterns(@NotNull Map<String, Object> map, @NotNull String name) {
+        Object patterns = map.get(name);
+        // Missing/null lists are valid legacy empty filters. Other values must not
+        // silently turn into an empty filter and broaden the visible object scope.
+        if (patterns == null) {
+            return;
+        }
+        if (!(patterns instanceof Collection<?> values) || values.stream().anyMatch(value -> !(value instanceof String))) {
+            throw new JsonParseException("Filter " + name + " must be an array of strings");
+        }
     }
 
     @NotNull
