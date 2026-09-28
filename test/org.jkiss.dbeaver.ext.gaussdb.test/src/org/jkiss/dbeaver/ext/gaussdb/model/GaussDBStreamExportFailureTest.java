@@ -39,6 +39,139 @@ public class GaussDBStreamExportFailureTest {
     java.nio.file.Path temporaryDirectory;
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void repeatedFileSplitsPreserveHeadersRowsFootersAndUnicode(boolean compressed) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var exporter = mock(IStreamDataExporter.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        when(settings.isSplitOutFiles()).thenReturn(true);
+        when(settings.isCompressResults()).thenReturn(compressed);
+        when(settings.getOutputFolder()).thenReturn(temporaryDirectory.toString());
+        when(settings.getOutputFilePattern()).thenReturn("part");
+        when(settings.getOutputEncoding()).thenReturn("UTF-8");
+        when(settings.getMaxOutFileSize()).thenReturn((long) "H\n行😀1\n".getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+        var runtime = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.ConsumerRuntimeParameters.class);
+        set(consumer, "settings", settings);
+        set(consumer, "runtimeParameters", runtime);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
+        set(consumer, "processorProperties", java.util.Map.of(
+            org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.PROP_FILE_EXTENSION, "txt"));
+        set(consumer, "processor", exporter);
+        set(consumer, "columnMetas", new org.jkiss.dbeaver.model.data.DBDAttributeBinding[0]);
+        set(consumer, "columnBindings", new org.jkiss.dbeaver.model.data.DBDAttributeBinding[0]);
+        var session = mock(DBCSession.class);
+        var monitor = new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor();
+        when(session.getProgressMonitor()).thenReturn(monitor);
+        var resultSet = mock(org.jkiss.dbeaver.model.exec.DBCResultSet.class);
+        doAnswer(call -> { ((PrintWriter) get(consumer, "writer")).write("H\n"); return null; })
+            .when(exporter).exportHeader(any());
+        doAnswer(call -> { ((PrintWriter) get(consumer, "writer")).write("F\n"); return null; })
+            .when(exporter).exportFooter(any());
+        var row = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(call -> {
+            ((PrintWriter) get(consumer, "writer")).write("行😀" + row.incrementAndGet() + "\n");
+            return null;
+        }).when(exporter).exportRow(any(), any(), any());
+        var first = consumer.makeOutputFile(monitor);
+        set(consumer, "outputFile", first);
+        consumer.getOutputFiles().add(first);
+        invoke(consumer, "openOutputStreams", DBRProgressMonitor.class, monitor);
+        try {
+            exporter.exportHeader(session);
+            for (int i = 0; i < 3; i++) consumer.fetchRow(session, resultSet);
+            invoke(consumer, "finishFile", DBRProgressMonitor.class, monitor);
+        } finally {
+            close(consumer);
+        }
+        assertEquals(3, consumer.getOutputFiles().size());
+        try (var files = java.nio.file.Files.list(temporaryDirectory)) { assertEquals(3, files.count()); }
+        for (int i = 0; i < 3; i++) {
+            String name = "part" + (i == 0 ? "" : "_" + (i + 1)) + ".txt";
+            var file = consumer.getOutputFiles().get(i);
+            assertEquals(name + (compressed ? ".zip" : ""), file.getFileName().toString());
+            String content;
+            if (compressed) {
+                try (var zip = new java.util.zip.ZipInputStream(java.nio.file.Files.newInputStream(file))) {
+                    assertEquals(name, zip.getNextEntry().getName());
+                    content = new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    assertNull(zip.getNextEntry());
+                }
+            } else {
+                content = java.nio.file.Files.readString(file);
+            }
+            assertEquals("H\n行😀" + (i + 1) + "\nF\n", content);
+        }
+        verify(exporter, times(3)).exportHeader(session);
+        verify(exporter, times(3)).exportFooter(monitor);
+        verify(exporter).dispose();
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"100,footer", "101,footer", "100,close", "101,close"})
+    public void splitFailureDoesNotAdvanceFileOrExportNextRow(long bytes, String stage) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var exporter = mock(IStreamDataExporter.class);
+        var output = mock(OutputStream.class);
+        var session = mock(DBCSession.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        var resultSet = mock(org.jkiss.dbeaver.model.exec.DBCResultSet.class);
+        when(session.getProgressMonitor()).thenReturn(monitor);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        when(settings.isSplitOutFiles()).thenReturn(true);
+        when(settings.getMaxOutFileSize()).thenReturn(100L);
+        set(consumer, "settings", settings);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
+        set(consumer, "firstRow", false);
+        set(consumer, "bytesWritten", bytes);
+        set(consumer, "writer", new PrintWriter(new StringWriter()));
+        set(consumer, "outputStream", output);
+        set(consumer, "processor", exporter);
+        IOException original = new IOException("synthetic split " + stage);
+        if (stage.equals("footer")) doThrow(original).when(exporter).exportFooter(monitor);
+        else doThrow(original).when(output).close();
+        DBCException failure = assertThrows(DBCException.class, () -> consumer.fetchRow(session, resultSet));
+        Throwable root = failure;
+        while (root.getCause() != null) root = root.getCause();
+        assertSame(original, root);
+        assertEquals(0, get(consumer, "multiFileNumber"));
+        assertTrue(((java.util.List<?>) get(consumer, "outputFiles")).isEmpty());
+        verify(exporter, never()).exportHeader(any());
+        verify(exporter, never()).exportRow(any(), any(), any());
+        verifyNoInteractions(resultSet);
+        close(consumer);
+        verify(output, times(1)).close();
+        verify(exporter).dispose();
+        assertNull(get(consumer, "outputStream"));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"99,false", "100,true"})
+    public void splitIsNotStartedBelowLimitOrBeforeFirstRow(long bytes, boolean firstRow) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var exporter = mock(IStreamDataExporter.class);
+        var settings = mock(org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.class);
+        when(settings.isSplitOutFiles()).thenReturn(true);
+        when(settings.getMaxOutFileSize()).thenReturn(100L);
+        set(consumer, "settings", settings);
+        set(consumer, "parameters", new org.jkiss.dbeaver.tools.transfer.IDataTransferConsumer.TransferParameters());
+        set(consumer, "firstRow", firstRow);
+        set(consumer, "bytesWritten", bytes);
+        set(consumer, "writer", new PrintWriter(new StringWriter()));
+        set(consumer, "processor", exporter);
+        set(consumer, "columnMetas", new org.jkiss.dbeaver.model.data.DBDAttributeBinding[0]);
+        set(consumer, "columnBindings", new org.jkiss.dbeaver.model.data.DBDAttributeBinding[0]);
+        var session = mock(DBCSession.class);
+        var resultSet = mock(org.jkiss.dbeaver.model.exec.DBCResultSet.class);
+        consumer.fetchRow(session, resultSet);
+        verify(exporter).exportRow(same(session), same(resultSet), org.mockito.AdditionalMatchers.aryEq(new Object[0]));
+        verify(exporter, never()).exportFooter(any());
+        verify(exporter, never()).exportHeader(any());
+        assertEquals(0, get(consumer, "multiFileNumber"));
+        assertEquals(false, get(consumer, "firstRow"));
+        close(consumer);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"empty", "text", "truncated"})
     public void realXlsxAppendFailurePreservesFileAndSameConsumerCanRetry(String kind) throws Exception {
         var valid = temporaryDirectory.resolve("valid.xlsx");
