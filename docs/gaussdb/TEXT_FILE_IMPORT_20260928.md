@@ -2,7 +2,17 @@
 
 日期：2026-09-28。关联历史清单9.1导入、9.8值编辑、11.1字符类型。本记录分别列出组件及限定环境下的界面/数据库验收，不代表完整产品验收。
 
-## UI测试模块迁移：已编译，正式运行待验证
+## UI测试fragment真实OSGi运行通过
+
+专项编译运行器新增 `compiled-sources.json` 标记本轮显式编译源码。OSGi运行器按所属bundle分别装入新类，复用既有debug测试解析依赖，在独立临时配置中追加hex编辑器bundle和新的测试fragment，正确指定testpluginname与开发资源路径。只对UI测试运行显式使用Byte Buddy agent，不改变其他模块或运行中的客户端。
+
+执行：`node scripts/run-existing-osgi.mjs /tmp/hex-content-test-pPjUGj --module=org.jkiss.dbeaver.ui.editors.data.test --all-module`。三个测试类分别4、4、23项，合计31/31、0失败/错误/跳过，退出0且逐类门控通过。日志 `/tmp/editor-osgi-first-20260928.log`，报告 `/tmp/gauss-existing-osgi-eQEpM6/verified-results.json`。因此fragment包级访问、inline静态模拟和组件测试在真实OSGi下已有成功证据。
+
+同一运行器修改后复跑平台模块14类282/282通过，0跳过（`/tmp/platform-runner-regression-20260928.log`）。普通classpath联合40/40也复跑通过，包含相同UI测试，不能累加为新增覆盖。
+
+边界：不是SWT窗口自动化、完整Maven构建或最新产品包。实际读取的是已有解析依赖及显式编译的新生产类；run-Ncu1z1缓存锁失败仍保留，未删除或修改该锁。未显式配置agent的标准Tycho运行方式仍待完整构建验证。
+
+## UI测试模块迁移记录
 
 三个编辑器测试类31项迁入新模块 `test/org.jkiss.dbeaver.ui.editors.data.test`，使用数据编辑器测试fragment承载包级调用；依赖明确指向UI编辑器、JDBC及测试框架，不修改生产可见性。原独立测试仓中的三个Java副本和inline配置已删除，专项运行器只引用主仓正式源码/配置。
 
