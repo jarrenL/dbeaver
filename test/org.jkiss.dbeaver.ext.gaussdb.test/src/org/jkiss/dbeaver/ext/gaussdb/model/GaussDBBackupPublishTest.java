@@ -24,6 +24,45 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completedErrorLogDoesNotPoisonRetryAndKeepsFinalUnterminatedLine(boolean newline) throws Exception {
+        assumeTrue(Files.isExecutable(Path.of("/bin/sh")));
+        var output = new java.io.ByteArrayOutputStream();
+        var settings = mock(PostgreDatabaseBackupSettings.class, RETURNS_DEEP_STUBS);
+        when(settings.getLogWriter()).thenReturn(new java.io.PrintStream(output, true, java.nio.charset.StandardCharsets.UTF_8));
+        var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
+        var monitor = mock(DBRProgressMonitor.class);
+        var attempt = new java.util.concurrent.atomic.AtomicInteger();
+        var handler = new PostgreDatabaseBackupHandler() {
+            @Override protected List<String> getCommandLine(PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a) {
+                return List.of("/bin/sh", "-c", attempt.getAndIncrement() == 0
+                    ? "printf 'synthetic failure" + (newline ? "\\n" : "") + "' >&2" : "exit 0");
+            }
+            @Override protected void setupProcessParameters(DBRProgressMonitor m, PostgreDatabaseBackupSettings s,
+                PostgreDatabaseBackupInfo a, ProcessBuilder b) {
+            }
+            @Override protected void startProcessHandler(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, ProcessBuilder b, Process p, Log log) throws IOException {
+                try {
+                    // Run the production reader to completion before evaluating status; this test
+                    // deliberately isolates retry state from asynchronous reader scheduling.
+                    var type = Class.forName("org.jkiss.dbeaver.tasks.nativetool.AbstractNativeToolHandler$LogReaderJob");
+                    var constructor = type.getDeclaredConstructors()[0];
+                    constructor.setAccessible(true);
+                    ((Thread) constructor.newInstance(this, t, s, b, p, true)).run();
+                } catch (ReflectiveOperationException e) {
+                    throw new IOException(e);
+                }
+            }
+        };
+        var info = mock(PostgreDatabaseBackupInfo.class);
+        assertFalse(handler.executeProcess(monitor, task, settings, info, mock(Log.class)), "stderr diagnostic must be retained");
+        assertTrue(output.toString(java.nio.charset.StandardCharsets.UTF_8).contains("synthetic failure"));
+        assertTrue(handler.executeProcess(monitor, task, settings, info, mock(Log.class)), "Successful retry must not inherit old failure");
+        verify(monitor, times(2)).done();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"before-command", "during-command", "during-setup"})
     void canceledPreparationMustNotStartNativeProcess(String stage) throws Exception {
         assumeTrue(Files.isExecutable(Path.of("/usr/bin/true")));

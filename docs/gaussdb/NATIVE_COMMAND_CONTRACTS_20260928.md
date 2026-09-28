@@ -1,5 +1,13 @@
 # 原生工具命令参数与认证失败边界
 
+## 已完成日志的重试状态与无换行末行（后续）
+
+新增两项受控shell场景：第一次向stderr输出诊断（有/无末尾换行），第二次无输出成功退出。同处理器、同设置重复调用生产executeProcess；通过反射构造实际私有LogReaderJob并同步run至完成，隔离线程调度，不是模拟日志解析结果。
+
+红测`/tmp/native-retry-red-20260928.log`41项中39通过、2失败：无换行末行被丢弃导致首次返回成功；有换行错误残留导致后续成功仍返回失败。共享基类在每次executeProcess重置taskErrorMessage，日志读取EOF时将未换行缓冲写入消息与日志。修复后联合335/335通过、0跳过、0失败（`/tmp/shared-retry-green-20260928.log`）。测试也核对诊断确实写入日志、两次monitor.done。
+
+沿用既有isLogInputStream=true时stderr非空标记失败的契约，不改变各工具的警告分类。同步完成日志的测试不证明生产异步读取线程总在状态判定前结束，也不证明上一轮延迟读取不会污染下一轮；异步生命周期仍需独立验证。非真库/GUI/Windows验收。
+
 ## 启动前及准备阶段取消（后续）
 
 新增三个取消时点：executeProcess进入前、getCommandLine期间、setupProcessParameters期间。受控命令仅为本机true；记录命令生成、参数准备及进程启动回调次数，不执行恢复或其他数据库操作。

@@ -212,6 +212,7 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
         PROCESS_ARG arg,
         Log log
     ) throws IOException, InterruptedException {
+        taskErrorMessage = null;
         monitor.beginTask(task.getType().getName(), 1);
         Process process = null;
         try {
@@ -583,6 +584,10 @@ public abstract class AbstractNativeToolHandler<SETTINGS extends AbstractNativeT
                 for (; ; ) {
                     int b = reader.read();
                     if (b == -1) {
+                        // Tools need not terminate their last diagnostic with a newline.
+                        message.append(buf);
+                        logWriter.print(buf);
+                        logWriter.flush();
                         break;
                     }
                     buf.append((char) b);
