@@ -36,6 +36,75 @@ class QueryHistoryStoreTest {
             sql, "USER", "模式", "database", time, time + 10, 42, 0, null, -1, 0, 0, false, "Project", "SQL");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "sql,123", "sql,true", "projectId,42", "errorMessage,false",
+        "startTime,99.5", "endTime,9223372036854775908", "startTime,null",
+        "startTime,\"100\"", "transactional,\"true\"", "errorCode,4294967296"
+    })
+    void malformedFieldCannotBeCoercedIntoValidHistory(String field, String rawValue) throws Exception {
+        var file = directory.resolve("history.json");
+        var expected = entry(100, "SELECT 'private-history-marker'");
+        new QueryHistoryStore(file, 10).put(expected);
+        var valid = Files.readAllBytes(file);
+        var json = com.google.gson.JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+        json.getAsJsonArray("entries").get(0).getAsJsonObject()
+            .add(field, com.google.gson.JsonParser.parseString(rawValue));
+        Files.writeString(file, json.toString());
+        var damaged = Files.readAllBytes(file);
+        var error = assertThrows(IOException.class, () -> new QueryHistoryStore(file, 10));
+        assertNull(error.getCause());
+        assertFalse(error.getMessage().contains("private-history-marker"));
+        assertArrayEquals(damaged, Files.readAllBytes(file));
+        Files.write(file, valid);
+        assertEquals(List.of(expected), new QueryHistoryStore(file, 10).getEntries());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"\"2\"", "2.5", "4294967298", "null"})
+    void invalidVersionRepresentationIsRejected(String rawVersion) throws Exception {
+        var file = directory.resolve("history.json");
+        var content = "{\"version\":" + rawVersion + ",\"entries\":[]}";
+        Files.writeString(file, content);
+        assertThrows(IOException.class, () -> new QueryHistoryStore(file, 10));
+        assertEquals(content, Files.readString(file));
+    }
+
+    @Test
+    void missingOptionalFieldsAndUnknownFieldsRemainCompatible() throws Exception {
+        var file = directory.resolve("history.json");
+        var expected = entry(100, "SELECT '兼容🧪'");
+        new QueryHistoryStore(file, 10).put(expected);
+        var json = com.google.gson.JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+        var item = json.getAsJsonArray("entries").get(0).getAsJsonObject();
+        for (String field : List.of("schema", "catalog", "errorMessage", "projectName", "contextName",
+            "rowCount", "errorCode", "updateRowCount", "fetchBeginTime", "fetchEndTime", "transactional")) {
+            item.remove(field);
+        }
+        item.addProperty("futureField", "ignored");
+        Files.writeString(file, json.toString());
+        var actual = new QueryHistoryStore(file, 10).getEntries().getFirst();
+        assertEquals(expected.id(), actual.id());
+        assertEquals(expected.sql(), actual.sql());
+        assertEquals(100, actual.startTime());
+        assertEquals(110, actual.endTime());
+        assertNull(actual.schema());
+        assertNull(actual.errorMessage());
+        assertEquals(0, actual.rowCount());
+        assertEquals(0, actual.updateRowCount());
+        assertFalse(actual.transactional());
+    }
+
+    @Test
+    void maximumTimestampAndNegativeUnknownCountsRoundTripExactly() throws Exception {
+        var file = directory.resolve("history.json");
+        var expected = new QueryHistoryStore.Entry(UUID.randomUUID(), "project", "connection", "连接", "gaussdb",
+            "SELECT 1", "USER", null, null, Long.MAX_VALUE - 1, Long.MAX_VALUE, -1,
+            Integer.MIN_VALUE, null, -1, 0, 0, true, null, null);
+        new QueryHistoryStore(file, 10).put(expected);
+        assertEquals(List.of(expected), new QueryHistoryStore(file, 10).getEntries());
+    }
+
     @Test
     void restartPreservesMultilineUnicodeAndIdentity() throws Exception {
         var file = directory.resolve("history.json");

@@ -17,7 +17,10 @@
 package org.jkiss.dbeaver.runtime.qm;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 
@@ -110,7 +113,9 @@ public final class QueryHistoryStore {
             throw new IOException("Query history exceeds the size limit");
         }
         try {
-            var snapshot = GSON.fromJson(Files.readString(file, StandardCharsets.UTF_8), Snapshot.class);
+            var document = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8));
+            validateDocument(document);
+            var snapshot = GSON.fromJson(document, Snapshot.class);
             if (snapshot == null || snapshot.version() != FORMAT_VERSION || snapshot.entries() == null) {
                 throw new IOException("Unsupported or incomplete query history snapshot");
             }
@@ -130,6 +135,72 @@ public final class QueryHistoryStore {
         } catch (JsonParseException | IllegalArgumentException e) {
             // Do not attach parser exceptions: their messages may expose recorded SQL.
             throw new IOException("Invalid query history snapshot");
+        }
+    }
+
+    private static void validateDocument(@NotNull JsonElement document) throws IOException {
+        if (!document.isJsonObject()) {
+            throw new IOException("Invalid query history snapshot");
+        }
+        var root = document.getAsJsonObject();
+        validateInteger(root.get("version"), true);
+        var items = root.get("entries");
+        if (items == null || !items.isJsonArray()) {
+            throw new IOException("Invalid query history snapshot");
+        }
+        for (var item : items.getAsJsonArray()) {
+            if (!item.isJsonObject()) {
+                throw new IOException("Invalid query history entry");
+            }
+            var entry = item.getAsJsonObject();
+            for (String key : List.of("id", "projectId", "dataSourceId", "dataSourceName", "driverId", "sql", "purpose")) {
+                validateString(entry, key, true);
+            }
+            for (String key : List.of("schema", "catalog", "errorMessage", "projectName", "contextName")) {
+                validateString(entry, key, false);
+            }
+            validateInteger(entry.get("startTime"), false);
+            validateInteger(entry.get("endTime"), false);
+            for (String key : List.of("rowCount", "errorCode", "updateRowCount", "fetchBeginTime", "fetchEndTime")) {
+                var value = entry.get(key);
+                if (value != null && !value.isJsonNull()) {
+                    validateInteger(value, key.equals("errorCode"));
+                }
+            }
+            var transactional = entry.get("transactional");
+            if (transactional != null && !transactional.isJsonNull()
+                && (!transactional.isJsonPrimitive() || !transactional.getAsJsonPrimitive().isBoolean())) {
+                throw new IOException("Invalid query history flag");
+            }
+        }
+    }
+
+    private static void validateString(@NotNull JsonObject entry, @NotNull String key, boolean required) throws IOException {
+        var value = entry.get(key);
+        if (value == null || value.isJsonNull()) {
+            if (!required) {
+                return;
+            }
+        } else if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+            return;
+        }
+        throw new IOException("Invalid query history text field");
+    }
+
+    private static void validateInteger(@Nullable JsonElement value, boolean intRange) throws IOException {
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+            throw new IOException("Invalid query history numeric field");
+        }
+        try {
+            var number = value.getAsBigDecimal();
+            if (intRange) {
+                number.intValueExact();
+            } else {
+                number.longValueExact();
+            }
+        } catch (ArithmeticException | NumberFormatException e) {
+            // Neither values nor parser exception causes may disclose recorded content.
+            throw new IOException("Invalid query history numeric field");
         }
     }
 
