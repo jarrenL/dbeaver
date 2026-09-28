@@ -80,12 +80,25 @@ public class PostgreSessionManager implements DBAServerSessionManager<PostgreSes
     @Override
     public void alterSession(@NotNull DBCSession session, @NotNull String sessionId, @NotNull Map<String, Object> options) throws DBException
     {
+        final long pid;
+        try {
+            if (sessionId == null || sessionId.isEmpty()
+                || !sessionId.chars().allMatch(c -> c >= '0' && c <= '9')) {
+                throw new NumberFormatException("Expected an ASCII decimal session identifier");
+            }
+            pid = Long.parseLong(sessionId);
+            if (pid <= 0) {
+                throw new NumberFormatException("Expected a positive session identifier");
+            }
+        } catch (NumberFormatException e) {
+            throw new DBException("Invalid server session identifier", e);
+        }
         try {
             try (Statement dbStat = ((JDBCSession) session).createStatement()) {
                 if (options != null && CommonUtils.toBoolean(options.get(OPTION_QUERY_CANCEL))) {
-                    dbStat.execute("SELECT pg_catalog.pg_cancel_backend(" + sessionId + ")");
+                    dbStat.execute("SELECT pg_catalog.pg_cancel_backend(" + pid + ")");
                 } else {
-                    dbStat.execute("SELECT pg_catalog.pg_terminate_backend(" + sessionId + ")");
+                    dbStat.execute("SELECT pg_catalog.pg_terminate_backend(" + pid + ")");
                 }
             }
         }

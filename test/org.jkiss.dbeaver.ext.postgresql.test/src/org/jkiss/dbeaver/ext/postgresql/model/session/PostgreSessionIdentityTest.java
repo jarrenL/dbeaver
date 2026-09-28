@@ -20,6 +20,23 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class PostgreSessionIdentityTest {
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @ValueSource(strings = {" ", "0", "-1", "1.5", "42) OR true--", "9223372036854775808", "１２"})
+    void malformedSessionIdIsRejectedBeforeOpeningStatement(String id) throws Exception {
+        var connection = mock(JDBCSession.class);
+        var statement = mock(JDBCStatement.class);
+        when(connection.createStatement()).thenReturn(statement);
+        var manager = new PostgreSessionManager(mock(PostgreDataSource.class));
+        for (boolean cancel : new boolean[] {true, false}) {
+            assertThrows(org.jkiss.dbeaver.DBException.class,
+                () -> manager.alterSession(connection, id, Map.of(PostgreSessionManager.OPTION_QUERY_CANCEL, cancel)));
+        }
+        verify(connection, never()).createStatement();
+        verifyNoInteractions(statement);
+        verify(connection, never()).close();
+    }
+
     private PostgreSession session(long pid, String database) throws Exception {
         var row = mock(ResultSet.class);
         when(row.getLong("pid")).thenReturn(pid);
