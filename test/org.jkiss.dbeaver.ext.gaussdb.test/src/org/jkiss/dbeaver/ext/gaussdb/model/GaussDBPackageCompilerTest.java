@@ -25,6 +25,60 @@ import java.sql.SQLException;
 
 public class GaussDBPackageCompilerTest {
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"type", "src", "definition", "line"})
+    void diagnosticColumnReadFailureIsNotInventedAsSourceError(String column) throws Exception {
+        var session = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCSession.class);
+        var statement = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement.class);
+        var result = Mockito.mock(org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet.class);
+        Mockito.when(result.getSession()).thenReturn(session);
+        var dataSource = Mockito.mock(GaussDBDataSource.class);
+        var container = Mockito.mock(org.jkiss.dbeaver.model.DBPDataSourceContainer.class);
+        Mockito.when(session.getDataSource()).thenReturn(dataSource);
+        Mockito.when(dataSource.getContainer()).thenReturn(container);
+        Mockito.when(container.getId()).thenReturn("package-diagnostics-test");
+        var object = Mockito.mock(GaussDBPackage.class);
+        var schema = Mockito.mock(GaussDBSchema.class);
+        Mockito.when(object.getSchema()).thenReturn(schema);
+        Mockito.when(object.getObjectId()).thenReturn(42L);
+        Mockito.when(schema.getObjectId()).thenReturn(99L);
+        Mockito.when(session.prepareStatement(Mockito.anyString())).thenReturn(statement);
+        Mockito.when(statement.executeQuery()).thenReturn(result);
+        Mockito.when(result.next()).thenReturn(true, false);
+        Mockito.when(result.getString("type")).thenReturn("package body");
+        Mockito.when(result.getString("src")).thenReturn("actual diagnostic");
+        SQLException failure = new SQLException("diagnostic column unavailable", "42703");
+        if (column.equals("line")) {
+            Mockito.when(result.getInt(column)).thenThrow(failure);
+        } else {
+            Mockito.when(result.getString(column)).thenThrow(failure);
+        }
+        var log = new org.jkiss.dbeaver.model.exec.compile.DBCCompileLogBase();
+        var actual = Assertions.assertThrows(org.jkiss.dbeaver.DBException.class,
+            () -> GaussDBPackageCompiler.readCompilationDiagnostics(session, log, object, GaussDBPackageCompileTarget.ALL));
+        Assertions.assertSame(failure, actual.getCause());
+        Assertions.assertTrue(log.getErrorStack().isEmpty());
+        Mockito.verify(result).close();
+        Mockito.verify(statement).close();
+        Mockito.verify(statement).setLong(1, 42L);
+        Mockito.verify(statement).setLong(2, 99L);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "compile failed near line 2147483648|1",
+        "compile failed near line 0|1",
+        "compile failed without a location|1",
+        "compile failed near line 23|23"
+    })
+    void malformedLocationPreservesDiagnosticWithoutCrashing(String message, int expectedLine) {
+        var error = GaussDBPackageCompiler.toCompileError(new SQLException(message, "42601"),
+            GaussDBPackageCompileTarget.BODY);
+        Assertions.assertEquals(expectedLine, error.getLine());
+        Assertions.assertEquals(message, error.getMessage());
+        Assertions.assertSame(GaussDBPackageCompileTarget.BODY, error.getSourcePart());
+    }
+
     @Test
     public void connectionTerminationAndPermissionErrorsAreNotSourceDiagnostics() {
         for (String state : java.util.List.of("08006", "28P01", "42501", "57P01", "57P02", "57P03")) {

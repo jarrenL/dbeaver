@@ -25,7 +25,6 @@ import org.jkiss.dbeaver.model.exec.compile.DBCCompileLog;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 
 import java.sql.SQLException;
@@ -121,7 +120,14 @@ public final class GaussDBPackageCompiler {
     ) {
         String message = error.getMessage() == null ? error.toString() : error.getMessage();
         Matcher matcher = ERROR_LINE_PATTERN.matcher(message);
-        int line = matcher.find() ? Integer.parseInt(matcher.group(1)) : 1;
+        int line = 1;
+        if (matcher.find()) {
+            try {
+                line = Math.max(1, Integer.parseInt(matcher.group(1)));
+            } catch (NumberFormatException ignored) {
+                // Preserve the diagnostic even when its location cannot fit an editor line.
+            }
+        }
         GaussDBPackageCompileTarget sourcePart = target;
         // Only GS_ERRORS.type reliably identifies the failed source part for ALL.
         // Error text may mention another package body; do not guess a source tab.
@@ -144,7 +150,7 @@ public final class GaussDBPackageCompiler {
             statement.setLong(2, object.getSchema().getObjectId());
             try (JDBCResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
-                    String type = JDBCUtils.safeGetString(resultSet, "type");
+                    String type = resultSet.getString("type");
                     GaussDBPackageCompileTarget sourcePart = "package body".equalsIgnoreCase(type)
                         ? GaussDBPackageCompileTarget.BODY
                         : GaussDBPackageCompileTarget.SPECIFICATION;
@@ -153,9 +159,9 @@ public final class GaussDBPackageCompiler {
                     }
                     compileLog.error(new GaussDBPackageCompileError(
                         sourcePart,
-                        JDBCUtils.safeGetString(resultSet, "src"),
+                        resultSet.getString("src"),
                         GaussDBPackageSourceLines.toEditorLine(
-                            JDBCUtils.safeGetString(resultSet, "definition"), JDBCUtils.safeGetInt(resultSet, "line"))
+                            resultSet.getString("definition"), resultSet.getInt("line"))
                     ));
                     success = false;
                 }
