@@ -1,5 +1,15 @@
 # 网络配置显示信息与身份加载回归
 
+## 后续：不受信任导出的 handler 引用边界
+
+新增 4 项：实际 SSH/PG SSL handler × 配置管理器安全标志。`isTrusted=false` 时生产保存器只写 handler 类型和启用状态，不写用户名、密码、安全属性、普通 host 参数或保存密码开关，且不产生独立凭据条目。用生产解析器重新加载后，handler 存在并启用，但没有上述参数和凭据；检查原 handler 身份及所有原属性保持不变。
+
+该配置类 **50/50 通过，零跳过**，本轮无生产修改。只验证内存 JSON 及配置对象，不等于磁盘导出、共享权限、实际连接或任意自定义字段均不含秘密。普通顶层配置元数据仍按已有格式保存，本项检查范围是 handler 引用。
+
+日志 `/tmp/network-untrusted-export-20260929.log`。
+
+完整 73 模块诊断 2,509 项中：2,339 通过、169 跳过、1 项 Rest 本地网络权限错误；独立门控仍拒绝通过。逐项证据：[NETWORK_UNTRUSTED_EXPORT_REACTOR_20260929.json](evidence/NETWORK_UNTRUSTED_EXPORT_REACTOR_20260929.json)。本轮 Docker API 仍拒绝，未动 Linux GUI 保留现场，不新增真库/GUI 通过数。
+
 ## 后续：SSH/SSL handler 凭据关联
 
 新增 8 项：实际扩展注册的 `ssh_tunnel`、`postgre_ssl` × 是否保存密码 × 配置管理器是否标记为安全存储。平台测试模块显式声明 SSH 插件依赖，缺少 handler 时测试失败，不作条件跳过。

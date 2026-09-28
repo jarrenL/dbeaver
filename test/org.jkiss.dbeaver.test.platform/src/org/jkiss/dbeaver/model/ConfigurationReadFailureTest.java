@@ -396,6 +396,60 @@ class ConfigurationReadFailureTest {
     }
 
     @ParameterizedTest
+    @CsvSource({"ssh_tunnel, false", "ssh_tunnel, true", "postgre_ssl, false", "postgre_ssl, true"})
+    void untrustedNetworkExportContainsOnlyHandlerReferenceAndDoesNotModifySource(String handlerId, boolean secure)
+        throws Exception {
+        var descriptor = NetworkHandlerRegistry.getInstance().getDescriptor(handlerId);
+        assertNotNull(descriptor);
+        var profile = new DBWNetworkProfile(mock(DBPProject.class));
+        profile.setProfileId("export-id");
+        profile.setProfileName("共享网络配置");
+        var handler = new DBWHandlerConfiguration(descriptor, null);
+        handler.setEnabled(true);
+        handler.setSavePassword(true);
+        handler.setUserName("fixture-private-user");
+        handler.setPassword("fixture-private-password");
+        handler.setSecureProperty("fixture-key", "fixture-private-key");
+        handler.setProperty("host", "private.example.invalid");
+        profile.updateConfiguration(handler);
+        var configurationManager = mock(DataSourceConfigurationManager.class);
+        when(configurationManager.isTrusted()).thenReturn(false);
+        when(configurationManager.isSecure()).thenReturn(secure);
+        var parameters = new DataSourceParser.ContextParameters(profile.getProject(), configurationManager, new HashMap<>());
+        var writerMethod = DataSourceParser.class.getDeclaredMethod("saveNetworkProfiles",
+            DataSourceParser.ContextParameters.class, JsonWriter.class, List.class);
+        writerMethod.setAccessible(true);
+        var output = new StringWriter();
+        try (var writer = new JsonWriter(output)) {
+            writer.beginObject();
+            writerMethod.invoke(null, parameters, writer, List.of(profile));
+            writer.endObject();
+        }
+        String json = output.toString();
+        for (String forbidden : List.of("fixture-private-user", "fixture-private-password", "fixture-private-key",
+            "private.example.invalid", "credentials", "save-password")) {
+            assertFalse(json.contains(forbidden), "Untrusted export contains a restricted handler field");
+        }
+        assertTrue(parameters.secureProperties().isEmpty());
+        var loaded = DataSourceParser.parseProfiles(parameters, JSONUtils.parseMap(new Gson(), new StringReader(json)));
+        assertEquals(1, loaded.size());
+        var restored = loaded.getFirst().getConfiguration(handlerId);
+        assertNotNull(restored);
+        assertTrue(restored.isEnabled());
+        assertFalse(restored.isSavePassword());
+        assertNull(restored.getUserName());
+        assertNull(restored.getPassword());
+        assertTrue(restored.getSecureProperties().isEmpty());
+        assertTrue(restored.getProperties().isEmpty());
+        assertSame(handler, profile.getConfiguration(handlerId));
+        assertEquals("fixture-private-user", handler.getUserName());
+        assertEquals("fixture-private-password", handler.getPassword());
+        assertEquals("fixture-private-key", handler.getSecureProperty("fixture-key"));
+        assertEquals("private.example.invalid", handler.getStringProperty("host"));
+        assertTrue(handler.isSavePassword());
+    }
+
+    @ParameterizedTest
     @CsvSource({"ssh_tunnel, false, false", "ssh_tunnel, false, true", "ssh_tunnel, true, false",
         "ssh_tunnel, true, true", "postgre_ssl, false, false", "postgre_ssl, false, true",
         "postgre_ssl, true, false", "postgre_ssl, true, true"})
