@@ -13,7 +13,10 @@ final class GaussDBPackageSourceLines {
     }
 
     static int toEditorLine(@Nullable String definition, int contentLine) {
-        if (definition == null || contentLine < 1) {
+        if (contentLine < 1) {
+            return 1;
+        }
+        if (definition == null) {
             return contentLine;
         }
         int lineOffset = 0;
@@ -64,7 +67,8 @@ final class GaussDBPackageSourceLines {
                     while (i < definition.length() && (definition.charAt(i) == ' ' || definition.charAt(i) == '\t'
                         || definition.charAt(i) == '\r')) { i++; }
                     if (i < definition.length() && definition.charAt(i) == '\n') { lineOffset++; }
-                    return contentLine + lineOffset;
+                    long editorLine = (long) contentLine + lineOffset;
+                    return editorLine > Integer.MAX_VALUE ? 1 : (int) editorLine;
                 }
                 packageSeen |= token.equalsIgnoreCase("PACKAGE");
                 continue;
