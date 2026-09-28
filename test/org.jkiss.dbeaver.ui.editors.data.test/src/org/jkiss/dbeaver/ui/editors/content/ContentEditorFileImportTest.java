@@ -46,6 +46,37 @@ class ContentEditorFileImportTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
+    void canceledImportLeavesOriginalInputUntouched(boolean binary) throws Exception {
+        var controller = mock(IValueController.class);
+        var input = input(controller, "UTF-8");
+        var selected = directory.resolve("canceled-import.bin");
+        Files.writeString(selected, "replacement");
+        var original = directory.resolve("owned-original.bin");
+        Files.writeString(original, "original");
+        var content = mock(DBDContent.class);
+        if (binary) {
+            field(input, "stringStorage", null);
+            field(input, "contentFile", original.toFile());
+            field(input, "contentDetached", false);
+            when(controller.getValue()).thenReturn(content);
+        }
+        var monitor = new NullProgressMonitor();
+        monitor.setCanceled(true);
+        assertThrows(InterruptedException.class, () -> input.loadFromExternalFile(selected.toFile(), monitor));
+        verify(controller, never()).updateValue(any(), anyBoolean());
+        verifyNoInteractions(content);
+        assertEquals("original", Files.readString(original));
+        assertEquals("replacement", Files.readString(selected));
+        if (binary) {
+            assertEquals(original.toFile(), field(input, "contentFile"));
+            assertEquals(Boolean.FALSE, field(input, "externalContentPending"));
+        } else {
+            assertEquals("original", ((StringEditorInput.StringStorage) field(input, "stringStorage")).getString());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     void textSaveRechecksReadOnlyAfterImport(boolean discard) throws Exception {
         var controller = mock(IValueController.class);
         var input = input(controller, "UTF-8");
@@ -113,8 +144,8 @@ class ContentEditorFileImportTest {
     }
 
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    void toolbarImportOnlyMarksEditorDirtyAndNeverPublishes(boolean cancel) throws Exception {
+    @ValueSource(strings = {"selected", "picker-canceled", "task-canceled"})
+    void toolbarImportOnlyMarksEditorDirtyAndNeverPublishes(String mode) throws Exception {
         var contributor = mock(ContentEditorContributor.class);
         var editor = mock(ContentEditor.class);
         var controller = mock(IValueController.class);
@@ -127,6 +158,9 @@ class ContentEditorFileImportTest {
         when(editor.getValueController()).thenReturn(controller);
         when(site.getWorkbenchWindow()).thenReturn(window);
         doAnswer(invocation -> {
+            if (mode.equals("task-canceled")) {
+                throw new InterruptedException();
+            }
             ((org.eclipse.jface.operation.IRunnableWithProgress) invocation.getArgument(2))
                 .run(new NullProgressMonitor());
             return null;
@@ -141,14 +175,14 @@ class ContentEditorFileImportTest {
             workbench.when(DBWorkbench::getPlatform).thenReturn(mock(DBPPlatform.class, RETURNS_DEEP_STUBS));
             try (var dialogs = mockStatic(org.jkiss.dbeaver.ui.dialogs.DialogUtils.class)) {
                 dialogs.when(() -> org.jkiss.dbeaver.ui.dialogs.DialogUtils.openFile(null))
-                    .thenReturn(cancel ? null : selected);
+                    .thenReturn(mode.equals("picker-canceled") ? null : selected);
                 var run = actionType.getDeclaredMethod("run");
                 run.setAccessible(true);
                 run.invoke(action);
             }
         }
         verify(controller, never()).updateValue(any(), anyBoolean());
-        if (cancel) {
+        if (!mode.equals("selected")) {
             verifyNoInteractions(input);
             verify(editor, never()).setDirty(anyBoolean());
             verify(editor, never()).fireContentChanged();

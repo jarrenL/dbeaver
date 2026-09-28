@@ -303,8 +303,13 @@ public class ContentEditorInput implements IPathEditorInput, IStatefulEditorInpu
     }
 
     void loadFromExternalFile(File extFile, IProgressMonitor monitor)
-        throws CoreException
+        throws CoreException, InterruptedException
     {
+        // Cancellation must not replace input storage or release an owned file.
+        // Keep it outside the error wrapper so the caller treats it as cancellation.
+        if (monitor.isCanceled()) {
+            throw new InterruptedException();
+        }
         try {
             Object value = getValue();
             if (value instanceof DBDContent) {
