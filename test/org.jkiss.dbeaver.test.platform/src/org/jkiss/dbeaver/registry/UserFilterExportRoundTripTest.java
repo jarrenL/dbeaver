@@ -35,6 +35,17 @@ import static org.mockito.Mockito.*;
 class UserFilterExportRoundTripTest {
     @TempDir Path directory;
 
+    private FilterMapping mapping(String type, String scope, DBSObjectFilter filter) throws Exception {
+        // Test and registry are separate OSGi bundles, even when their Java package names match.
+        var constructor = FilterMapping.class.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        var mapping = constructor.newInstance(type);
+        var field = FilterMapping.class.getDeclaredField(scope == null ? "globalFilter" : "customFilters");
+        field.setAccessible(true);
+        field.set(mapping, scope == null ? filter : new java.util.HashMap<>(Map.of(scope, filter)));
+        return mapping;
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 2, 3, 4, 5, 6, 7})
     void userAndConnectionFiltersStaySeparateAcrossUtf8FileRoundTrip(int variant) throws Exception {
@@ -51,16 +62,13 @@ class UserFilterExportRoundTripTest {
             user.setInclude(List.of("Bank%", "中文%"));
             user.setExclude(List.of("Bank_private%"));
         }
-        var userMapping = new FilterMapping("schema");
         String scope = global ? null : "数据库:中文𠀀";
-        if (global) userMapping.globalFilter = user;
-        else userMapping.customFilters.put(scope, user);
+        var userMapping = mapping("schema", scope, user);
 
         var defaults = new DBSObjectFilter();
         defaults.setEnabled(true);
         defaults.setInclude(List.of("DefaultOnly%"));
-        var defaultMapping = new FilterMapping("table");
-        defaultMapping.globalFilter = defaults;
+        var defaultMapping = mapping("table", null, defaults);
         var source = mock(DataSourceDescriptor.class);
         when(source.getObjectFilters()).thenReturn(List.of(userMapping, defaultMapping));
         var serializer = new FilterSerializer<DataSourceDescriptor>();
@@ -77,10 +85,14 @@ class UserFilterExportRoundTripTest {
 
         var destination = mock(DataSourceDescriptor.class);
         UserDBSObjectFilterUtils.setUserObjectFilters(destination, Map.of(UserDBSObjectFilterUtils.USER_FILTER_KEY, restoredJson));
-        var captured = org.mockito.ArgumentCaptor.forClass(DBSObjectFilter.class);
-        verify(destination).setObjectFilter(eq("schema"), eq(scope), captured.capture());
-        verifyNoMoreInteractions(destination);
-        var imported = captured.getValue();
+        // Inspect the protected setter invocation without illegal cross-bundle access.
+        var calls = List.copyOf(mockingDetails(destination).getInvocations());
+        assertEquals(1, calls.size());
+        var call = calls.getFirst();
+        assertEquals("setObjectFilter", call.getMethod().getName());
+        assertEquals("schema", call.getArgument(0));
+        assertEquals(scope, call.getArgument(1));
+        DBSObjectFilter imported = call.getArgument(2);
         assertTrue(imported.isUserFilter());
         assertEquals(enabled, imported.isEnabled());
         assertTrue(imported.isCaseSensitive());
