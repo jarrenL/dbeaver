@@ -1,0 +1,28 @@
+# 网络配置显示信息与身份加载回归
+
+## 场景与问题
+
+对应历史清单 3.12（连接配置导入/加载、名称与属性）。保存器 `DataSourceParser.saveNetworkProfiles` 已将配置 ID 作为 JSON 键，另保存 `name` 和 `description`。加载器却连续两次将 JSON 键设置为名称，没有设置 ID 或读取显示信息。
+
+这会使重新加载的配置丢失显示名称和描述；ID 仍依赖显示名称回退计算，重命名后 ID 随之变化。修复为明确设置 JSON 键对应的 ID，读取名称和描述；旧文件没有名称时仍用 ID 显示，不改变旧文件格式。
+
+## 测试方法
+
+`ConfigurationReadFailureTest.networkProfileIdentityAndDisplayMetadataSurviveLoading` 使用四组组合：普通/加密项目 × 有显示名称/旧文件无名称。经过生产解析器和实际加密器，注册表及网络配置管理器为替身，检查：
+
+- ID 与 JSON 键一致；中文名称、描述、属性按原值恢复。
+- 缺失名称、描述的旧文件可加载，名称回退为 ID。
+- 配置发布到网络配置管理器，并记录在本轮解析结果中。
+- 加载后修改显示名称不改变 ID。
+
+第一次运行两个普通项目场景分别复现名称丢失、ID 随改名变化；另外两个加密场景出现测试夹具嵌套 Mockito stubbing 错误。先将加密操作移出 stubbing 表达式，再与生产修复共同复验。夹具错误不计入产品缺陷。
+
+本项不等于 SSH/SSL 实际连接、凭据引用全链路、重命名界面或文件导出向导验收。其余配置引用和网络连接场景仍需继续验证。
+
+## 复验结果
+
+完整 73 模块离线诊断重新编译生产代码后，该类 **36/36 通过，零跳过**。五测试模块合计 2,495 项：2,325 通过、169 跳过、1 项错误。唯一错误仍为 `RestTest.restClientServerTest` 的网络权限拒绝；跳过没有计为通过。
+
+诊断运行沿用无图形 AWT、显式 Byte Buddy 启动代理和失败后继续收集参数，独立验收门控仍因实际错误拒绝通过，不以 Maven SUCCESS 替代验收。逐项证据：[NETWORK_PROFILE_REACTOR_20260929.json](evidence/NETWORK_PROFILE_REACTOR_20260929.json)。日志 `/tmp/network-profile-metadata-green-20260929.log`，修复前日志 `/tmp/network-profile-metadata-red-20260929.log`。
+
+本轮 Docker API 拒绝访问，未修改保留的 Linux GUI 现场，未新增真库或 GUI 通过结论。

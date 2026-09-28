@@ -493,8 +493,10 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
                 String profileId = vmMap.getKey();
                 Map<String, Object> profileMap = vmMap.getValue();
                 DBWNetworkProfile profile = new DBWNetworkProfile(registry.getProject());
-                profile.setProfileName(profileId);
-                profile.setProfileName(profileId);
+                profile.setProfileId(profileId);
+                String profileName = JSONUtils.getString(profileMap, RegistryConstants.ATTR_NAME);
+                profile.setProfileName(CommonUtils.isEmpty(profileName) ? profileId : profileName);
+                profile.setProfileDescription(JSONUtils.getString(profileMap, RegistryConstants.ATTR_DESCRIPTION));
                 profile.setProperties(JSONUtils.deserializeStringMap(profileMap, "properties"));
 
                 for (Map.Entry<String, Map<String, Object>> handlerMap : JSONUtils.getNestedObjects(profileMap, "handlers")) {

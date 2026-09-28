@@ -23,6 +23,8 @@ import org.jkiss.dbeaver.model.app.DBPPlatform;
 import org.jkiss.dbeaver.model.app.DBPApplicationWorkbench;
 import org.jkiss.dbeaver.model.access.DBAAuthProfile;
 import org.jkiss.dbeaver.model.impl.app.DefaultValueEncryptor;
+import org.jkiss.dbeaver.model.net.DBWNetworkProfile;
+import org.jkiss.dbeaver.model.net.DBWNetworkProfileManager;
 import org.jkiss.dbeaver.registry.DataSourceConfigurationManager;
 import org.jkiss.dbeaver.registry.DataSourceRegistry;
 import org.jkiss.dbeaver.registry.DataSourceSerializerModern;
@@ -309,6 +311,33 @@ class ConfigurationReadFailureTest {
 
     private InputStream encryptedJson(String json) throws Exception {
         return new ByteArrayInputStream(encryptor.encryptValue(json.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false, true", "true, true", "false, false", "true, false"})
+    void networkProfileIdentityAndDisplayMetadataSurviveLoading(boolean encryptedProject, boolean named) throws Exception {
+        configure(encryptedProject);
+        var profiles = mock(DBWNetworkProfileManager.class);
+        when(registry.getNetworkProfiles()).thenReturn(profiles);
+        String json = "{\"connections\":{},\"network-profiles\":{\"fixture-id\":{" + (named
+            ? "\"name\":\"中文隧道\",\"description\":\"测试网络配置\"," : "")
+            + "\"properties\":{\"label\":\"中文值\"},\"handlers\":{}}}}";
+        byte[] contents = json.getBytes(StandardCharsets.UTF_8);
+        byte[] storedContents = encryptedProject ? encryptor.encryptValue(contents) : contents;
+        when(manager.readConfiguration("fixture.json", null)).thenReturn(new ByteArrayInputStream(storedContents));
+        var results = new DataSourceParseResults();
+        parse(results);
+        var profileCaptor = org.mockito.ArgumentCaptor.forClass(DBWNetworkProfile.class);
+        verify(profiles).addOrUpdateProfile(profileCaptor.capture());
+        var loaded = profileCaptor.getValue();
+        assertEquals("fixture-id", loaded.getProfileId());
+        assertEquals(named ? "中文隧道" : "fixture-id", loaded.getProfileName());
+        assertEquals(named ? "测试网络配置" : null, loaded.getProfileDescription());
+        assertEquals(Map.of("label", "中文值"), loaded.getProperties());
+        assertTrue(loaded.getConfigurations().isEmpty());
+        assertTrue(results.updatedProfiles.contains(loaded));
+        loaded.setProfileName("重命名后的显示名");
+        assertEquals("fixture-id", loaded.getProfileId());
     }
 
     @ParameterizedTest
