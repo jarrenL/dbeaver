@@ -23,6 +23,12 @@ import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSDataType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -206,5 +212,76 @@ class JDBCCollectionCloneTest {
         verify(bad, never()).release();
         assertSame(owned, nested.getItem(0));
         assertSame(shared, nested.getItem(1));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0,true", "2,true", "0,false", "2,false"})
+    void actualBlobFilesAreIsolatedAndCleaned(int depth, boolean fail, @TempDir Path directory) throws Exception {
+        Path source = directory.resolve("原始数据.bin");
+        byte[] bytes = new byte[65537];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) i;
+        }
+        Files.write(source, bytes);
+        Path copies = Files.createDirectory(directory.resolve("copies"));
+        var platform = mock(org.jkiss.dbeaver.model.app.DBPPlatform.class);
+        when(platform.getTempFolder(any(), anyString())).thenReturn(copies);
+        var storage = new org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage(platform, source, "UTF-8", false);
+        var blob = new JDBCContentBLOB(mock(org.jkiss.dbeaver.model.exec.DBCExecutionContext.class), null);
+        blob.updateContents(monitor, storage);
+        Object nested = blob;
+        for (int i = 0; i < depth; i++) {
+            JDBCCollection layer = collection("placeholder");
+            layer.setItem(0, nested);
+            nested = layer;
+        }
+        JDBCCollection original = collection("placeholder", "placeholder");
+        original.setItem(0, nested);
+        DBDValueCloneable last = mock(DBDValueCloneable.class);
+        DBDValueCloneable lastCopy = mock(DBDValueCloneable.class);
+        original.setItem(1, last);
+        DBCException failure = new DBCException("failure after file clone");
+        when(last.cloneValue(monitor)).thenAnswer(call -> {
+            try (var files = Files.list(copies)) {
+                var paths = files.toList();
+                assertEquals(1, paths.size(), "The file clone must exist before the later failure");
+                assertArrayEquals(bytes, Files.readAllBytes(paths.getFirst()));
+            }
+            if (fail) {
+                throw failure;
+            }
+            return lastCopy;
+        });
+        JDBCContentBLOB leafCopy = null;
+        try {
+            if (fail) {
+                assertSame(failure, assertThrows(DBCException.class, () -> original.cloneValue(monitor)));
+                assertSame(storage, blob.getContents(monitor));
+                assertEquals(bytes.length, blob.getContentLength());
+            } else {
+                JDBCCollection copy = (JDBCCollection) original.cloneValue(monitor);
+                Object item = copy.getItem(0);
+                for (int i = 0; i < depth; i++) {
+                    item = ((JDBCCollection) item).getItem(0);
+                }
+                leafCopy = assertInstanceOf(JDBCContentBLOB.class, item);
+                var copiedStorage = (org.jkiss.dbeaver.model.data.storage.TemporaryContentStorage) leafCopy.getContents(monitor);
+                assertNotEquals(source, copiedStorage.getDataFile());
+                blob.release();
+                assertArrayEquals(bytes, Files.readAllBytes(copiedStorage.getDataFile()));
+                leafCopy.release();
+                assertFalse(Files.exists(copiedStorage.getDataFile()));
+            }
+            assertArrayEquals(bytes, Files.readAllBytes(source));
+            try (var files = Files.list(copies)) {
+                assertEquals(0, files.count());
+            }
+            verify(last, never()).release();
+        } finally {
+            if (leafCopy != null) {
+                leafCopy.release();
+            }
+            blob.release();
+        }
     }
 }
