@@ -36,6 +36,49 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"UNION", "UNION ALL", "INTERSECT", "EXCEPT"})
+    void parenthesizedSetResultsPreserveLabelsTypesNullsAndOrder(String operation) throws Exception {
+        assumeTrue(System.getenv("GAUSSDB_HISTORY_CONNECTION") != null,
+            "Live connection not configured; not a passing database test");
+        assertNotNull(System.getenv("GAUSSDB_HISTORY_JDBC"), "Vendor JDBC jar required");
+        String sql = "(((SELECT CAST(NULL AS integer) AS \"编号\", CAST('空值' AS varchar(20)) AS \"名称\""
+            + " UNION ALL SELECT 1,'一' UNION ALL SELECT 2,'二') " + operation
+            + " (SELECT 1,'一')) ORDER BY 1 NULLS FIRST)";
+        var query = new org.jkiss.dbeaver.model.sql.SQLQuery(null, sql);
+        assertEquals(org.jkiss.dbeaver.model.sql.SQLQueryType.SELECT, query.getType());
+        assertFalse(query.isModifying());
+        assertNull(query.getEntityMetadata(false));
+        assertNull(query.getEntityMetadata(true));
+        List<List<String>> expected = switch (operation) {
+            case "UNION" -> List.of(List.of("NULL", "空值"), List.of("1", "一"), List.of("2", "二"));
+            case "UNION ALL" -> List.of(List.of("NULL", "空值"), List.of("1", "一"), List.of("1", "一"), List.of("2", "二"));
+            case "INTERSECT" -> List.of(List.of("1", "一"));
+            default -> List.of(List.of("NULL", "空值"), List.of("2", "二"));
+        };
+        withIndependentConnection(connection -> {
+            try (var statement = connection.createStatement()) {
+                statement.setQueryTimeout(10);
+                try (var rows = statement.executeQuery(query.getText())) {
+                    var metadata = rows.getMetaData();
+                    assertEquals(2, metadata.getColumnCount());
+                    assertEquals("编号", metadata.getColumnLabel(1));
+                    assertEquals("名称", metadata.getColumnLabel(2));
+                    assertEquals(java.sql.Types.INTEGER, metadata.getColumnType(1));
+                    assertEquals(java.sql.Types.VARCHAR, metadata.getColumnType(2));
+                    var actual = new java.util.ArrayList<List<String>>();
+                    while (rows.next()) {
+                        int id = rows.getInt(1);
+                        boolean isNull = rows.wasNull();
+                        actual.add(List.of(isNull ? "NULL" : Integer.toString(id), rows.getString(2)));
+                    }
+                    assertEquals(expected, actual);
+                }
+            }
+            assertRows(connection, "SELECT 42", List.of(List.of("42")));
+        });
+    }
+
     /** Real transaction bridge: production saveChanges executes; only the model/session adapters are mocked. */
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {"commit", "dependencyFailure", "cancel", "commitReplyLost"})
@@ -3692,7 +3735,9 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(System.getenv("GAUSSDB_HISTORY_JDBC")).toUri().toURL()},
             ClassLoader.getPlatformClassLoader())) {
-            var driver = (Driver) loader.loadClass(p.getProperty("driverClass")).getConstructor().newInstance();
+            String driverClass = p.getProperty("driverClass", System.getenv("GAUSSDB_HISTORY_DRIVER_CLASS"));
+            assertNotNull(driverClass, "Vendor driver class required in properties or environment");
+            var driver = (Driver) loader.loadClass(driverClass).getConstructor().newInstance();
             try (var observer = driver.connect(url, p)) {
                 assertNotNull(observer);
                 scenario.run(observer);
