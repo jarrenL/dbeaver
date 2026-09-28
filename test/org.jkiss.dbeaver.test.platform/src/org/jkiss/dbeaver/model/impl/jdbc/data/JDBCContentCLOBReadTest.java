@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class JDBCContentCLOBReadTest {
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path directory;
+    private DBPPlatform platform;
     private java.lang.reflect.Field workbenchField;
     private Object originalWorkbench;
     @BeforeEach
@@ -42,7 +44,7 @@ class JDBCContentCLOBReadTest {
         workbenchField.setAccessible(true);
         originalWorkbench = workbenchField.get(null);
         var workbench = mock(DBPApplicationWorkbench.class);
-        var platform = mock(DBPPlatform.class, RETURNS_DEEP_STUBS);
+        platform = mock(DBPPlatform.class, RETURNS_DEEP_STUBS);
         when(workbench.getPlatform()).thenReturn(platform);
         when(platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)).thenReturn(1024);
         workbenchField.set(null, workbench);
@@ -55,6 +57,56 @@ class JDBCContentCLOBReadTest {
         boolean closed;
         TrackedReader(String value) { super(value); }
         @Override public void close() { closed = true; super.close(); }
+    }
+    @ParameterizedTest
+    @ValueSource(strings = {"success", "read", "close", "both", "cancel"})
+    void diskStorageClosesReaderCleansFailedAttemptAndRetries(String stage) throws Exception {
+        when(platform.getPreferenceStore().getInt(ModelPreferences.MEMORY_CONTENT_MAX_SIZE)).thenReturn(0);
+        when(platform.getTempFolder(any(), anyString())).thenReturn(directory);
+        var clob = mock(Clob.class);
+        var text = "中文𠀀 large content\n".repeat(2000);
+        when(clob.length()).thenReturn((long) text.length());
+        var monitor = mock(DBRProgressMonitor.class);
+        var reader = mock(Reader.class);
+        var backing = new StringReader(text);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var readFailure = new IOException("disk reader failed");
+        var closeFailure = new IOException("disk reader close failed");
+        when(reader.read(any(char[].class))).thenAnswer(invocation -> {
+            if (calls.getAndIncrement() > 0 && (stage.equals("read") || stage.equals("both"))) throw readFailure;
+            var buffer = (char[]) invocation.getArgument(0);
+            int count = backing.read(buffer, 0, Math.min(buffer.length, 7));
+            if (stage.equals("cancel")) when(monitor.isCanceled()).thenReturn(true);
+            return count;
+        });
+        if (stage.equals("close") || stage.equals("both")) doThrow(closeFailure).when(reader).close();
+        when(clob.getCharacterStream()).thenReturn(reader);
+        var content = new JDBCContentCLOB(mock(DBCExecutionContext.class), clob) {
+            @Override protected String getDefaultEncoding() { return "UTF-8"; }
+        };
+        if (!stage.equals("success")) {
+            var failure = assertThrows(DBException.class, () -> content.getContents(monitor));
+            if (!stage.equals("cancel")) {
+                assertSame(stage.equals("close") ? closeFailure : readFailure, failure.getCause().getCause());
+            } else {
+                assertInstanceOf(InterruptedIOException.class, failure.getCause().getCause());
+            }
+            if (stage.equals("both")) assertArrayEquals(new Throwable[] {closeFailure}, readFailure.getSuppressed());
+            verify(reader).close();
+            verify(clob, never()).free();
+            try (var files = java.nio.file.Files.list(directory)) { assertEquals(0, files.count()); }
+            when(monitor.isCanceled()).thenReturn(false);
+            doReturn(new TrackedReader(text)).when(clob).getCharacterStream();
+        }
+        var storage = content.getContents(monitor);
+        var file = ((org.jkiss.dbeaver.model.data.DBDContentStorageLocal) storage).getDataFile();
+        assertEquals(text, java.nio.file.Files.readString(file));
+        assertEquals(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length, storage.getContentLength());
+        if (stage.equals("success")) verify(reader).close();
+        verify(clob).free();
+        content.release();
+        assertFalse(java.nio.file.Files.exists(file));
+        try (var files = java.nio.file.Files.list(directory)) { assertEquals(0, files.count()); }
     }
     @ParameterizedTest
     @ValueSource(booleans = {false, true})

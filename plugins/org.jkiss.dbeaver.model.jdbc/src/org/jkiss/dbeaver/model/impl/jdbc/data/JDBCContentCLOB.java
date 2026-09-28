@@ -117,8 +117,12 @@ public class JDBCContentCLOB extends JDBCContentLOB implements DBDContent {
                     } catch (IOException e) {
                         throw new DBCException("Can't create temp file", e);
                     }
-                    try (Writer os = Files.newBufferedWriter(tempFile, Charset.forName(getDefaultEncoding()))) {
-                        ContentUtils.copyStreams(clob.getCharacterStream(), contentLength, os, monitor);
+                    try (Writer os = Files.newBufferedWriter(tempFile, Charset.forName(getDefaultEncoding()));
+                         Reader reader = clob.getCharacterStream()) {
+                        ContentUtils.copyStreams(reader, contentLength, os, monitor);
+                        if (monitor.isCanceled()) {
+                            throw new java.io.InterruptedIOException("CLOB content copy canceled");
+                        }
                     } catch (IOException e) {
                         ContentUtils.deleteTempFile(tempFile);
                         throw new DBCException("IO error while copying content", e);
