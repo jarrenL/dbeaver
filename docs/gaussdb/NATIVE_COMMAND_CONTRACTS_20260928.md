@@ -1,5 +1,11 @@
 # 原生工具命令参数与认证失败边界
 
+## 上层备份任务循环补验（后续）
+
+新增成功、取消标志、IOException、InterruptedException四项，调用生产AbstractNativeToolHandler.doExecute。子进程执行替换为确定性结果，两个待备份对象：成功依次执行两个并通知完成；第一个取消或抛异常时第二个不执行，取消向上抛InterruptedException，已有中断保留同一实例，IO错误作为DBException原cause保留；失败/取消不发完成通知。备份无需模型刷新，断言不获取刷新对象、不操作导航模型。
+
+专项脚本加入当前AbstractNativeToolHandler源码，`/tmp/native-task-loop-20260928.log`27/27通过、0跳过、0失败（含旧23项），无需新生产修复。四个新增场景验证的是任务循环，不是实际线程中断或数据库取消；之前三个真实受控进程场景同轮继续通过，不混淆两个层次。
+
 ## 备份发布与取消保护（后续）
 
 新增GaussDBBackupPublishTest三项：成功、取消标志已置位但子进程正常退出、子进程非零退出。通过生产executeProcess实际启动本机/usr/bin/true或false；覆盖命令生成、环境设置和异步日志启动以排除数据库和外部服务，反射登记本测试TempDir中的暂存副本。验证只有成功且未取消时覆盖已有目标，失败/取消保留原备份，所有路径移除暂存文件及登记、结束进度。

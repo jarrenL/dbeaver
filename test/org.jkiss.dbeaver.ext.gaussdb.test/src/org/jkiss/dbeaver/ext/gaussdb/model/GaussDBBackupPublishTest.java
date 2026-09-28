@@ -24,6 +24,53 @@ class GaussDBBackupPublishTest {
     @TempDir Path directory;
 
     @ParameterizedTest
+    @ValueSource(strings = {"success", "canceled", "io-failure", "interrupted"})
+    void taskLoopStopsOnCancellationOrFailureAndDoesNotNotifySuccess(String outcome) throws Exception {
+        var first = mock(PostgreDatabaseBackupInfo.class);
+        var second = mock(PostgreDatabaseBackupInfo.class);
+        var settings = mock(PostgreDatabaseBackupSettings.class);
+        var task = mock(DBTTask.class, RETURNS_DEEP_STUBS);
+        var navigation = task.getProject().getNavigatorModel();
+        var canceled = new java.util.concurrent.atomic.AtomicBoolean();
+        var monitor = mock(DBRProgressMonitor.class);
+        when(monitor.isCanceled()).thenAnswer(i -> canceled.get());
+        var executed = new java.util.ArrayList<PostgreDatabaseBackupInfo>();
+        var notifications = new java.util.ArrayList<String>();
+        IOException ioFailure = new IOException("synthetic native failure");
+        InterruptedException interruption = new InterruptedException("synthetic interrupt");
+        class TaskHandler extends PostgreDatabaseBackupHandler {
+            @Override protected boolean isNativeClientHomeRequired() { return false; }
+            @Override public java.util.Collection<PostgreDatabaseBackupInfo> getRunInfo(PostgreDatabaseBackupSettings s) {
+                return List.of(first, second);
+            }
+            @Override public boolean executeProcess(DBRProgressMonitor m, DBTTask t,
+                PostgreDatabaseBackupSettings s, PostgreDatabaseBackupInfo a, Log log) throws IOException, InterruptedException {
+                executed.add(a);
+                if (outcome.equals("io-failure")) throw ioFailure;
+                if (outcome.equals("interrupted")) throw interruption;
+                if (outcome.equals("canceled")) canceled.set(true);
+                return !canceled.get();
+            }
+            @Override protected void notifyToolFinish(String name, long elapsed) { notifications.add(name); }
+            boolean runTask() throws org.jkiss.dbeaver.DBException, InterruptedException {
+                return doExecute(monitor, task, settings, mock(Log.class));
+            }
+        }
+        var handler = new TaskHandler();
+        switch (outcome) {
+            case "success" -> assertTrue(handler.runTask());
+            case "canceled" -> assertThrows(InterruptedException.class, handler::runTask);
+            case "interrupted" -> assertSame(interruption, assertThrows(InterruptedException.class, handler::runTask));
+            case "io-failure" -> assertSame(ioFailure, assertThrows(org.jkiss.dbeaver.DBException.class, handler::runTask).getCause());
+            default -> throw new AssertionError(outcome);
+        }
+        assertEquals(outcome.equals("success") ? List.of(first, second) : List.of(first), executed);
+        assertEquals(outcome.equals("success") ? 1 : 0, notifications.size());
+        verifyNoInteractions(navigation);
+        verify(settings, never()).getDatabaseObjects();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"success", "canceled", "exit-failure"})
     @SuppressWarnings("unchecked")
     void publishesOnlySuccessfulUncanceledBackupAndAlwaysCleansStaging(String outcome) throws Exception {
