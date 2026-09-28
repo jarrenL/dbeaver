@@ -285,6 +285,10 @@ public class GaussDBPackage implements PostgreObject, PostgreScriptObject, DBPSy
             bodyPresent = !CommonUtils.isEmpty(sourceDefinition);
             return;
         }
+        // Old validity is not a confirmed result of this refresh. Keep it unknown
+        // if opening the metadata session or reading the catalog fails.
+        specificationState = DBSObjectState.UNKNOWN;
+        bodyState = DBSObjectState.UNKNOWN;
         try (JDBCSession session = DBUtils.openMetaSession(monitor, this, "Read GaussDB package state");
              JDBCPreparedStatement statement = session.prepareStatement(
                  "SELECT object_type::text,valid::text FROM pg_catalog.pg_object " +
