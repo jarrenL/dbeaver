@@ -521,8 +521,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             validateBreakpointLine(monitor, breakpoint);
             GaussDBDebugBreakpointDescriptor existing = findMatchingBreakpoint(breakpoints, breakpoint);
             if (existing != null) {
-                executeBreakpointCommand(monitor, "delete_breakpoint", existing);
-                breakpoints.remove(existing);
+                executeBreakpointCommand(monitor, "delete_breakpoint", existing, () -> breakpoints.remove(existing));
             }
             boolean disableRequested = !breakpoint.isEnabled();
             try (JDBCSession session = controllerConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Add breakpoint");
@@ -552,8 +551,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                     breakpoints.add(breakpoint);
                 }
                 if (disableRequested) {
-                    executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint);
-                    breakpoint.setEnabled(false);
+                    executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint, () -> breakpoint.setEnabled(false));
                 }
             } catch (SQLException e) {
                 throw sqlError("Unable to add GaussDB breakpoint", e);
@@ -588,8 +586,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             if (breakpoint == null) {
                 return;
             }
-            executeBreakpointCommand(monitor, "delete_breakpoint", breakpoint);
-            breakpoints.remove(breakpoint);
+            executeBreakpointCommand(monitor, "delete_breakpoint", breakpoint, () -> breakpoints.remove(breakpoint));
         } finally {
             controllerLock.unlock();
         }
@@ -611,8 +608,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             if (breakpoint.isEnabled()) {
                 return;
             }
-            executeBreakpointCommand(monitor, "enable_breakpoint", breakpoint);
-            breakpoint.setEnabled(true);
+            executeBreakpointCommand(monitor, "enable_breakpoint", breakpoint, () -> breakpoint.setEnabled(true));
         } finally {
             controllerLock.unlock();
         }
@@ -626,15 +622,18 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             if (breakpoint == null || !breakpoint.isEnabled()) {
                 return; // Disabled initial breakpoints have not been registered yet.
             }
-            executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint);
-            breakpoint.setEnabled(false);
+            executeBreakpointCommand(monitor, "disable_breakpoint", breakpoint, () -> breakpoint.setEnabled(false));
         } finally {
             controllerLock.unlock();
         }
     }
 
-    private void executeBreakpointCommand(DBRProgressMonitor monitor, String command, GaussDBDebugBreakpointDescriptor breakpoint)
-        throws DBGException {
+    private void executeBreakpointCommand(
+        DBRProgressMonitor monitor,
+        String command,
+        GaussDBDebugBreakpointDescriptor breakpoint,
+        @NotNull Runnable onAcknowledged
+    ) throws DBGException {
         if (breakpoint.getServerId() < 0) {
             throw new DBGException("Breakpoint has no server identifier");
         }
@@ -642,6 +641,8 @@ public class GaussDBDebugSession extends DBGJDBCSession {
              PreparedStatement statement = session.prepareStatement("SELECT " + API + command + "(?)")) {
             statement.setInt(1, breakpoint.getServerId());
             statement.execute();
+            // A cleanup failure must not undo the command's acknowledged client state.
+            onAcknowledged.run();
         } catch (SQLException e) {
             throw sqlError("Unable to update GaussDB breakpoint", e);
         }

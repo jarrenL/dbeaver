@@ -281,6 +281,75 @@ class GaussDBDebugSessionTest {
         verify(disable).execute();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"enable", "disable", "delete"})
+    void acknowledgedBreakpointChangeSurvivesStatementCloseFailure(String command) throws Exception {
+        validBreakpoint(0);
+        JDBCPreparedStatement initialDisable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(initialDisable);
+        var breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        breakpoint.setEnabled(!command.equals("enable"));
+        session.addBreakpoint(monitor, breakpoint);
+        JDBCPreparedStatement change = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER." + command + "_breakpoint(?)")).thenReturn(change);
+        SQLException failure = new SQLException("close after successful " + command, "XX000");
+        doThrow(failure).when(change).close();
+        DBGException actual = assertThrows(DBGException.class, () -> changeBreakpoint(command, breakpoint));
+        assertSame(failure, actual.getCause());
+        if (command.equals("delete")) {
+            assertTrue(session.getBreakpoints().isEmpty());
+        } else {
+            assertSame(breakpoint, session.getBreakpoints().getFirst());
+            assertEquals(command.equals("enable"), breakpoint.isEnabled());
+        }
+        changeBreakpoint(command, breakpoint);
+        verify(change).execute();
+        verify(change).setInt(1, 0);
+    }
+
+    private void changeBreakpoint(String command, GaussDBDebugBreakpointDescriptor breakpoint) throws DBGException {
+        switch (command) {
+            case "enable" -> session.enableBreakpoint(monitor, breakpoint);
+            case "disable" -> session.disableBreakpoint(monitor, breakpoint);
+            case "delete" -> session.removeBreakpoint(monitor, breakpoint);
+            default -> throw new IllegalArgumentException(command);
+        }
+    }
+
+    @Test
+    void initialDisableCloseFailureKeepsAcknowledgedDisabledState() throws Exception {
+        validBreakpoint(0);
+        var breakpoint = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        breakpoint.setEnabled(false);
+        JDBCPreparedStatement disable = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.disable_breakpoint(?)")).thenReturn(disable);
+        doThrow(new SQLException("disable close failed")).when(disable).close();
+        assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, breakpoint));
+        assertSame(breakpoint, session.getBreakpoints().getFirst());
+        assertFalse(breakpoint.isEnabled());
+        session.disableBreakpoint(monitor, breakpoint);
+        verify(disable).execute();
+    }
+
+    @Test
+    void duplicateDeleteCloseFailureDoesNotRetainDeletedServerId() throws Exception {
+        validBreakpoint(0);
+        session.addBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(172034, 4));
+        JDBCPreparedStatement replacement = validBreakpoint(7);
+        JDBCPreparedStatement delete = mock(JDBCPreparedStatement.class);
+        when(connection.prepareStatement("SELECT DBE_PLDEBUGGER.delete_breakpoint(?)")).thenReturn(delete);
+        doThrow(new SQLException("delete close failed")).when(delete).close();
+        var requested = new GaussDBDebugBreakpointDescriptor(172034, 4);
+        assertThrows(DBGException.class, () -> session.addBreakpoint(monitor, requested));
+        assertTrue(session.getBreakpoints().isEmpty());
+        verify(replacement, never()).executeQuery();
+        validBreakpoint(8);
+        session.addBreakpoint(monitor, requested);
+        verify(delete).execute();
+        assertEquals(8, requested.getServerId());
+        assertEquals(1, session.getBreakpoints().size());
+    }
+
     @Test
     void failedDuplicateDeleteKeepsOriginalRegistrationAndDoesNotAddAgain() throws Exception {
         validBreakpoint(0);
