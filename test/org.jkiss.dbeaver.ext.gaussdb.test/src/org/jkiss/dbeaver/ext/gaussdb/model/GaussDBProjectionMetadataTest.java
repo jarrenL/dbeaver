@@ -31,6 +31,24 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class GaussDBProjectionMetadataTest {
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "UPDATE public.accounts a SET amount=(SELECT max(b.amount) FROM audit.other_table b) WHERE a.id=1|UPDATE|public|accounts",
+        "UPDATE public.accounts a SET amount=b.amount FROM audit.other_table b WHERE a.id=b.id|UPDATE|public|accounts",
+        "DELETE FROM public.accounts a WHERE EXISTS (SELECT 1 FROM audit.other_table a WHERE a.id=1)|DELETE|public|accounts",
+        "DELETE FROM public.accounts a USING audit.other_table b WHERE a.id=b.id|DELETE|public|accounts",
+        "INSERT INTO public.accounts(id) SELECT id FROM audit.other_table|INSERT|public|accounts",
+        "UPDATE \"中文模式\".\"中文表\" AS \"别名\" SET amount=1 WHERE \"别名\".id=1|UPDATE|中文模式|中文表"
+    })
+    void dmlTargetIsNotConfusedWithJoinedOrNestedSource(String sql, SQLQueryType type, String schema, String table) {
+        SQLQuery query = new SQLQuery(null, sql);
+        assertEquals(type, query.getType());
+        var target = query.getEntityMetadata(false);
+        assertNotNull(target);
+        assertEquals(schema, target.getSchemaName());
+        assertEquals(table, target.getEntityName());
+    }
+
     static Stream<Arguments> mixedSources() {
         return Stream.of("JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN", "INNER JOIN")
             .flatMap(join -> Stream.of("cte-right", "cte-left", "derived-left")
