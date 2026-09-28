@@ -1,5 +1,13 @@
 # 连接过滤器导入类型边界
 
+## 后续：设置批次与更新通知
+
+新增8项：坏配置在多个设置文档的首/末位置两项、五种通知键、有效多文档与无关值混合一项。红测`/tmp/shared-filter-batch-red-20260928.log`382项中378通过、4失败：合法文档在前时已应用后续才报错；带后缀键漏刷新，短子串及空键误刷新。
+
+UserDBSObjectFilterUtils改为完整解析所有相关文档后再应用；更新通知用与导入相同的startsWith键范围。有效批次保持文档顺序，无关设置值即使不是JSON也不读取；验证刷新调用只指向目标连接ID。全部测试使用真实工具类和模拟描述符/注册表，不启动GUI。
+
+最终`/tmp/shared-filter-batch-final-20260928.log`383/383通过、0跳过、0失败；本类36项。该批次保护针对解析失败，不承诺setObjectFilter运行时失败回滚，也不是完整连接文件事务。实际导航树刷新、持久化和客户端通知端到端仍待验收。
+
 ## 后续：作用域、开关及实际导入调用方
 
 新增10项：type数组、id对象、name数字、description布尔值、enabled无效字符串、case-sensitive数组六种拒绝；旧true/false字符串两种正例；UserDBSObjectFilterUtils实际导入入口两项。红测`/tmp/shared-filter-scope-red-20260928.log`375项中369通过、6失败，错误字段原先通过通用转换被静默接受。

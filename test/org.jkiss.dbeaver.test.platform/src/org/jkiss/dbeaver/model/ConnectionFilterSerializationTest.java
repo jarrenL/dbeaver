@@ -33,6 +33,51 @@ import static org.mockito.Mockito.*;
 class ConnectionFilterSerializationTest {
     private final FilterSerializer<DataSourceDescriptor> serializer = new FilterSerializer<>();
 
+    @Test
+    void validSettingsBatchKeepsDocumentOrderAndIgnoresUnrelatedValues() {
+        var source = mock(DataSourceDescriptor.class);
+        var settings = new java.util.LinkedHashMap<String, String>();
+        settings.put("navigator-filters.first", "[{\"type\":\"schema\",\"id\":\"first\",\"include\":[\"A%\"]}]");
+        settings.put("unrelated", "not JSON and not a filter");
+        settings.put("navigator-filters.second", "[{\"type\":\"table\",\"id\":\"second\",\"exclude\":[\"B%\"]}]");
+        org.jkiss.dbeaver.registry.UserDBSObjectFilterUtils.setUserObjectFilters(source, settings);
+        var calls = List.copyOf(mockingDetails(source).getInvocations());
+        assertEquals(2, calls.size());
+        assertEquals("first", calls.get(0).getArgument(1));
+        assertEquals("second", calls.get(1).getArgument(1));
+        assertTrue(((DBSObjectFilter) calls.get(0).getArgument(2)).isUserFilter());
+        assertTrue(((DBSObjectFilter) calls.get(1).getArgument(2)).isUserFilter());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void malformedSettingsBatchDoesNotPartiallyApplyFilters(boolean invalidFirst) {
+        var source = mock(DataSourceDescriptor.class);
+        var settings = new java.util.LinkedHashMap<String, String>();
+        String valid = "[{\"type\":\"schema\",\"include\":[\"A%\"]}]";
+        settings.put("navigator-filters.first", invalidFirst ? "[null]" : valid);
+        settings.put("navigator-filters.second", invalidFirst ? valid : "[null]");
+        assertThrows(com.google.gson.JsonParseException.class, () ->
+            org.jkiss.dbeaver.registry.UserDBSObjectFilterUtils.setUserObjectFilters(source, settings));
+        verifyNoInteractions(source);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"navigator-filters", "navigator-filters.schema", "filters", "", "unrelated"})
+    void filterUpdateNotificationsUseSameKeyScopeAsImport(String key) {
+        var project = mock(org.jkiss.dbeaver.model.app.DBPProject.class, RETURNS_DEEP_STUBS);
+        var source = mock(DataSourceDescriptor.class, RETURNS_DEEP_STUBS);
+        when(project.getDataSourceRegistry().getDataSource("fixture-connection")).thenReturn(source);
+        when(source.getId()).thenReturn("fixture-connection");
+        var registry = source.getRegistry();
+        org.jkiss.dbeaver.registry.UserDBSObjectFilterUtils.objectSettingUpdated(project, "fixture-connection", List.of(key));
+        if (key.startsWith("navigator-filters")) {
+            verify(registry).refreshConfig(List.of("fixture-connection"));
+        } else {
+            verifyNoInteractions(registry);
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         "[{\"type\":[]}]", "[{\"id\":{}}]", "[{\"name\":1}]",

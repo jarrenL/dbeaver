@@ -78,12 +78,20 @@ public final class UserDBSObjectFilterUtils {
     }
 
     public static void setUserObjectFilters(@NotNull DataSourceDescriptor dataSourceDescriptor, @NotNull Map<String, String> userSettings) {
-        userSettings
+        // Parse the entire settings batch before mutating the connection. A malformed
+        // later document must not leave earlier documents partially installed.
+        var filters = userSettings
             .entrySet()
             .stream()
             .filter(e -> e.getKey().startsWith(USER_FILTER_KEY))
             .map(Map.Entry::getValue)
-            .forEach(filterCfgString -> setUserObjectFilter(dataSourceDescriptor, filterCfgString));
+            .flatMap(json -> filterSerializer.deserializeObjectFilterConfig(json).stream())
+            .filter(FilterSerializer.FilterConfiguration::typeNamePresent)
+            .toList();
+        for (var filter : filters) {
+            filter.filter().setUserFilter(true);
+            dataSourceDescriptor.setObjectFilter(filter.typeName(), filter.objectID(), filter.filter());
+        }
     }
 
     public static void objectSettingUpdated(
@@ -96,7 +104,7 @@ public final class UserDBSObjectFilterUtils {
             log.warn("Data source container '" + objectId + "' not found in registry");
             return;
         }
-        if (settingIds.stream().noneMatch(UserDBSObjectFilterUtils.USER_FILTER_KEY::contains)) {
+        if (settingIds.stream().noneMatch(id -> id.startsWith(USER_FILTER_KEY))) {
             // No relevant settings changed
             return;
         }
@@ -104,15 +112,4 @@ public final class UserDBSObjectFilterUtils {
         dataSourceContainer.getRegistry().refreshConfig(List.of(dataSourceContainer.getId()));
     }
 
-    private static void setUserObjectFilter(@NotNull DataSourceDescriptor dataSourceDescriptor, @NotNull String filterConfigJson) {
-        filterSerializer.deserializeObjectFilterConfig(filterConfigJson)
-            .stream()
-            .filter(FilterSerializer.FilterConfiguration::typeNamePresent)
-            .peek(f -> f.filter().setUserFilter(true))
-            .forEach(fc -> dataSourceDescriptor.setObjectFilter(
-                fc.typeName(),
-                fc.objectID(),
-                fc.filter()
-            ));
-    }
 }
