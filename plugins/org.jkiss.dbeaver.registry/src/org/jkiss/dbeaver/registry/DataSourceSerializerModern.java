@@ -242,8 +242,6 @@ public class DataSourceSerializerModern<T extends DataSourceDescriptor> implemen
                 jsonWriter.endObject();
                 jsonWriter.flush();
             }
-        } catch (IOException e) {
-            log.error("IO error while saving datasources configuration", e);
         }
 
         String jsonString = dsConfigBuffer.toString(StandardCharsets.UTF_8);

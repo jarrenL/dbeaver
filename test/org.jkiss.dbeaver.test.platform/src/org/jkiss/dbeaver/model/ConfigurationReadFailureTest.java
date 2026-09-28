@@ -396,6 +396,52 @@ class ConfigurationReadFailureTest {
     }
 
     @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void serializationFailureMustNotWritePartialConfiguration(boolean encryptedProject) throws Exception {
+        configure(encryptedProject);
+        when(storage.isDefault()).thenReturn(true);
+        when(storage.getStorageSubId()).thenReturn("");
+        when(registry.getNetworkProfiles()).thenReturn(mock(DBWNetworkProfileManager.class));
+        var filter = mock(org.jkiss.dbeaver.model.struct.DBSObjectFilter.class);
+        when(filter.isEmpty()).thenReturn(false);
+        when(registry.getSavedFilters()).thenReturn(List.of(filter));
+        var filterWriter = mock(org.jkiss.dbeaver.registry.FilterSerializer.class);
+        var failure = new IOException("synthetic filter serialization failure");
+        doAnswer(call -> {
+            JsonWriter writer = call.getArgument(0);
+            writer.beginObject();
+            writer.name("name").value("部分内容");
+            throw failure;
+        }).when(filterWriter).saveObjectFilter(any(JsonWriter.class), isNull(), isNull(), same(filter));
+        var constructor = DataSourceSerializerModern.class.getDeclaredConstructor(DataSourceRegistry.class);
+        constructor.setAccessible(true);
+        var saver = (DataSourceSerializerModern<?>) constructor.newInstance(registry);
+        var field = DataSourceSerializerModern.class.getDeclaredField("filterSerializer");
+        field.setAccessible(true);
+        field.set(saver, filterWriter);
+        assertSame(failure, assertThrows(IOException.class, () -> saver.saveDataSources(
+            new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of())));
+        verify(manager, never()).writeConfiguration(anyString(), nullable(byte[].class));
+
+        when(registry.getSavedFilters()).thenReturn(List.of());
+        var written = new HashMap<String, byte[]>();
+        doAnswer(call -> {
+            byte[] bytes = call.getArgument(1);
+            written.put(call.getArgument(0), bytes == null ? null : bytes.clone());
+            return null;
+        }).when(manager).writeConfiguration(anyString(), nullable(byte[].class));
+        saver.saveDataSources(new org.jkiss.dbeaver.model.runtime.VoidProgressMonitor(), manager, storage, List.of());
+        byte[] json = written.get("fixture.json");
+        if (encryptedProject) {
+            json = encryptor.decryptValue(json);
+        }
+        var restored = new Gson().fromJson(new String(json, StandardCharsets.UTF_8), Map.class);
+        assertEquals(Map.of(), restored.get("connections"));
+        assertFalse(restored.containsKey("saved-filters"));
+        assertTrue(written.containsKey(credentialsName()));
+    }
+
+    @ParameterizedTest
     @CsvSource({"false, io", "true, io", "false, db", "true, db"})
     void credentialWriteFailureMustPropagateAndAllowExplicitRetry(boolean removeCredentials, String failureKind)
         throws Exception {
