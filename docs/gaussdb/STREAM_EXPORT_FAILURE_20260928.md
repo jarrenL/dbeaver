@@ -18,4 +18,14 @@
 
 ## 仍需跟进
 
-表头/表尾异常、分卷时的关闭错误、压缩流结束异常等其他路径不在本轮修复范围。不能据此宣布全部导出错误已闭环。共享传输消费器受影响，不仅是GaussDB。
+分卷时的关闭错误、压缩流结束异常、传入已有任务错误时的清理等其他路径仍需跟进。不能据此宣布全部导出错误已闭环。共享传输消费器受影响，不仅是GaussDB。
+
+## 表头/表尾异常补验
+
+新增4项分别注入表头、表尾的DBException与IOException。红测10项中7通过、3失败：表头DBException和表尾两种异常被吞掉；表头IOException原本传播正常。日志 `/tmp/stream-header-footer-red.log`。
+
+修复表头/表尾为传播DBCException并保留cause；新增finishFile将表尾和资源结束统一处理，表尾失败仍调用closeExporter，后续关闭失败不覆盖主错误。finishTransfer原正常结束分支调用该方法，把异常交给已有错误事件处理路径，而不是提前漏掉清理。
+
+另补2项生产结束方法测试：表尾+关闭双故障仍dispose并保留主次错误，重复结束不重放；成功路径严格验证表尾、dispose、flush、close顺序。最新 `/tmp/stream-header-footer-green.log` 为12项全部通过、0跳过、0失败，编译目录 `/tmp/stream-failure-focused-cUFNnb`。数字包含此前6项，不是新增12项。
+
+本批仍为私有生产方法级验证，尚未实例化完整事件注册表执行finishTransfer、验证任务状态或GUI弹窗。传入已有错误、分卷及压缩结束的完整生命周期不能据此标为通过。

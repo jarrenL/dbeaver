@@ -20,12 +20,97 @@ package org.jkiss.dbeaver.ext.gaussdb.model;
 import org.jkiss.dbeaver.tools.transfer.stream.IStreamDataExporter;
 import org.jkiss.dbeaver.tools.transfer.stream.StreamTransferConsumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.model.exec.DBCException;
+import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import java.io.*;
 import java.lang.reflect.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 public class GaussDBStreamExportFailureTest {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void headerFailureIsNotIgnored(boolean ioFailure) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var processor = mock(IStreamDataExporter.class);
+        var session = mock(DBCSession.class);
+        Exception failure = ioFailure ? new IOException("header IO") : new DBException("header database");
+        doThrow(failure).when(processor).exportHeader(session);
+        set(consumer, "processor", processor);
+        DBCException actual = assertThrows(DBCException.class,
+            () -> invoke(consumer, "exportHeaderInFile", DBCSession.class, session));
+        assertSame(failure, actual.getCause());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void footerFailureIsNotIgnored(boolean ioFailure) throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var processor = mock(IStreamDataExporter.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        Exception failure = ioFailure ? new IOException("footer IO") : new DBException("footer database");
+        doThrow(failure).when(processor).exportFooter(monitor);
+        set(consumer, "processor", processor);
+        DBCException actual = assertThrows(DBCException.class,
+            () -> invoke(consumer, "exportFooterInFile", DBRProgressMonitor.class, monitor));
+        assertSame(failure, actual.getCause());
+    }
+
+    @Test
+    public void footerFailureStillFinalizesAndKeepsCloseFailureSecondary() throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var processor = mock(IStreamDataExporter.class);
+        var output = mock(OutputStream.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        DBException footer = new DBException("footer failure");
+        IOException shutdown = new IOException("close failure");
+        doThrow(footer).when(processor).exportFooter(monitor);
+        doThrow(shutdown).when(output).close();
+        set(consumer, "processor", processor);
+        set(consumer, "outputStream", output);
+        DBException actual = assertThrows(DBException.class,
+            () -> invoke(consumer, "finishFile", DBRProgressMonitor.class, monitor));
+        assertSame(footer, actual.getCause());
+        assertArrayEquals(new Throwable[]{shutdown}, actual.getSuppressed());
+        verify(processor).dispose();
+        verify(output).close();
+        invoke(consumer, "finishFile", DBRProgressMonitor.class, monitor);
+        verify(processor, times(1)).exportFooter(monitor);
+        verify(processor, times(1)).dispose();
+    }
+
+    @Test
+    public void successfulFileFinalizationKeepsFooterBeforeDisposeAndClose() throws Exception {
+        var consumer = new StreamTransferConsumer();
+        var processor = mock(IStreamDataExporter.class);
+        var output = mock(OutputStream.class);
+        var monitor = mock(DBRProgressMonitor.class);
+        set(consumer, "processor", processor);
+        set(consumer, "outputStream", output);
+        invoke(consumer, "finishFile", DBRProgressMonitor.class, monitor);
+        var order = inOrder(processor, output);
+        order.verify(processor).exportFooter(monitor);
+        order.verify(processor).dispose();
+        order.verify(output).flush();
+        order.verify(output).close();
+        assertNull(get(consumer, "processor"));
+    }
+
+    private static void invoke(Object owner, String name, Class<?> type, Object argument) throws Exception {
+        Method method = owner.getClass().getDeclaredMethod(name, type);
+        method.setAccessible(true);
+        try {
+            method.invoke(owner, argument);
+        } catch (InvocationTargetException failure) {
+            if (failure.getCause() instanceof Exception cause) throw cause;
+            throw failure;
+        }
+    }
+
     @Test
     public void disposeFailureIsReportedAndOutputStillCloses() throws Exception {
         var consumer = new StreamTransferConsumer();

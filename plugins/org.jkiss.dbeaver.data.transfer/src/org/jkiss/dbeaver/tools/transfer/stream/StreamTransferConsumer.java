@@ -252,19 +252,40 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
         try {
             processor.exportHeader(session);
         } catch (DBException e) {
-            log.warn("Error while exporting table header", e);
+            throw new DBCException("Error while exporting table header", e);
         } catch (IOException e) {
             throw new DBCException("IO error", e);
         }
     }
 
-    private void exportFooterInFile(@NotNull DBRProgressMonitor monitor) {
+    private void exportFooterInFile(@NotNull DBRProgressMonitor monitor) throws DBCException {
         if (processor != null) {
             try {
                 processor.exportFooter(monitor);
             } catch (Exception e) {
-                log.warn("Error while exporting table footer", e);
+                throw new DBCException("Error while exporting table footer", e);
             }
+        }
+    }
+
+    private void finishFile(@NotNull DBRProgressMonitor monitor) throws DBException {
+        DBException failure = null;
+        try {
+            exportFooterInFile(monitor);
+        } catch (DBException e) {
+            failure = e;
+        }
+        try {
+            closeExporter();
+        } catch (IOException e) {
+            if (failure == null) {
+                failure = new DBCException("Error finalizing data export", e);
+            } else {
+                failure.addSuppressed(e);
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -659,12 +680,10 @@ public class StreamTransferConsumer implements IDataTransferConsumer<StreamConsu
         List<Exception> errors = new ArrayList<>(0);
 
         if (!last && error == null) {
-            exportFooterInFile(monitor);
-
             try {
-                closeExporter();
+                finishFile(monitor);
                 return;
-            } catch (IOException e) {
+            } catch (DBException e) {
                 error = e; // so event processors will be notified about this error
                 errors.add(e);
             }
