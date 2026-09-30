@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-30",
+  "product": "26.1.5.202609300733",
+  "source": "e52a9c4cc5",
+  "platform": "Kylin V10 x86_64 container under local architecture emulation; clean assembled product without test plugins",
+  "database": "GaussDB 507 centralized O/A, package_lab, ordinary package_tester account",
+  "fixture": "integration/gui-package-compile.sql via controlled slash-delimited JDBC fixture runner; schema absent before creation; gui_bad OID 72066, gui_valid OID 72064",
+  "steps": [
+    "Refresh schemas in navigator, expand dedicated schema/packages and open gui_bad. Specification Normal and Body Invalid are visible.",
+    "Open Body: Chinese tooltip reads 查看和编辑 GaussDB 包源码, not an unresolved resource key.",
+    "Replace Body source with CREATE PACKAGE BODY containing value_of returning 46. Save preview contains only the modified BODY and inserts OR REPLACE.",
+    "Execute Save. Without clicking Refresh or Compile, Body status becomes Normal and editor dirty marker clears. Independent gsql invocation returns 46.",
+    "Click Body toolbar 编译包主体: success dialog.",
+    "Switch to Specification and click 编译包声明: success dialog.",
+    "Activate the package in navigator, use right-click 编译包 (ALL): success dialog. The menu also exposes separate specification/body compile actions.",
+    "Independent final call still returns 46; pg_object records for current OID 72066 have valid=true for S and B."
+  ],
+  "cleanup": "Closed package editor, then one administrative transaction dropped exactly the two fixture packages and schema RESTRICT. Independent schema count=0. Temporary host password copy removed; unrelated schemas unchanged.",
+  "images": [
+    "package-final-x86-20260930/package-final-x86-invalid.png",
+    "package-final-x86-20260930/package-final-x86-tooltip.png",
+    "package-final-x86-20260930/package-final-x86-preview.png",
+    "package-final-x86-20260930/package-final-x86-saved.png",
+    "package-final-x86-20260930/package-final-x86-body-compile.png",
+    "package-final-x86-20260930/package-final-x86-spec-compile.png",
+    "package-final-x86-20260930/package-final-x86-menu.png",
+    "package-final-x86-20260930/package-final-x86-all-compile.png"
+  ],
+  "limits": [
+    "One clean-product GUI run, not concurrency/repeat/customer desktop-cloud certification",
+    "Error-line navigation and GUI batch deletion were not re-run on this clean x86 product; cleanup is not UI deletion acceptance",
+    "Debug and transaction acceptance are separate remaining scopes; no blanket package/debug completion claim",
+    "Some property labels and status values remain English; the verified tooltip does not establish complete localization"
+  ]
+}
