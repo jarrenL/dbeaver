@@ -9,6 +9,7 @@ delivery_arch=${5:?Use aarch64 or x86_64}
 case "$delivery_arch" in aarch64|x86_64) ;; *) exit 1;; esac
 test ! -e "$delivery_output"
 test -f "$product_source/dbeaver.ini"
+node "$(dirname "$0")/../verify-clean-product.mjs" "$product_source"
 test -f "$native_source/lib/eclipse_11916.so"
 test -f "$jre_archive"
 case "$delivery_arch" in
