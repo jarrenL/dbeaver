@@ -6,6 +6,6 @@
   "green": {"tests":142,"failures":0,"errors":0,"skipped":0,"classes":15},
   "testScope": "Real compiled production session in OSGi, mocked contexts and lock held by a separate thread; asserts close order, not actual socket cancellation latency",
   "fullReactor": {"run":"run-UFGm22","tests":2725,"passed":2709,"skipped":16,"failures":0,"errors":0,"scope":"73 modules, centralized review/native and distributed fixtures; TLS/encoding/empty-cluster dumpall not enabled","cleanup":"temporary DB/roles removed and original HBA restored"},
-  "guiRetest": "PENDING: previous GUI evidence predates this change",
+  "guiRetest": {"status":"PASS for two running-DML termination runs","bundle":"1.0.0.202609300359","sha256":"642d3ee1c8f956c9983e69ca497510871dd842d8b36fa9d22ee5bc8160e6d604","firstSleepSeconds":60,"secondSleepSeconds":300,"secondObservationMsFromCommandSubmission":1714,"databaseAfterEach":"audit count/min/max=1/1/1; matching target calls=0","uiAfterEach":"terminated, no error dialog","connectionCloseTimeout":"absent in both new runs","remainingDiagnostics":"statement-not-closed and expected interrupted-CALL diagnostics remain during asynchronous disconnect; not claiming zero warnings","cleanup":"dedicated schema removed; temporary debugger role revoked"},
   "releasePackage": "PENDING: previous clean candidate does not contain this change"
 }
