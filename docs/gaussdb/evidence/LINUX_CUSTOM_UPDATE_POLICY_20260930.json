@@ -1,0 +1,16 @@
+{
+  "binarySourceCommit": "6bd705458fe8eb9eaec9fb2cc5b7951f2ffd2964",
+  "assemblyPolicyCommit": "41d567cc15",
+  "product": "26.1.5.202609300410",
+  "environment": "Kylin x86_64 container emulated on ARM; ordinary tester user",
+  "workspace": "/tmp/clean-policy-workspace-20260930",
+  "observed": {
+    "startupWithoutOfficialUpdatePrompt": true,
+    "helpCheckUpdatesDisabled": true,
+    "installNewSoftwareStillVisible": true,
+    "chineseMenusAndZhStatus": true,
+    "startupLogVersionXmlFetch": false
+  },
+  "method": "Normal GUI exit of unprotected candidate, verify process absent, apply production assembler to candidate ini, copy ini, restart with a new workspace and inspect Help menu",
+  "limitations": "Existing user global preferences; no claim of full runtime acceptance, network isolation or inability to manually replace application files"
+}
