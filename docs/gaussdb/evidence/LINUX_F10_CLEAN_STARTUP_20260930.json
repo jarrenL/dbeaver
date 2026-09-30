@@ -1,0 +1,26 @@
+{
+  "sourceCommit": "6bd705458fe8eb9eaec9fb2cc5b7951f2ffd2964",
+  "productVersion": "26.1.5.202609300410",
+  "platform": "Kylin Linux x86_64 container, emulated on ARM host",
+  "productDirectory": "/opt/clean-f10-delivery-20260930",
+  "display": ":101",
+  "workspace": "/tmp/clean-f10-workspace-20260930",
+  "user": "tester",
+  "existingUserGlobalPreferences": true,
+  "forcedLocale": false,
+  "instrumentationBundled": false,
+  "jdbcDriverBundled": false,
+  "startup": "PASS",
+  "observations": [
+    "Chinese main menus and zh status visible in new workspace",
+    "GaussDB debug UI 1.0.0.202609300410 starts in log",
+    "Official 26.2.1 update prompt appeared and was closed without upgrading"
+  ],
+  "pending": [
+    "Full database and debug runtime acceptance on this clean build",
+    "Handle upstream upgrade prompt for custom distribution",
+    "Final source/license companion and archive",
+    "ARM candidate assembly and runtime verification"
+  ],
+  "limitations": "Not a fresh operating-system user, physical x86 machine, customer desktop-cloud certification, or complete translation assertion"
+}
