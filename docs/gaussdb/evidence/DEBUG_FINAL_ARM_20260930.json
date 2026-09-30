@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-30",
+  "product": "26.1.5.202609300733",
+  "productionCommit": "e52a9c4cc5",
+  "environment": "Clean full Linux ARM64 product, native ARM Kylin container GUI, GaussDB 507 centralized A",
+  "fixture": "GuiDebugFixture setup: dbv_debug_gui_repeatable.write_row(integer), audit baseline 1",
+  "actions": [
+    "Refresh schema tree and open routine; parameter metadata p_id int4 IN loaded, OID 72857",
+    "Create debug configuration, select native GaussDB connection and routine, set p_id=2 and confirm cell with Enter",
+    "Start debug, switch perspective, select frame and Variables; source line4 and p_id=2/v_value=10",
+    "F8 advances to line5 INSERT, v_value=12",
+    "F9 opens Chinese transaction dialog; independent connection sees only baseline 1",
+    "Click Rollback; independent connection still sees only 1",
+    "Relaunch same configuration, F9, verify only 1 before choice; click Commit, independent connection sees 1 and 12"
+  ],
+  "result": "PASS for these bounded GUI scenarios",
+  "screenshots": [
+    "debug-final-arm-20260930/initial.png",
+    "debug-final-arm-20260930/step.png",
+    "debug-final-arm-20260930/transaction.png"
+  ],
+  "cleanup": {
+    "activeFixtureCalls": 0,
+    "schemaRemaining": 0,
+    "debugRoleMembershipBeforeAndAfter": false,
+    "privatePasswordCopy": "removed",
+    "method": "Close editor; ordinary-owner GuiDebugFixture cleanup with RESTRICT; revoke temporary debugger membership"
+  },
+  "limits": [
+    "Not customer desktop-cloud certification",
+    "No-window-manager X11 configuration dialog resized to expose parameter table; not classified as customer defect",
+    "Missing-parameter validation remains English",
+    "Not full nested stepping, breakpoint management, variable editing, network-failure or cancellation regression on this product"
+  ]
+}
