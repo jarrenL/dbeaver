@@ -1,0 +1,1065 @@
+ACTION click 675
+0 Shell DBeaver 26.1.5 - <package_lab> Console visible=true enabled=true
+ 1 Menu 
+  2 MenuItem 文件(&F)
+   enabled=true
+   3 Menu 
+    4 MenuItem 最近的编辑
+     enabled=true
+     5 Menu 
+    6 MenuItem 查找所指定的文件...
+     enabled=true
+    7 MenuItem 新建	Ctrl+N
+     enabled=true
+    8 MenuItem 保存	Ctrl+S
+     enabled=true
+    9 MenuItem 另存为
+     enabled=true
+    10 MenuItem 保存全部	Shift+Ctrl+S
+     enabled=true
+    11 MenuItem 关闭	Ctrl+W
+     enabled=true
+    12 MenuItem 打印	Ctrl+P
+     enabled=true
+    13 MenuItem 重命名
+     enabled=true
+    14 MenuItem 刷新	F5
+     enabled=true
+    15 MenuItem 
+     enabled=true
+    16 MenuItem 导入
+     enabled=true
+    17 MenuItem 导出
+     enabled=true
+    18 MenuItem 
+     enabled=true
+    19 MenuItem 属性	Alt+Enter
+     enabled=true
+    20 MenuItem 
+     enabled=true
+    21 MenuItem 将行定界符转换为(&V)
+     enabled=true
+     22 Menu 
+      23 MenuItem Windows (CRLF, \r\n, 0D0A, ¤¶)(&W)
+       enabled=false
+      24 MenuItem Unix (LF, \n, 0A, ¶)(&U) [默认]
+       enabled=false
+    25 MenuItem 
+     enabled=true
+    26 MenuItem 退出
+     enabled=true
+    27 MenuItem 切换工作空间(&W)
+     enabled=true
+     28 Menu 
+  29 MenuItem 编辑(&E)
+   enabled=true
+   30 Menu 
+    31 MenuItem 撤销	Ctrl+Z
+     enabled=true
+    32 MenuItem 重做	Shift+Ctrl+Z
+     enabled=true
+    33 MenuItem 剪切	Ctrl+X
+     enabled=true
+    34 MenuItem 复制	Ctrl+C
+     enabled=true
+    35 MenuItem 高级复制	Shift+Ctrl+C
+     enabled=true
+    36 MenuItem 粘贴	Ctrl+V
+     enabled=true
+    37 MenuItem 删除	删除
+     enabled=true
+    38 MenuItem 
+     enabled=true
+    39 MenuItem 查找下一个(&N)	Ctrl+K
+     enabled=false
+    40 MenuItem 查找上一个(&V)	Shift+Ctrl+K
+     enabled=false
+    41 MenuItem 增量式查找下一个(&I)
+     enabled=false
+    42 MenuItem 增量式查找上一个(&M)
+     enabled=false
+    43 MenuItem 查找并替换	Ctrl+F
+     enabled=true
+    44 MenuItem 添加书签	Shift+Ctrl+Alt+D
+     enabled=true
+    45 MenuItem 
+     enabled=true
+    46 MenuItem 打开块选择
+     enabled=false
+    47 MenuItem 
+     enabled=true
+    48 MenuItem 格式
+     enabled=true
+     49 Menu 
+    50 MenuItem 
+     enabled=true
+    51 MenuItem 生成 UUID	Shift+Ctrl+Alt+U
+     enabled=true
+    52 MenuItem 
+     enabled=true
+    53 MenuItem 编辑单元格
+     enabled=true
+    54 MenuItem 内嵌编辑
+     enabled=true
+    55 MenuItem 添加行
+     enabled=true
+    56 MenuItem 复制行
+     enabled=true
+    57 MenuItem 从上一行复制
+     enabled=true
+    58 MenuItem 从下一行复制
+     enabled=true
+    59 MenuItem 删除当前行
+     enabled=true
+    60 MenuItem 
+     enabled=true
+    61 MenuItem 保存变更
+     enabled=true
+    62 MenuItem 放弃变更
+     enabled=true
+    63 MenuItem 生成脚本
+     enabled=true
+    64 MenuItem 
+     enabled=true
+    65 MenuItem 显示工具提示描述(&O)
+     enabled=false
+    66 MenuItem 
+     enabled=true
+    67 MenuItem 文字补全(&W)
+     enabled=false
+    68 MenuItem 快速修正(&Q)	Ctrl+1
+     enabled=false
+    69 MenuItem 
+     enabled=true
+    70 MenuItem SQL 内容助理	Alt+/
+     enabled=false
+    71 MenuItem SQL 模板	Alt+?
+     enabled=false
+    72 MenuItem SQL 上下文信息
+     enabled=false
+    73 MenuItem 格式化 SQL	Shift+Ctrl+F
+     enabled=false
+    74 MenuItem 设置编码(&G)...
+     enabled=false
+  75 MenuItem 导航(&N)
+   enabled=true
+   76 Menu 
+    77 MenuItem 打开资源(&U)...	Shift+Ctrl+R
+     enabled=true
+    78 MenuItem 
+     enabled=true
+    79 MenuItem 前一处编辑位置(&Q)	Ctrl+Q
+     enabled=true
+    80 MenuItem 下一处编辑位置（&C）	Ctrl+Alt+右箭头
+     enabled=true
+    81 MenuItem 数据
+     enabled=true
+     82 Menu 
+    83 MenuItem 打开数据库对象...	Shift+Ctrl+D
+     enabled=true
+    84 MenuItem 打开声明
+     enabled=true
+    85 MenuItem 打开资源	Shift+Ctrl+R
+     enabled=true
+    86 MenuItem 转至行(&G)...
+     enabled=false
+    87 MenuItem 
+     enabled=true
+    88 MenuItem 后退历史记录	Alt+左箭头
+     enabled=true
+    89 MenuItem 前移历史记录	Alt+右箭头
+     enabled=true
+    90 MenuItem 
+     enabled=true
+    91 MenuItem 下一个查询
+     enabled=true
+    92 MenuItem 上一个查询
+     enabled=true
+    93 MenuItem 转到匹配的括号
+     enabled=true
+    94 MenuItem 选择匹配的括号
+     enabled=true
+    95 MenuItem 
+     enabled=true
+    96 MenuItem 下一步
+     enabled=false
+    97 MenuItem 上一步
+     enabled=false
+  98 MenuItem 搜索(&A)
+   enabled=true
+   99 Menu 
+    100 MenuItem 搜索(&A)...	Ctrl+H
+     enabled=true
+    101 MenuItem 文件(&F)...
+     enabled=true
+    102 MenuItem 数据库元数据
+     enabled=true
+    103 MenuItem 数据库全文本
+     enabled=true
+    104 MenuItem 
+     enabled=true
+    105 MenuItem 文本(&X)
+     enabled=true
+     106 Menu 
+      107 MenuItem 工作空间(&W)	Ctrl+Alt+G
+       enabled=true
+      108 MenuItem 项目(&P)
+       enabled=true
+      109 MenuItem 文件(&F)
+       enabled=true
+      110 MenuItem 工作集(&S)...
+       enabled=true
+    111 MenuItem 
+     enabled=true
+    112 MenuItem 快速搜索(&Q)...	Shift+Ctrl+Alt+F
+     enabled=true
+  113 MenuItem &SQL 编辑器
+   enabled=true
+   114 Menu 
+    115 MenuItem SQL 编辑器
+     enabled=true
+    116 MenuItem 最近编辑的 SQL 脚本	Ctrl+Enter
+     enabled=true
+    117 MenuItem 新建 SQL 编辑器
+     enabled=true
+    118 MenuItem 打开 SQL 控制台	Ctrl+Alt+Enter
+     enabled=true
+    119 MenuItem 
+     enabled=true
+    120 MenuItem 执行 SQL 语句
+     enabled=true
+    121 MenuItem 在新标签页中执行 SQL
+     enabled=true
+    122 MenuItem 执行 SQL 脚本
+     enabled=true
+    123 MenuItem 本地执行 SQL 脚本
+     enabled=true
+    124 MenuItem 从该位置执行 SQL 脚本
+     enabled=true
+    125 MenuItem 在单独的标签页中执行语句
+     enabled=true
+    126 MenuItem 取消活动查询
+     enabled=true
+    127 MenuItem 选择行数
+     enabled=true
+    128 MenuItem 选择所有行
+     enabled=true
+    129 MenuItem 计算 SQL 表达式的值
+     enabled=true
+    130 MenuItem 
+     enabled=true
+    131 MenuItem 在单个标签页中显示多个结果
+     enabled=true
+    132 MenuItem 
+     enabled=true
+    133 MenuItem 解释执行计划
+     enabled=true
+    134 MenuItem 加载执行计划
+     enabled=true
+    135 MenuItem 
+     enabled=true
+    136 MenuItem 导入 SQL 脚本
+     enabled=true
+    137 MenuItem 保存 SQL 脚本
+     enabled=true
+    138 MenuItem 
+     enabled=true
+    139 MenuItem 面板
+     enabled=true
+     140 Menu 
+    141 MenuItem 布局
+     enabled=true
+     142 Menu 
+    143 MenuItem 
+     enabled=true
+    144 MenuItem 上下文
+     enabled=true
+     145 Menu 
+    146 MenuItem 
+     enabled=true
+    147 MenuItem 自动同步连接与导航
+     enabled=true
+    148 MenuItem 打开单独的连接
+     enabled=true
+     149 Menu 
+  150 MenuItem 运行(&R)
+   enabled=true
+   151 Menu 
+    152 MenuItem 继续(&M)
+     enabled=false
+    153 MenuItem 暂挂(&S)
+     enabled=false
+    154 MenuItem 终止(&T)
+     enabled=false
+    155 MenuItem 断开连接
+     enabled=false
+    156 MenuItem 单步跳入(&I)
+     enabled=false
+    157 MenuItem 单步跳过(&O)
+     enabled=false
+    158 MenuItem 单步返回(&U)
+     enabled=false
+    159 MenuItem 运行至行(&L)
+     enabled=false
+    160 MenuItem 使用单步执行过滤器(&F)	Shift+F5
+     enabled=false
+    161 MenuItem 
+     enabled=true
+    162 MenuItem 运行(&R)	Ctrl+F11
+     enabled=true
+    163 MenuItem 调试(&D)	F11
+     enabled=true
+    164 MenuItem 
+     enabled=true
+    165 MenuItem 运行历史记录(&T)
+     enabled=true
+     166 Menu 
+    167 MenuItem 运行方式(&S)
+     enabled=true
+     168 Menu 
+    169 MenuItem 运行配置(&N)...
+     enabled=true
+    170 MenuItem 
+     enabled=true
+    171 MenuItem 调试历史记录(&H)
+     enabled=true
+     172 Menu 
+    173 MenuItem 调试方式(&G)
+     enabled=true
+     174 Menu 
+    175 MenuItem 调试配置(&B)...
+     enabled=true
+    176 MenuItem 
+     enabled=true
+    177 MenuItem 切换断点(&K)	Shift+Ctrl+B
+     enabled=false
+    178 MenuItem 切换行断点(&L)
+     enabled=false
+    179 MenuItem 切换观察点(&W)
+     enabled=false
+    180 MenuItem 切换方法断点(&M)
+     enabled=false
+    181 MenuItem 跳过所有断点(&K)	Ctrl+Alt+B
+     enabled=true
+    182 MenuItem 除去所有断点(&V)
+     enabled=false
+  183 MenuItem 数据库(&D)
+   enabled=true
+   184 Menu 
+    185 MenuItem 新建数据库连接(&C)	Shift+Ctrl+N
+     enabled=true
+    186 MenuItem 从 JDBC URL 新建连接
+     enabled=true
+    187 MenuItem 驱动管理器
+     enabled=true
+    188 MenuItem 
+     enabled=true
+    189 MenuItem 连接
+     enabled=true
+    190 MenuItem 断开/重新连接
+     enabled=true
+    191 MenuItem 断开连接
+     enabled=true
+    192 MenuItem 全部断开
+     enabled=true
+    193 MenuItem 断开其它连接
+     enabled=true
+    194 MenuItem 
+     enabled=true
+    195 MenuItem 提交	Ctrl+4
+     enabled=true
+    196 MenuItem 回滚	Ctrl+8
+     enabled=true
+    197 MenuItem 事务模式
+     enabled=true
+     198 Menu 
+    199 MenuItem 事务日志
+     enabled=true
+    200 MenuItem 待处理事务
+     enabled=true
+    201 MenuItem 只读
+     enabled=true
+    202 MenuItem 
+     enabled=true
+    203 MenuItem 打开仪表板
+     enabled=true
+    204 MenuItem 工具
+     enabled=true
+     205 Menu 
+    206 MenuItem 上下文工具	Alt+`
+     enabled=true
+    207 MenuItem 比较/迁移(&P)
+     enabled=true
+     208 Menu 
+    209 MenuItem 任务(&T)
+     enabled=true
+     210 Menu 
+    211 MenuItem 修改连接使用的驱动
+     enabled=true
+  212 MenuItem 窗口(&W)
+   enabled=true
+   213 Menu 
+    214 MenuItem 在新窗口中打开(&N)
+     enabled=true
+    215 MenuItem 编辑器
+     enabled=true
+     216 Menu 
+    217 MenuItem 外观
+     enabled=true
+     218 Menu 
+    219 MenuItem 
+     enabled=true
+    220 MenuItem 连接
+     enabled=true
+    221 MenuItem 项目
+     enabled=true
+    222 MenuItem 文件
+     enabled=true
+    223 MenuItem Show/Hide view (数据库任务)
+     enabled=true
+    224 MenuItem 显示视图
+     enabled=true
+     225 Menu 
+    226 MenuItem 
+     enabled=true
+    227 MenuItem 定制透视图
+     enabled=true
+    228 MenuItem 复位透视图
+     enabled=true
+    229 MenuItem 
+     enabled=true
+    230 MenuItem 导航
+     enabled=true
+     231 Menu 
+    232 MenuItem 
+     enabled=true
+    233 MenuItem 首选项
+     enabled=true
+  234 MenuItem 帮助(&H)
+   enabled=true
+   235 Menu 
+    236 MenuItem 关于
+     enabled=true
+    237 MenuItem 帮助内容(&H)
+     enabled=true
+    238 MenuItem 
+     enabled=true
+    239 MenuItem 安装信息
+     enabled=true
+    240 MenuItem 
+     enabled=true
+    241 MenuItem 创建样例数据库
+     enabled=true
+    242 MenuItem 
+     enabled=true
+    243 MenuItem 键辅助(&K)...	Shift+Ctrl+L
+     enabled=true
+    244 MenuItem 显示“每日一帖”
+     enabled=true
+    245 MenuItem 产品配置...
+     enabled=true
+    246 MenuItem 显示最终用户许可协议
+     enabled=true
+    247 MenuItem 检查更新(&U)
+     enabled=true
+    248 MenuItem 安装新软件(&S)...
+     enabled=true
+    249 MenuItem 
+     enabled=true
+    250 MenuItem 收集诊断信息
+     enabled=true
+    251 MenuItem Reset Settings...
+     enabled=true
+    252 MenuItem Clear History...
+     enabled=true
+    253 MenuItem 
+     enabled=true
+    254 MenuItem 试用 DBeaver PRO
+     enabled=true
+ 255 Composite  visible=true enabled=true
+  256 Composite  visible=true enabled=true
+   257 Composite  visible=true enabled=true
+    258 Composite  visible=true enabled=true
+     259 Composite  visible=true enabled=true
+      260 CTabFolder  visible=true enabled=true
+       261 CTabItem 调试
+       262 CTabItem 项目资源管理器
+       263 ToolBar  visible=false enabled=true
+        264 ToolItem 
+         tooltip=显示列表 enabled=true
+       265 ToolBar  visible=true enabled=true
+        266 ToolItem 
+         tooltip=最小化 enabled=true
+        267 ToolItem 
+         tooltip=最大化 enabled=true
+       268 Composite  visible=true enabled=true
+        269 ToolBar  visible=true enabled=true
+         270 ToolItem 
+          tooltip=全部折叠 enabled=false
+         271 ToolItem 
+          tooltip=除去所有终止的启动 enabled=false
+        272 ToolBar  visible=true enabled=true
+         273 ToolItem 
+          tooltip=视图菜单 enabled=true
+       274 Composite  visible=true enabled=true
+        275   visible=true enabled=true
+         276 Composite  visible=true enabled=true
+          277 PageBook  visible=true enabled=true
+           278 Tree  visible=true enabled=true
+           279 Composite  visible=false enabled=true
+            280 Label  visible=false enabled=true
+           281 Composite  visible=false enabled=true
+            282 Composite  visible=false enabled=true
+             283 Composite  visible=false enabled=true
+              284 ToolBar  visible=false enabled=true
+               285 ToolItem 
+                tooltip=显示子代 enabled=true
+              286 Composite  visible=false enabled=true
+               287 Composite  visible=false enabled=true
+                288 Label  visible=false enabled=true
+               289 Composite  visible=false enabled=true
+                290 Label 没有活动上下文 visible=false enabled=true
+      291 Composite  visible=true enabled=true
+       292 Composite  visible=true enabled=true
+        293 CTabFolder  visible=true enabled=true
+         294 CTabItem Sessions - distributed_acceptance
+         295 CTabItem distributed_acceptance
+         296 CTabItem parent_frame()
+         297 CTabItem child_frame()
+         298 CTabItem package_lab
+         299 CTabItem *<package_lab> Console
+         300 ToolBar  visible=true enabled=true
+          301 ToolItem 
+           tooltip=显示列表 enabled=true
+         302 Composite  visible=false enabled=true
+          303 ToolBar  visible=false enabled=true
+           304 ToolItem 
+            tooltip=视图菜单 enabled=true
+         305 ToolBar  visible=true enabled=true
+          306 ToolItem 
+           tooltip=最小化 enabled=true
+          307 ToolItem 
+           tooltip=最大化 enabled=true
+         308 Composite  visible=false enabled=true
+          309 Composite  visible=false enabled=true
+           310 Label  visible=false enabled=true
+           311 Label Go hunt your bugs here. visible=false enabled=true
+           312 Label 查找操作 visible=false enabled=true
+           313 Label Ctrl+3 visible=false enabled=true
+           314 Label 单步跳入 visible=false enabled=true
+           315 Label F5 visible=false enabled=true
+           316 Label 单步跳过 visible=false enabled=true
+           317 Label F6 visible=false enabled=true
+           318 Label 单步返回 visible=false enabled=true
+           319 Label F7 visible=false enabled=true
+           320 Label 继续 visible=false enabled=true
+           321 Label F8 visible=false enabled=true
+         322 Composite  visible=true enabled=true
+          323 Label  visible=true enabled=true
+         324   visible=false enabled=true
+          325 Composite  visible=false enabled=true
+           326 CTabFolder  visible=false enabled=true
+            327 CTabItem Error
+            328 ToolBar  visible=false enabled=true
+             329 ToolItem 
+              tooltip=显示列表 enabled=true
+            330 Composite  visible=false enabled=true
+             331 Composite  visible=false enabled=true
+              332 Composite  visible=false enabled=true
+               333 Label  visible=false enabled=true
+               334 Composite  visible=false enabled=true
+                335 Composite  visible=false enabled=true
+                 336 Label  visible=false enabled=true
+                337 Composite  visible=false enabled=true
+                 338 Label package_lab visible=false enabled=true
+            339 Composite  visible=false enabled=true
+             340 Label  visible=false enabled=true
+             341 Text 未找到导航节点 'node://General/datasources/gaussdb-jdbc-1a0f0b61cca-2e92a5277813efca/database/package_lab_16741/schema/dbv_pkg_gui_20260930_70435/package/gui_bad_70438'\n\n可能的原因:\n \\n  - 连接视图已更改\n \\n  - 此编辑器所打开的对象在数据库中已不存在\n \\n  - 该对象已被导航器的设置过滤 visible=false enabled=true
+              editable=false
+             342 Composite  visible=false enabled=true
+              343 Button 详细信息(&D) >> visible=false enabled=true
+             344 Composite  visible=false enabled=true
+         345   visible=true enabled=true
+          346 Composite  visible=true enabled=true
+           347 CustomSashForm  visible=true enabled=true
+            348 Composite  visible=true enabled=true
+             349   visible=true enabled=true
+              350 ToolBar  visible=true enabled=true
+               351 ToolItem 
+                tooltip=执行 SQL 语句 (Ctrl+Enter) enabled=true
+               352 ToolItem 
+                tooltip=在新标签页中执行 SQL (Ctrl+\) enabled=true
+               353 ToolItem 
+                tooltip=执行 SQL 脚本 (Alt+X) enabled=true
+               354 ToolItem 
+                tooltip=解释执行计划 (Shift+Ctrl+E) enabled=true
+               355 ToolItem 
+                tooltip=SQL 终端 enabled=true
+              356 Label  visible=true enabled=true
+              357 ToolBar  visible=true enabled=true
+               358 ToolItem 
+                tooltip=首选项... enabled=true
+               359 ToolItem 
+                tooltip=null enabled=true
+               360 ToolItem 
+                tooltip=显示服务器输出 (Shift+Ctrl+O) enabled=true
+               361 ToolItem 
+                tooltip=显示执行日志 enabled=true
+               362 ToolItem 
+                tooltip=显示 SQL 变量 enabled=true
+               363 ToolItem 
+                tooltip=切换大纲 enabled=true
+               364 Composite  visible=true enabled=true
+                365 Label  visible=true enabled=true
+             366 SashForm  visible=true enabled=true
+              367 SQLEditorControl  visible=true enabled=true
+               368 Composite  visible=true enabled=true
+                369 Composite  visible=true enabled=true
+                 370 Canvas  visible=true enabled=true
+                  371 StyledText INSERT INTO dbv_reconnect_gui_20260930.audit VALUES (1,'uncommitted')\n visible=true enabled=true
+                   caretLine=1 selection=Point {0, 0}
+                  372 CompositeRulerCanvas  visible=true enabled=true
+                   373   visible=true enabled=true
+                   374   visible=true enabled=true
+                   375   visible=true enabled=true
+                   376 Canvas  visible=true enabled=true
+                  377 Canvas  visible=true enabled=true
+                  378 Canvas  visible=true enabled=true
+              379 CTabFolder  visible=true enabled=true
+               380 CTabItem 输出
+               381 ToolBar  visible=false enabled=true
+                382 ToolItem 
+                 tooltip=显示列表 enabled=true
+               383 ToolBar  visible=true enabled=true
+                384 ToolItem 
+                 tooltip=在新消息上打开输出查看器 enabled=true
+                385 ToolItem 
+                 tooltip=在结果标签页中显示面板，而不是在 SQL 编辑器窗格中显示 enabled=true
+               386 SQLLogPanel  visible=true enabled=true
+                387 Text  visible=true enabled=true
+                 editable=true
+                388 Table  visible=true enabled=true
+                 row=[9月-30 05:44:18, SQL / User, INSERT INTO dbv_reconnect_gui_20260930.audit VALUES (1,'uncommitted')¶, 0.002s, 1, 成功]
+               389 SQLVariablesPanel  visible=true enabled=true
+               390 SQLEditorOutputViewer  visible=true enabled=true
+                391 Composite  visible=true enabled=true
+                 392 Text  visible=true enabled=true
+                  editable=true
+                 393 ToolBar  visible=true enabled=true
+                  394 ToolItem 
+                   tooltip=过滤可见输出 enabled=true
+                395 StyledText CREATE TABLE / PRIMARY KEY will create implicit index "audit_pkey" for table "audit"\n visible=true enabled=true
+                 caretLine=1 selection=Point {0, 0}
+              396 Sash  visible=true enabled=true
+            397   visible=true enabled=true
+             398 CTabItem 统计 1
+             399 ToolBar  visible=false enabled=true
+              400 ToolItem 
+               tooltip=显示列表 enabled=true
+             401 ConComposite  visible=true enabled=true
+              402 ConComposite  visible=false enabled=true
+               403 ResultSetFilterPanel  visible=false enabled=true
+                404 Composite  visible=false enabled=true
+                 405 ActiveObjectPanel  visible=false enabled=true
+                 406 FilterExpandPanel  visible=false enabled=true
+                 407 StyledText  visible=false enabled=true
+                  caretLine=1 selection=Point {0, 0}
+                 408 ExecutePanel  visible=false enabled=true
+                 409 HistoryPanel  visible=false enabled=true
+                410 ToolBar  visible=false enabled=true
+                 411 ToolItem 
+                  tooltip=删除所有过滤/排序 enabled=true
+                 412 ToolItem 
+                  tooltip=自定义过滤 ... enabled=true
+                 413 ToolItem 
+                  tooltip=null enabled=false
+                 414 ToolItem 
+                  tooltip=null enabled=false
+                 415 ToolItem 
+                  tooltip=null enabled=true
+                 416 ToolItem 
+                  tooltip=查找并替换 (Ctrl+F) enabled=true
+                 417 Label  visible=false enabled=true
+              418 VerticalFolder  visible=false enabled=false
+              419 Composite  visible=true enabled=true
+               420 CustomSashForm  visible=true enabled=true
+                421 Composite  visible=true enabled=true
+                 422 Table  visible=true enabled=true
+                  row=[Updated Rows, 1]
+                  row=[Execute time, 0.002s]
+                  row=[Start time, Wed Sep 30 05:44:18 GMT 2026]
+                  row=[Finish time, Wed Sep 30 05:44:18 GMT 2026]
+                  row=[Query, INSERT INTO dbv_reconnect_gui_20260930.audit VALUES (1,'uncommitted')]
+                423 CTabFolder  visible=true enabled=true
+                 424 ToolBar  visible=true enabled=true
+                  425 ToolItem 
+                   tooltip=最小化 enabled=true
+              426 VerticalFolder  visible=true enabled=true
+              427 ConComposite  visible=false enabled=true
+               428 ConComposite  visible=false enabled=true
+                429 ToolBar  visible=false enabled=true
+                 430 ToolItem 刷新
+                  tooltip=刷新结果集 (F5) enabled=true
+                431 ToolBar  visible=false enabled=true
+                 432 ToolItem 
+                  tooltip=null enabled=true
+                 433 ToolItem 保存
+                  tooltip=保存变更 enabled=false
+                 434 ToolItem 取消
+                  tooltip=放弃变更 enabled=false
+                 435 ToolItem 
+                  tooltip=null enabled=true
+                 436 ToolItem 
+                  tooltip=编辑单元格 enabled=false
+                 437 ToolItem 
+                  tooltip=添加行 enabled=false
+                 438 ToolItem 
+                  tooltip=复制行 enabled=false
+                 439 ToolItem 
+                  tooltip=删除当前行 enabled=false
+                 440 Composite  visible=false enabled=true
+                  441 Label  visible=false enabled=true
+                 442 Composite  visible=false enabled=true
+                  443 Label  visible=false enabled=true
+                444 ToolBar  visible=false enabled=true
+                 445 ToolItem 
+                  tooltip=null enabled=true
+                 446 ToolItem 
+                  tooltip=首行 enabled=false
+                 447 ToolItem 
+                  tooltip=上一行 enabled=false
+                 448 ToolItem 
+                  tooltip=下一行 enabled=false
+                 449 ToolItem 
+                  tooltip=末行 enabled=false
+                 450 ToolItem 
+                  tooltip=获取所有数据 enabled=false
+                 451 Composite  visible=false enabled=true
+                  452 Label  visible=false enabled=true
+                453 ToolBar  visible=false enabled=true
+                454 ToolBar  visible=false enabled=true
+                 455 ToolItem 
+                  tooltip=null enabled=true
+                 456 ToolItem 导出数据...
+                  tooltip=导出数据... enabled=true
+                 457 Composite  visible=false enabled=true
+                  458 Label  visible=false enabled=true
+                459 ToolBar  visible=false enabled=true
+                 460 ToolItem 
+                  tooltip=null enabled=true
+                 461 ToolItem 
+                  tooltip=配置 enabled=true
+                 462 Label  visible=false enabled=true
+                463 Text 200 visible=false enabled=true
+                 editable=true
+                464   visible=false enabled=true
+                 465 ToolBar  visible=false enabled=true
+                  466 ToolItem 
+                   tooltip=计算总行数 enabled=true
+                 467 Text 1 visible=false enabled=true
+                  editable=false
+                468 Text   visible=false enabled=true
+                 editable=false
+                469 StatusLabel  visible=false enabled=true
+                 470 ToolBar  visible=false enabled=true
+                  471 ToolItem 
+                   tooltip=null enabled=true
+                 472 Label 1 行已更新 - 0.002s, 2026-09-30 05:44:18 visible=false enabled=true
+            473 Sash  visible=true enabled=true
+      474 CTabFolder  visible=true enabled=true
+       475 CTabItem 控制台
+       476 CTabItem 问题
+       477 ToolBar  visible=false enabled=true
+        478 ToolItem 
+         tooltip=显示列表 enabled=true
+       479 Composite  visible=true enabled=true
+        480 ToolBar  visible=true enabled=true
+         481 ToolItem 
+          tooltip=锁定控制台 enabled=false
+         482 ToolItem 
+          tooltip=显示选择的控制台 enabled=false
+         483 ToolItem 
+          tooltip=打开控制台 enabled=true
+        484 ToolBar  visible=true enabled=true
+         485 ToolItem 
+          tooltip=视图菜单 enabled=true
+       486 ToolBar  visible=true enabled=true
+        487 ToolItem 
+         tooltip=最小化 enabled=true
+        488 ToolItem 
+         tooltip=最大化 enabled=true
+       489 Composite  visible=true enabled=true
+        490   visible=true enabled=true
+         491 Label 此时没有要显示的控制台。 visible=true enabled=true
+         492 Label  visible=true enabled=true
+         493 Composite  visible=true enabled=true
+          494 PageBook  visible=true enabled=true
+           495 Composite  visible=true enabled=true
+            496 Label  visible=true enabled=true
+      497 CTabFolder  visible=true enabled=true
+       498 CTabItem 表达式
+       499 CTabItem 连接
+       500 ToolBar  visible=false enabled=true
+        501 ToolItem 
+         tooltip=显示列表 enabled=true
+       502 ToolBar  visible=true enabled=true
+        503 ToolItem 
+         tooltip=最小化 enabled=true
+        504 ToolItem 
+         tooltip=最大化 enabled=true
+       505 Composite  visible=true enabled=true
+        506 ToolBar  visible=true enabled=true
+         507 ToolItem 
+          tooltip=全部折叠 (Shift+Ctrl+/（小键盘）) enabled=true
+         508 ToolItem 
+          tooltip=链接编辑器 (Shift+Ctrl+,) enabled=true
+        509 ToolBar  visible=true enabled=true
+         510 ToolItem 
+          tooltip=视图菜单 enabled=true
+       511 Composite  visible=true enabled=true
+        512   visible=true enabled=true
+         513 Composite  visible=true enabled=true
+          514 DatabaseNavigatorTree  visible=true enabled=true
+           515 CustomFilteredTree  visible=true enabled=true
+            516 Composite  visible=true enabled=true
+             517 Text  visible=true enabled=true
+              editable=true
+             518 ToolBar  visible=true enabled=true
+              519 ToolItem 
+               tooltip=显示全部 enabled=true
+              520 ToolItem 
+               tooltip=按名称过滤连接 (click to cycle through) enabled=true
+            521 Composite  visible=true enabled=true
+             522 Tree  visible=true enabled=true
+              523 TreeItem distributed_acceptance
+               checked=false
+               524 TreeItem 
+                checked=false
+              525 TreeItem package_lab
+               checked=false
+               526 TreeItem 数据库
+                checked=false
+                527 TreeItem package_lab
+                 checked=false
+                 528 TreeItem 模式
+                  checked=false
+                  529 TreeItem dbv_pkg_gui_20260930
+                   checked=false
+                   530 TreeItem 表
+                    checked=false
+                    531 TreeItem 
+                     checked=false
+                   532 TreeItem 外部表
+                    checked=false
+                    533 TreeItem 
+                     checked=false
+                   534 TreeItem 视图
+                    checked=false
+                    535 TreeItem 
+                     checked=false
+                   536 TreeItem 物化视图
+                    checked=false
+                    537 TreeItem 
+                     checked=false
+                   538 TreeItem 索引
+                    checked=false
+                    539 TreeItem 
+                     checked=false
+                   540 TreeItem 存储过程
+                    checked=false
+                    541 TreeItem 
+                     checked=false
+                   542 TreeItem 函数
+                    checked=false
+                    543 TreeItem 
+                     checked=false
+                   544 TreeItem 序列
+                    checked=false
+                    545 TreeItem 
+                     checked=false
+                   546 TreeItem 数据类型
+                    checked=false
+                    547 TreeItem 
+                     checked=false
+                   548 TreeItem 聚合函数
+                    checked=false
+                    549 TreeItem 
+                     checked=false
+                   550 TreeItem 包
+                    checked=false
+                  551 TreeItem package_acceptance
+                   checked=false
+                   552 TreeItem 
+                    checked=false
+                  553 TreeItem package_tester
+                   checked=false
+                   554 TreeItem 
+                    checked=false
+                  555 TreeItem public
+                   checked=false
+                   556 TreeItem 
+                    checked=false
+                  557 TreeItem ui_pkg
+                   checked=false
+                   558 TreeItem 
+                    checked=false
+                 559 TreeItem 存储
+                  checked=false
+                  560 TreeItem 
+                   checked=false
+                 561 TreeItem 系统信息
+                  checked=false
+                  562 TreeItem 
+                   checked=false
+                 563 TreeItem 角色
+                  checked=false
+                  564 TreeItem 
+                   checked=false
+               565 TreeItem 管理
+                checked=false
+                566 TreeItem 
+                 checked=false
+               567 TreeItem 系统信息
+                checked=false
+                568 TreeItem 
+                 checked=false
+ 569 Composite  visible=true enabled=true
+  570 ImageBasedFrame  visible=true enabled=true
+   571 ToolBar  visible=true enabled=true
+    572 ToolItem 
+     tooltip=新建数据库连接(&C) (Shift+Ctrl+N) enabled=true
+    573 ToolItem 
+     tooltip=null enabled=true
+    574 ToolItem 
+     tooltip=连接 enabled=false
+    575 ToolItem 
+     tooltip=断开/重新连接 enabled=true
+    576 ToolItem 
+     tooltip=断开连接 enabled=true
+    577 ToolItem 
+     tooltip=null enabled=true
+    578 ToolItem SQL
+     tooltip=打开 SQL 编辑器(已存在或新建) enabled=true
+  579 ImageBasedFrame  visible=true enabled=true
+   580 ToolBar  visible=true enabled=true
+    581 ToolItem 提交
+     tooltip=提交 (Ctrl+4) enabled=true
+    582 ToolItem 回滚
+     tooltip=回滚 (Ctrl+8) enabled=true
+    583 ToolItem 
+     tooltip=切换到自动提交 enabled=true
+  584 ImageBasedFrame  visible=true enabled=true
+   585 ToolBar  visible=true enabled=true
+    586 ToolItem 
+     tooltip=null enabled=true
+    587 ToolItem 
+     tooltip=事务日志 enabled=true
+    588 ToolItem 
+     tooltip=将 package_lab 设为只读 enabled=true
+    589 Composite  visible=true enabled=true
+     590 MonitorPanel  visible=true enabled=true
+  591 ImageBasedFrame  visible=true enabled=true
+   592 ToolBar  visible=true enabled=true
+    593 ToolItem package_lab
+     tooltip=激活数据源 (Ctrl+9) enabled=true
+    594 ToolItem package_tester@package_lab
+     tooltip=Database/Schema (Ctrl+0) enabled=true
+  595 ImageBasedFrame  visible=true enabled=true
+   596 ToolBar  visible=true enabled=true
+    597 ToolItem 
+     tooltip=打开仪表板 enabled=true
+    598 ToolItem 
+     tooltip=显示视图 (数据库任务) enabled=true
+  599 ImageBasedFrame  visible=true enabled=true
+   600 ToolBar  visible=true enabled=true
+    601 ToolItem 
+     tooltip=跳过所有断点（Ctrl+Alt+B） enabled=true
+    602 ToolItem 
+     tooltip=null enabled=true
+    603 ToolItem 
+     tooltip=继续(&M) enabled=false
+    604 ToolItem 
+     tooltip=暂挂(&S) enabled=false
+    605 ToolItem 
+     tooltip=终止(&T) enabled=false
+    606 ToolItem 
+     tooltip=断开连接 enabled=false
+    607 ToolItem 
+     tooltip=单步跳入(&I) enabled=false
+    608 ToolItem 
+     tooltip=单步跳过(&O) enabled=false
+    609 ToolItem 
+     tooltip=单步返回(&U) enabled=false
+    610 ToolItem 
+     tooltip=null enabled=true
+    611 ToolItem 
+     tooltip=拖放至帧 enabled=false
+    612 ToolItem 
+     tooltip=使用单步执行过滤器(&F)（Shift+F5） enabled=false
+  613 ImageBasedFrame  visible=true enabled=true
+   614 ToolBar  visible=true enabled=true
+    615 ToolItem 
+     tooltip=调试 enabled=true
+    616 ToolItem 
+     tooltip=运行 enabled=true
+  617 ImageBasedFrame  visible=true enabled=true
+   618 ToolBar  visible=true enabled=true
+    619 ToolItem 
+     tooltip=搜索 enabled=true
+  620 ImageBasedFrame  visible=true enabled=true
+   621 ToolBar  visible=true enabled=true
+    622 ToolItem 
+     tooltip=前一处编辑位置（Ctrl+Q） enabled=true
+    623 ToolItem 
+     tooltip=下一处编辑位置（Ctrl+Alt+右箭头） enabled=true
+  624   visible=true enabled=true
+  625   visible=true enabled=true
+  626 Composite  visible=true enabled=true
+   627 Composite  visible=true enabled=true
+    628 ToolBar  visible=true enabled=true
+     629 ToolItem 
+      tooltip=访问命令及其他项目(Ctrl+3) enabled=true
+  630   visible=true enabled=true
+  631 ImageBasedFrame  visible=true enabled=true
+   632 Composite  visible=true enabled=true
+    633 ToolBar  visible=true enabled=true
+     634 ToolItem 
+      tooltip=打开透视图 enabled=true
+     635 ToolItem 
+      tooltip=null enabled=true
+     636 ToolItem 
+      tooltip=DBeaver enabled=true
+     637 ToolItem 
+      tooltip=调试 enabled=true
+ 638 Composite  visible=true enabled=true
+  639 Composite  visible=true enabled=true
+   640 Composite  visible=true enabled=true
+    641 Label  visible=true enabled=true
+    642 Combo General visible=true enabled=true
+   643 Composite  visible=true enabled=true
+  644 StatusLine  visible=true enabled=true
+   645 CLabel 连接: package_lab visible=true enabled=true
+   646 ToolBar  visible=true enabled=true
+    647 ToolItem 
+     tooltip=取消当前操作 enabled=false
+   648 Composite  visible=true enabled=true
+    649 ProgressIndicator  visible=true enabled=true
+     650 ProgressBar  visible=false enabled=true
+     651 ProgressBar  visible=false enabled=true
+   652 Label  visible=true enabled=true
+   653 CLabel GMT visible=true enabled=true
+   654 Label  visible=true enabled=true
+   655 CLabel zh visible=true enabled=true
+  656 ImageBasedFrame  visible=true enabled=true
+   657   visible=true enabled=true
+    658 Canvas  visible=true enabled=true
+    659 Composite  visible=true enabled=true
+     660 ProgressIndicator  visible=false enabled=true
+      661 ProgressBar  visible=false enabled=true
+      662 ProgressBar  visible=false enabled=true
+     663 ToolBar  visible=false enabled=true
+      664 ToolItem 
+       tooltip=在“进度”视图中显示后台操作 enabled=true
+ 665 Composite  visible=true enabled=true
+ 666 Composite  visible=true enabled=true
+OK

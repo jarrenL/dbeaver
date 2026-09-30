@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-30",
+  "scope": "One actual Linux GUI run; not repeated GUI or final clean product acceptance",
+  "environment": "Kylin x86_64 test-only product copy /opt/acceptance-20260930, display :99; centralized GaussDB 507 A database package_lab",
+  "databaseUser": "package_tester",
+  "fixture": "dbv_reconnect_gui_20260930.audit",
+  "passed": [
+    "Created schema and table from the SQL editor as the ordinary account",
+    "Manual transaction insert: commit/rollback buttons enabled; independent observer count 0; writer idle in transaction",
+    "Disconnect prompt shows Yes/No/Cancel; Cancel retains the same live writer transaction and observer count remains 0",
+    "No executes ROLLBACK; after completing disconnect prompts the writer session is absent and observer count remains 0",
+    "Connect from native navigator menu succeeds and the editor executes its query on a new backend",
+    "A new uncommitted insert is invisible to independent observer; only the exact test backend is terminated after checking account, state and fixture SQL",
+    "Editor reports SQLSTATE 57P01 on subsequent query; observer count remains 0",
+    "Disconnect/reconnect action prompts for transaction handling; No followed by query establishes another backend, without replaying the lost insert",
+    "Editor inserts id=2 after reconnect and toolbar Commit succeeds; independent observer sees exactly 2|after_reconnect"
+  ],
+  "observedBackendSequence": ["281469215610560", "281469259716288", "281469461042880"],
+  "cleanup": "Explicit DROP TABLE RESTRICT then DROP SCHEMA RESTRICT in one transaction; independent schema count 0",
+  "limitations": [
+    "Backend termination is controlled connection failure, not a network blackhole or HA failover",
+    "Other datasource contexts remain connected: a green navigator icon is not proof that the failed editor context remains usable",
+    "Reconnect still asks whether to commit the current transaction after backend loss; No recovery verified, Yes branch not tested",
+    "Disconnect required handling two prompts in this multi-console workspace; this is not evidence of a single-context duplicate-prompt defect",
+    "Grid row was not legible in the small split-pane layout; result-data claims use independent SQL, not a guessed screenshot value",
+    "GUI cancellation, repeat execution and final clean package remain separate acceptance items"
+  ],
+  "automationCorrections": [
+    "Text command does not support StyledText; use source and fresh widget IDs",
+    "Focus SQL editor before Ctrl+Enter, otherwise navigator context can create a new console",
+    "Generic context label Connection matched New Connection; canceled wizard and used observed native Connect menu; no new connection saved"
+  ],
+  "rawSnapshots": [271,272,273,279,281,283,292,295,297,299],
+  "screenshots": "reconnect-gui-20260930/"
+}
