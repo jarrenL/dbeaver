@@ -20,6 +20,9 @@ import org.jkiss.dbeaver.model.DBPStatefulObject;
 import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
 import org.jkiss.dbeaver.model.preferences.DBPPropertySource;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.model.runtime.DBRRunnableParametrized;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.ui.LoadingJob;
 import org.jkiss.dbeaver.ui.controls.CustomFormEditor;
 import org.jkiss.dbeaver.ui.controls.ObjectEditorPageControl;
 import org.jkiss.dbeaver.ui.editors.IDatabaseEditorInput;
@@ -28,6 +31,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -144,6 +148,46 @@ class PostSaveReadOnlyPropertiesTest {
         verify(owner).isDisposed();
         verifyNoMoreInteractions(input, fresh, editors, property, owner);
         verifyNoInteractions(source);
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void asynchronousReadRechecksEditabilityAndDisposalBeforeApplyingValues() throws Exception {
+        for (String change : List.of("unchanged", "editable", "disposed")) {
+            var source = mock(DBPPropertySource.class);
+            var owner = mock(ObjectEditorPageControl.class);
+            var editors = mock(CustomFormEditor.class);
+            var input = mock(IDatabaseEditorInput.class);
+            var object = mock(DBSObject.class);
+            var property = mock(DBPPropertyDescriptor.class);
+            doReturn(true).when(editors).hasEditors();
+            doReturn(source).when(input).getPropertySource();
+            doReturn(object).when(input).getDatabaseObject();
+            doReturn(object).when(source).getEditableValue();
+            doReturn("status").when(property).getId();
+            doReturn("Normal").when(source).getPropertyValue(any(), eq("status"));
+            doReturn(List.of(property)).when(editors).filterProperties(any());
+            invokeForm(source, owner, editors, input);
+            ArgumentCaptor<LoadingJob<Map<DBPPropertyDescriptor, Object>>> job =
+                ArgumentCaptor.forClass((Class) LoadingJob.class);
+            ArgumentCaptor<DBRRunnableParametrized<Map<DBPPropertyDescriptor, Object>>> callback =
+                ArgumentCaptor.forClass((Class) DBRRunnableParametrized.class);
+            verify(owner).runService(job.capture());
+            verify(owner).createDefaultLoadVisualizer(callback.capture());
+            var values = job.getValue().getLoadingService().evaluate(new VoidProgressMonitor());
+            assertEquals(Map.of(property, "Normal"), values);
+            if (change.equals("editable")) {
+                doReturn(true).when(property).isEditable(object);
+            } else if (change.equals("disposed")) {
+                doReturn(true).when(owner).isDisposed();
+            }
+            callback.getValue().run(values);
+            if (change.equals("disposed")) {
+                verify(editors, never()).loadEditorValues(any());
+            } else {
+                verify(editors).loadEditorValues(change.equals("editable") ? Map.of() : Map.of(property, "Normal"));
+            }
+        }
     }
 
     private static void invokeForm(DBPPropertySource source, ObjectEditorPageControl owner,

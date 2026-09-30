@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-30",
+  "scope": "Production asynchronous property load evaluation and completion callback",
+  "test": "PostSaveReadOnlyPropertiesTest.asynchronousReadRechecksEditabilityAndDisposalBeforeApplyingValues",
+  "cases": [
+    "Still read-only at completion: apply loaded Normal status",
+    "Property becomes editable after evaluation: exclude it from values applied to editor",
+    "Owner disposed after evaluation: do not call loadEditorValues"
+  ],
+  "method": "Capture real LoadingJob and completion listener via mocked owner, evaluate real production load service, change state, invoke real completion listener and verify editor interactions",
+  "classResult": {"tests": 8, "passed": 8, "skipped": 0},
+  "reactorResult": {"tests": 2741, "passed": 2723, "skipped": 18, "failures": 0, "errors": 0},
+  "localRun": "run-4zUYHI",
+  "freshReportGate": "passed",
+  "cleanup": "Temporary central schema/database fixtures, review/grantee roles removed and original HBA restored by runner",
+  "initialAttempt": "Test compilation failed because this branch has no VoidProgressMonitor.INSTANCE; corrected to constructor and reran successfully",
+  "limits": [
+    "Controlled callback interleaving, not a scheduler stress test",
+    "Does not prove newest-wins ordering for overlapping refresh requests",
+    "Skipped tests are not passes"
+  ]
+}
