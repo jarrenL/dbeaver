@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-30",
+  "product": "26.1.5.202609300733",
+  "productionCommit": "e52a9c4cc5",
+  "environment": "Clean full Linux x86_64 product on local emulated Kylin GUI, GaussDB 507 centralized A database",
+  "account": "Ordinary fixture account; temporary gs_role_pldebugger membership",
+  "fixture": "dbv_final_debug_0733.write_row(integer), audit initially contains only 1",
+  "actions": [
+    "Create DBeaver debug configuration, select connection and routine, enter p_id=2 and press Enter to commit the parameter cell",
+    "Launch and switch to Debug perspective; execution stops at source line 4",
+    "Select Variables tab and stack frame; p_id=2 and v_value=10",
+    "F8 advances to INSERT at line 5; Variables shows v_value=12",
+    "F9 completes routine and displays Chinese Commit/Rollback choice; independent connection still sees only 1",
+    "Click Rollback; independent connection sees only 1",
+    "Relaunch saved debug configuration and F9; independent connection sees only 1 before transaction choice",
+    "Click Commit; independent connection sees 1 and 12"
+  ],
+  "result": "PASS for these bounded scenarios",
+  "screenshots": [
+    "debug-final-x86-20260930/step-variables.png",
+    "debug-final-x86-20260930/transaction-choice.png"
+  ],
+  "observations": [
+    "Initial configuration dialog on no-window-manager X11 compressed the parameter table. Resizing the dialog exposed the complete row; not classified as a customer environment defect",
+    "Missing parameter validation remains English",
+    "Variables tab and frame were explicitly selected for inspection"
+  ],
+  "cleanup": {
+    "activeFixtureCallsBeforeCleanup": 0,
+    "schemaRemaining": 0,
+    "temporaryDebugRoleMembershipRestored": false,
+    "privatePasswordCopy": "removed",
+    "method": "Close routine editor; explicit procedure/table/schema RESTRICT drops in transaction; revoke only temporary grant"
+  },
+  "limits": [
+    "Not customer desktop-cloud certification or native x86 host certification",
+    "Does not cover nested stepping, breakpoint management, watch editing, cancellation, permission denial or network failure on this final product",
+    "Does not cover ARM GUI debug on this final product"
+  ]
+}
