@@ -21,10 +21,15 @@ import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
 import org.jkiss.dbeaver.model.qm.*;
 import org.jkiss.dbeaver.model.qm.filters.QMCursorFilter;
 import org.jkiss.dbeaver.model.qm.filters.QMEventCriteria;
+import org.jkiss.dbeaver.model.qm.filters.QMDateRange;
+import org.jkiss.dbeaver.model.qm.filters.QMEventStatus;
+import org.jkiss.dbeaver.model.qm.filters.QMSortField;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.runtime.qm.QMMCollectorImpl;
 import org.jkiss.dbeaver.runtime.qm.QMRegistryImpl;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +39,126 @@ import static org.mockito.Mockito.*;
 
 class QueryHistoryCursorTest {
     private final VoidProgressMonitor monitor = new VoidProgressMonitor();
+
+    @Test
+    void statusSelectionExcludesOtherOutcomesAndUnfinishedExecutions() throws Exception {
+        var success = event("ok", DBCExecutionPurpose.USER);
+        var failure = event("failed", DBCExecutionPurpose.USER);
+        var running = event("running", DBCExecutionPurpose.USER);
+        when(success.getObject().isClosed()).thenReturn(true);
+        when(failure.getObject().isClosed()).thenReturn(true);
+        when(((QMMStatementExecuteInfo) failure.getObject()).hasError()).thenReturn(true);
+        var connection = new QMMetaEvent(mock(QMMConnectionInfo.class), QMEventAction.END, 0, "fixture");
+        var criteria = unrestrictedCriteria();
+        for (var status : QMEventStatus.values()) {
+            criteria.setEventStatuses(java.util.Set.of(status));
+            try (var cursor = browser(List.of(success, failure, running, connection)).getQueryHistoryCursor(
+                new QMCursorFilter(null, criteria, null))) {
+                assertEquals(1, cursor.getTotalSize());
+                assertSame((status == QMEventStatus.SUCCESS ? success : failure).getObject(),
+                    cursor.nextEvent(monitor).getObject());
+            }
+        }
+    }
+
+    @Test
+    void dateRangeUsesExecutionStartUtcAndIncludesBothBounds() throws Exception {
+        var events = new ArrayList<QMMetaEvent>();
+        for (long time : new long[] {999, 1000, 2000, 3000, 3001}) {
+            var event = event(Long.toString(time), DBCExecutionPurpose.USER);
+            when(event.getObject().getOpenTime()).thenReturn(time);
+            events.add(event);
+        }
+        var criteria = unrestrictedCriteria();
+        var from = java.time.Instant.ofEpochMilli(1000).atZone(java.time.ZoneId.of("Asia/Shanghai"));
+        var to = java.time.Instant.ofEpochMilli(3000).atZone(java.time.ZoneId.of("America/New_York"));
+        criteria.setDateRange(new QMDateRange(from, to));
+        try (var cursor = browser(events).getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+            assertEquals(3, cursor.getTotalSize());
+            for (int index : new int[] {3, 2, 1}) {
+                assertSame(events.get(index).getObject(), cursor.nextEvent(monitor).getObject());
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(QMSortField.class)
+    void requestedSortFieldHonorsBothDirections(QMSortField field) throws Exception {
+        var first = event("a-query", DBCExecutionPurpose.USER);
+        var second = event("z-query", DBCExecutionPurpose.USER);
+        when(first.getObject().getOpenTime()).thenReturn(100L);
+        when(second.getObject().getOpenTime()).thenReturn(200L);
+        for (var event : List.of(first, second)) {
+            var connection = mock(QMMConnectionInfo.class);
+            when(event.getObject().getConnection()).thenReturn(connection);
+            when(connection.getConnectionUserName()).thenReturn(event == first ? "a-user" : "z-user");
+            when(connection.getDriverId()).thenReturn(event == first ? "a-driver" : "z-driver");
+        }
+        var criteria = unrestrictedCriteria();
+        criteria.setSortField(field);
+        for (boolean desc : new boolean[] {false, true}) {
+            criteria.setDesc(desc);
+            try (var cursor = browser(List.of(first, second)).getQueryHistoryCursor(
+                new QMCursorFilter(null, criteria, null))) {
+                assertSame((desc ? second : first).getObject(), cursor.nextEvent(monitor).getObject());
+                assertSame((desc ? first : second).getObject(), cursor.nextEvent(monitor).getObject());
+            }
+        }
+    }
+
+    @Test
+    void openEndedAndReversedDateRangesHavePredictableResults() throws Exception {
+        var events = new ArrayList<QMMetaEvent>();
+        for (long time : new long[] {1000, 2000, 3000}) {
+            var event = event("sql", DBCExecutionPurpose.USER);
+            when(event.getObject().getOpenTime()).thenReturn(time);
+            events.add(event);
+        }
+        var lower = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(1000), java.time.ZoneOffset.UTC);
+        var middle = lower.plusSeconds(1);
+        var upper = lower.plusSeconds(2);
+        var ranges = List.of(new QMDateRange(null, middle), new QMDateRange(middle, null),
+            new QMDateRange(upper, lower), new QMDateRange((java.time.LocalDateTime) null, null));
+        int[] expected = {2, 2, 0, 3};
+        var criteria = unrestrictedCriteria();
+        for (int i = 0; i < ranges.size(); i++) {
+            criteria.setDateRange(ranges.get(i));
+            try (var cursor = browser(events).getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+                assertEquals(expected[i], cursor.getTotalSize());
+            }
+        }
+    }
+
+    @Test
+    void sortingMissingMetadataDoesNotMutateCollectorSnapshot() throws Exception {
+        var known = event("query", DBCExecutionPurpose.USER);
+        var missing = event(null, DBCExecutionPurpose.USER);
+        var connection = mock(QMMConnectionInfo.class);
+        when(known.getObject().getConnection()).thenReturn(connection);
+        when(known.getObject().getOpenTime()).thenReturn(100L);
+        when(connection.getConnectionUserName()).thenReturn("user");
+        when(connection.getDriverId()).thenReturn("driver");
+        var snapshot = List.of(known, missing);
+        var collector = mock(QMMCollectorImpl.class);
+        when(collector.getPastEvents()).thenReturn(snapshot);
+        var criteria = unrestrictedCriteria();
+        criteria.setDesc(false);
+        for (var field : QMSortField.values()) {
+            criteria.setSortField(field);
+            try (var cursor = browser(collector).getQueryHistoryCursor(new QMCursorFilter(null, criteria, null))) {
+                assertSame(missing.getObject(), cursor.nextEvent(monitor).getObject());
+                assertSame(known.getObject(), cursor.nextEvent(monitor).getObject());
+            }
+            assertEquals(List.of(known, missing), snapshot);
+        }
+    }
+
+    private QMEventCriteria unrestrictedCriteria() {
+        var criteria = new QMEventCriteria();
+        criteria.setObjectTypes(null);
+        criteria.setQueryTypes(null);
+        return criteria;
+    }
 
     @Test
     void standaloneCustomFilterCannotBeBypassedByAbsentTypeAndTextCriteria() throws Exception {

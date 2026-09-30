@@ -23,6 +23,8 @@ import org.jkiss.dbeaver.model.messages.ModelMessages;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.model.qm.*;
 import org.jkiss.dbeaver.model.qm.filters.QMCursorFilter;
+import org.jkiss.dbeaver.model.qm.filters.QMEventStatus;
+import org.jkiss.dbeaver.model.qm.filters.QMSortField;
 import org.jkiss.dbeaver.model.qm.meta.*;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.ArrayUtils;
@@ -35,6 +37,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 
@@ -227,7 +230,7 @@ public class QMRegistryImpl implements QMRegistry {
         @NotNull
         @Override
         public QMEventCursor getQueryHistoryCursor(@NotNull QMCursorFilter cursorFilter) throws DBException {
-            List<QMMetaEvent> pastEvents = metaHandler.getPastEvents();
+            List<QMMetaEvent> pastEvents = new ArrayList<>(metaHandler.getPastEvents());
             if (includePersisted && historyPersistence != null) {
                 try {
                     var existing = new java.util.HashSet<QMMObject>();
@@ -245,11 +248,35 @@ public class QMRegistryImpl implements QMRegistry {
             Collections.reverse(pastEvents);
             var criteria = cursorFilter.getCriteria();
             var filter = cursorFilter.getFilter();
+            Comparator<QMMetaEvent> order = criteria.getSortField() == QMSortField.DATE
+                ? Comparator.comparingLong(event -> event.getObject().getOpenTime())
+                : Comparator.comparing(event -> historySortText(event, criteria.getSortField()));
+            pastEvents.sort(criteria.isDesc() ? order.reversed() : order);
+            var range = criteria.getDateRange();
+            Long from = range == null || range.getFrom() == null ? null
+                : range.getFrom().toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
+            Long to = range == null || range.getTo() == null ? null
+                : range.getTo().toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
             if (criteria.getObjectTypes() != null || criteria.getQueryTypes() != null
-                || filter != null || criteria.isSkipEmptyQueries()) {
+                || filter != null || criteria.isSkipEmptyQueries() || criteria.hasEventStatuses() || range != null) {
                 // Filter by query type and object type
                 for (Iterator<QMMetaEvent> iter = pastEvents.iterator(); iter.hasNext(); ) {
                     QMMetaEvent event = iter.next();
+                    long started = event.getObject().getOpenTime();
+                    if ((from != null && started < from) || (to != null && started > to)) {
+                        iter.remove();
+                        continue;
+                    }
+                    if (criteria.hasEventStatuses()) {
+                        // An execution still running is not a successful execution.
+                        if (!(event.getObject() instanceof QMMStatementExecuteInfo execution)
+                            || !execution.isClosed()
+                            || !criteria.getEventStatuses().contains(
+                                execution.hasError() ? QMEventStatus.FAILED : QMEventStatus.SUCCESS)) {
+                            iter.remove();
+                            continue;
+                        }
+                    }
                     // Empty execution text is not a useful query history entry. Do not
                     // apply this to connection/transaction events, which may have no SQL.
                     if (criteria.isSkipEmptyQueries()
@@ -296,6 +323,15 @@ public class QMRegistryImpl implements QMRegistry {
                 }
                 return new QMUtils.ListCursorImpl(filtered);
             }
+        }
+
+        private String historySortText(QMMetaEvent event, QMSortField field) {
+            if (field == QMSortField.QUERY_TEXT) {
+                return CommonUtils.notEmpty(event.getObject().getText());
+            }
+            QMMConnectionInfo connection = event.getObject().getConnection();
+            return connection == null ? "" : CommonUtils.notEmpty(field == QMSortField.USER
+                ? connection.getConnectionUserName() : connection.getDriverId());
         }
 
         private boolean matchesObjectType(QMMObject object, QMObjectType[] objectTypes) {

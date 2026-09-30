@@ -1,0 +1,29 @@
+{
+  "date": "2026-09-30",
+  "status": "red-green-and-boundary-reactors-passed",
+  "component": "QMRegistryImpl.DefaultEventBrowser.getQueryHistoryCursor",
+  "red": {
+    "run": "run-yXiiGW",
+    "newFailingCases": 6,
+    "observed": ["Status selection returned 4 entries instead of 1", "Date range returned 5 instead of 3", "Ascending order ignored for each of the four sort fields"]
+  },
+  "fix": [
+    "Apply single-status selection to completed executions using hasError; do not label running executions successful",
+    "Filter execution start time using UTC date bounds, inclusive at both ends; matches the timestamp displayed by QueryLogViewer",
+    "Honor DATE, USER, DRIVER and QUERY_TEXT sort field and direction; tolerate missing connection/text metadata",
+    "Copy collector snapshot before sorting instead of modifying the supplied list"
+  ],
+  "validation": [
+    {"run": "run-oIT8JQ", "tests": 2753, "passed": 2735, "skipped": 18, "failures": 0, "errors": 0, "historyCursorTests": 21},
+    {"run": "run-MQ4JUw", "tests": 2755, "passed": 2737, "skipped": 18, "failures": 0, "errors": 0, "historyCursorTests": 23}
+  ],
+  "additionalBoundaries": ["Cross-zone UTC conversion", "Inclusive endpoints", "Open lower/upper bounds", "Reversed and unbounded ranges", "Null metadata", "Immutable collector snapshot preserved"],
+  "resultGate": "Fresh reports passed; QueryHistoryCursorTest added to required classes; gate self-tests 7/7 passed",
+  "cleanup": "Both successful runs removed temporary centralized fixtures and roles and restored original HBA",
+  "limits": [
+    "Controlled production cursor tests, not GUI date/status control acceptance",
+    "Driver/project/schema filter criteria and other history capabilities are not claimed complete",
+    "Latest 0906 Linux candidate predates this production fix; defer final packaging until this batch is finished",
+    "Skipped tests are not passes; no original internal-test source migration claim"
+  ]
+}
