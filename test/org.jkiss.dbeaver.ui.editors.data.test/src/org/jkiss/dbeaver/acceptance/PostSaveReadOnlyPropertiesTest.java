@@ -18,7 +18,11 @@ package org.jkiss.dbeaver.acceptance;
 
 import org.jkiss.dbeaver.model.DBPStatefulObject;
 import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
+import org.jkiss.dbeaver.model.preferences.DBPPropertySource;
 import org.jkiss.dbeaver.model.struct.DBSObject;
+import org.jkiss.dbeaver.ui.controls.CustomFormEditor;
+import org.jkiss.dbeaver.ui.controls.ObjectEditorPageControl;
+import org.jkiss.dbeaver.ui.editors.IDatabaseEditorInput;
 import org.jkiss.dbeaver.ui.editors.entity.properties.ObjectPropertiesEditor;
 import org.junit.jupiter.api.Test;
 
@@ -88,5 +92,72 @@ class PostSaveReadOnlyPropertiesTest {
         var field = ObjectPropertiesEditor.class.getDeclaredField(name);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    @Test
+    void disposedOwnerDoesNotReadEditorsOrInput() throws Exception {
+        var source = mock(DBPPropertySource.class);
+        var owner = mock(ObjectEditorPageControl.class);
+        var editors = mock(CustomFormEditor.class);
+        var input = mock(IDatabaseEditorInput.class);
+        doReturn(true).when(owner).isDisposed();
+        invokeForm(source, owner, editors, input);
+        verify(owner).isDisposed();
+        verifyNoMoreInteractions(owner);
+        verifyNoInteractions(source, editors, input);
+    }
+
+    @Test
+    void absentEditorsDoNotReloadPropertySource() throws Exception {
+        var source = mock(DBPPropertySource.class);
+        var owner = mock(ObjectEditorPageControl.class);
+        var editors = mock(CustomFormEditor.class);
+        var input = mock(IDatabaseEditorInput.class);
+        invokeForm(source, owner, editors, input);
+        verify(owner).isDisposed();
+        verify(editors).hasEditors();
+        verifyNoMoreInteractions(owner, editors);
+        verifyNoInteractions(source, input);
+    }
+
+    @Test
+    void entirelyEditableSelectionDoesNotStartValueLoad() throws Exception {
+        var source = mock(DBPPropertySource.class);
+        var owner = mock(ObjectEditorPageControl.class);
+        var editors = mock(CustomFormEditor.class);
+        var input = mock(IDatabaseEditorInput.class);
+        var fresh = mock(DBPPropertySource.class);
+        var property = mock(DBPPropertyDescriptor.class);
+        var object = new Object();
+        doReturn(true).when(editors).hasEditors();
+        doReturn(fresh).when(input).getPropertySource();
+        doReturn(object).when(fresh).getEditableValue();
+        doReturn(List.of(property)).when(editors).filterProperties(any());
+        doReturn(true).when(property).isEditable(object);
+        invokeForm(source, owner, editors, input);
+        verify(input).getPropertySource();
+        verify(fresh).getProperties();
+        verify(fresh).getEditableValue();
+        verify(editors).hasEditors();
+        verify(editors).filterProperties(any());
+        verify(property).isEditable(object);
+        verify(owner).isDisposed();
+        verifyNoMoreInteractions(input, fresh, editors, property, owner);
+        verifyNoInteractions(source);
+    }
+
+    private static void invokeForm(DBPPropertySource source, ObjectEditorPageControl owner,
+        CustomFormEditor editors, IDatabaseEditorInput input) throws Exception {
+        var type = Class.forName(FORM);
+        var form = mock(type, CALLS_REAL_METHODS);
+        for (var entry : Map.of("curPropertySource", source, "ownerControl", owner,
+            "formEditor", editors, "input", input).entrySet()) {
+            var field = type.getDeclaredField(entry.getKey());
+            field.setAccessible(true);
+            field.set(form, entry.getValue());
+        }
+        var method = type.getDeclaredMethod("refreshReadOnlyProperties");
+        method.setAccessible(true);
+        method.invoke(form);
     }
 }

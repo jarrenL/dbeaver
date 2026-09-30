@@ -1,0 +1,20 @@
+{
+  "date": "2026-09-30",
+  "scope": "Post-save read-only property refresh guard regression, not GUI acceptance",
+  "testClass": "org.jkiss.dbeaver.acceptance.PostSaveReadOnlyPropertiesTest",
+  "newCases": [
+    "disposedOwnerDoesNotReadEditorsOrInput",
+    "absentEditorsDoNotReloadPropertySource",
+    "entirelyEditableSelectionDoesNotStartValueLoad"
+  ],
+  "classResult": {"tests": 7, "passed": 7, "skipped": 0},
+  "reactorResult": {"tests": 2740, "passed": 2722, "skipped": 18, "failures": 0, "errors": 0},
+  "localRun": "run-hOnvY3",
+  "freshReportGate": "passed",
+  "runnerCleanup": "Temporary central fixture and review/grantee roles removed; original HBA restored",
+  "limits": [
+    "Skipped tests are not passes",
+    "Does not prove asynchronous stale-result race handling",
+    "Does not claim equivalence to inaccessible historical test sources"
+  ]
+}
