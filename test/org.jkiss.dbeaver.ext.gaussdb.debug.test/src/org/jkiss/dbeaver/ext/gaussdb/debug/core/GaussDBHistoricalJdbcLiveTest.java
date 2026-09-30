@@ -4291,6 +4291,8 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     @Test
     void utf8JdbcRoundTripsGb18030DatabaseWithoutChangingClientEncoding() throws Exception {
         String database = System.getenv("GAUSSDB_HISTORY_ENCODING_DATABASE");
+        String config = System.getenv("GAUSSDB_HISTORY_ENCODING_CONNECTION");
+        final String encodingConnection = config == null ? System.getenv("GAUSSDB_HISTORY_CONNECTION") : config;
         assumeTrue(database != null, "Dedicated GB18030 database not configured; not a passing encoding test");
         assertEquals("YES", System.getenv("GAUSSDB_HISTORY_ALLOW_DDL"));
         withIndependentConnection(connection -> {
@@ -4324,10 +4326,10 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
                         }
                         assertFalse(rows.next());
                     }
-                }, database);
+                }, database, java.util.Map.of(), encodingConnection);
             } finally {
                 execute(connection, "DROP SCHEMA " + schema + " CASCADE");
             }
-        }, database);
+        }, database, java.util.Map.of(), encodingConnection);
     }
 }
