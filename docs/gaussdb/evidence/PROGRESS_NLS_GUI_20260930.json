@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-30",
+  "sourceCommit": "82d3d74bec",
+  "bundle": "org.jkiss.dbeaver.ui_5.1.200.202609300559.jar",
+  "sha256": "2ac9f10a4c3e93a64004d10341690eda4918d224109d399e57e4119ec9b03774",
+  "installation": "Only isolated Kylin x86_64 /opt/acceptance-20260930; previous bundle retained and bundles.info backed up; normal GUI exit before replacement, -clean restart",
+  "regression": "run-E56xjv: 2726 total, 2710 passed, 16 skipped, zero failures/errors; fixtures removed and HBA restored",
+  "gui": {
+    "snapshot": "321.txt",
+    "actualButton": "取消",
+    "activeQueryObservedSeconds": 11.288247,
+    "idleObservedSecondsSinceQueryStart": 37.1459,
+    "queryDurationSeconds": 120,
+    "backend": "281469259716288",
+    "followup": "Same backend accepted SELECT 42 AS after_cancel after GUI cancellation"
+  },
+  "limitations": [
+    "Initializing and Canceled transient text moved to NLS and compiled, but not independently captured while visible",
+    "Not a complete localization audit or final clean package validation",
+    "This GUI copy includes the explicitly test-only SWTBot bundle"
+  ]
+}
