@@ -1,0 +1,36 @@
+{
+  "date": "2026-09-30",
+  "status": "candidate-archive-integrity-passed-not-final-acceptance",
+  "productVersion": "26.1.5.202609300733",
+  "productionCommit": "e52a9c4cc5",
+  "commonCommit": "2df03e58480c6325732f476e8355e375cec5405e",
+  "reviewedHead": "cff9f01eebaf53f948fe75a9d9acf62a05a8262e",
+  "productionDiffSinceBuild": "No changes under plugins, features or product through reviewedHead",
+  "archives": [
+    {
+      "name": "dbeaver-gaussdb-26.1.5.202609300733-linux-x86_64.tar.gz",
+      "sha256": "92e13bb2627d921403626fbc5a7133ce7a916f0fe78db51accf178d6825a56ce",
+      "beforeArchiveEntries": 1202,
+      "afterExtractionEntries": 1202,
+      "inventoryMatches": true
+    },
+    {
+      "name": "dbeaver-gaussdb-26.1.5.202609300733-linux-aarch64.tar.gz",
+      "sha256": "4719d9af16a8a6a0e968c61ecf21caa91494ccb79dc632bbff2306fb6b7867e5",
+      "beforeArchiveEntries": 1202,
+      "afterExtractionEntries": 1202,
+      "inventoryMatches": true
+    }
+  ],
+  "method": "Verify existing external PRODUCT-MANIFEST.json, archive architecture directory with COPYFILE_DISABLE=1, extract into a new temporary directory, verify extracted product against extracted manifest. Checks bytes, file set, executable flag and link targets; clean-product guard runs before inventory verification.",
+  "packagingGuardTests": {"passed": 27, "failed": 0, "skipped": 0},
+  "independentRunnerSelfTests": {"passed": 166, "failed": 0, "skipped": 0},
+  "relatedGuiEvidence": ["DEBUG_FINAL_X86_20260930.json", "DEBUG_FINAL_ARM_20260930.json", "PACKAGE_FINAL_X86_20260930.json", "PACKAGE_FINAL_X86_ERROR_DELETE_20260930.json"],
+  "limits": [
+    "Archives created locally; no binary upload or remote old-asset replacement in this step",
+    "Integrity verification is not a signature, complete historical-scenario acceptance, or customer desktop-cloud certification",
+    "GUI evidence applies to the clean product tree before archiving, not a new GUI run from extracted archives",
+    "Runner self-tests are infrastructure tests and are not added to the DBeaver reactor pass count",
+    "External JDBC driver must be supplied separately; candidate is not a complete offline database connection kit"
+  ]
+}
