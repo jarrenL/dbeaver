@@ -6,6 +6,17 @@ import path from 'node:path';
 import {installChineseResources} from './install-zh-resources.mjs';
 
 const root = path.resolve(import.meta.dirname, '../..');
+test('GaussDB package editor extension labels resolve in English and Chinese', () => {
+    const module = path.join(root, 'plugins/org.jkiss.dbeaver.ext.gaussdb.ui');
+    const xml = fs.readFileSync(path.join(module, 'plugin.xml'), 'utf8');
+    const keys = new Set([...xml.matchAll(/="%([\w.]+)"/g)].map(match => match[1]));
+    assert(keys.has('db.editor.source.description'));
+    for (const locale of ['', '_zh']) {
+        const properties = fs.readFileSync(path.join(module, `OSGI-INF/l10n/bundle${locale}.properties`), 'utf8');
+        const defined = new Set([...properties.matchAll(/^([^#!\s=]+)\s*=\s*\S/gm)].map(match => match[1]));
+        for (const key of keys) assert(defined.has(key), `${locale}: missing extension resource ${key}`);
+    }
+});
 for (const [module, packagePath, messages, resources] of [
     ['org.jkiss.dbeaver.ext.gaussdb.debug.ui', 'org/jkiss/dbeaver/ext/gaussdb/debug/ui/internal', 'GaussDBDebugMessages', 'GaussDBDebugMessages'],
     ['org.jkiss.dbeaver.ext.gaussdb.ui', 'org/jkiss/dbeaver/ext/gaussdb/ui/internal', 'GaussDBMessages', 'GaussDBResources'],
