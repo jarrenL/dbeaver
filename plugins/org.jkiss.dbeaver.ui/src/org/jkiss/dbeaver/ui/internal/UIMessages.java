@@ -40,6 +40,9 @@ public class UIMessages extends NLS {
     public static String ui_properties_tree_viewer_category_general;
 
     public static String controls_progress_page_action_close;
+    public static String controls_progress_loader_initializing;
+    public static String controls_progress_loader_cancel;
+    public static String controls_progress_loader_canceled;
     public static String controls_progress_page_job_search;
     public static String controls_progress_page_progress_bar_cancel_tooltip;
     public static String controls_progress_page_progress_bar_loading_tooltip;

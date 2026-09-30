@@ -37,6 +37,7 @@ import org.jkiss.dbeaver.model.runtime.load.ILoadVisualizer;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.internal.UIMessages;
 import org.jkiss.dbeaver.utils.DurationFormat;
 import org.jkiss.dbeaver.utils.DurationFormatter;
 import org.jkiss.utils.CommonUtils;
@@ -73,7 +74,7 @@ public class ProgressLoaderVisualizer<RESULT> implements ILoadVisualizer<RESULT>
     public ProgressLoaderVisualizer(ILoadService<RESULT> loadService, Composite progressPane) {
         this.loadService = loadService;
         this.progressPane = progressPane;
-        this.progressMessage = "Initializing";
+        this.progressMessage = UIMessages.controls_progress_loader_initializing;
     }
 
     @NotNull
@@ -139,14 +140,14 @@ public class ProgressLoaderVisualizer<RESULT> implements ILoadVisualizer<RESULT>
         if (progressOverlay == null) {
             // Start progress visualization
             cancelButton = new Button(progressPane, SWT.PUSH);
-            cancelButton.setText("Cancel");
+            cancelButton.setText(UIMessages.controls_progress_loader_cancel);
             GridData gd = new GridData(GridData.FILL_BOTH);
             gd.verticalIndent = DBeaverIcons.getImage(UIIcon.PROGRESS0).getBounds().height * 2;
             cancelButton.setLayoutData(gd);
             cancelButton.addSelectionListener(new SelectionAdapter() {
                 @Override
                 public void widgetSelected(SelectionEvent e) {
-                    cancelButton.setText("Canceled");
+                    cancelButton.setText(UIMessages.controls_progress_loader_canceled);
                     cancelButton.setEnabled(false);
                     Point buttonSize = cancelButton.computeSize(SWT.DEFAULT, SWT.DEFAULT);
                     progressOverlay.minimumWidth = buttonSize.x;
