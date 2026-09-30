@@ -7,7 +7,7 @@
   "candidateDirectory": "deliverables/linux-state-refresh-20260930-9ym0tr",
   "architectures": [
     {"architecture": "aarch64", "cleanSourceFiles": 641, "assembledFiles": 878, "manifestEntriesVerified": 1202, "nativeComponentsMatched": 9, "gui": "native Kylin V10; startup and About version confirmed; saved language retained"},
-    {"architecture": "x86_64", "cleanSourceFiles": 641, "assembledFiles": 878, "manifestEntriesVerified": 1202, "nativeComponentsMatched": 9, "gui": "Kylin V10 under local architecture emulation; startup and About version confirmed; connection wizard opened, connection/function regression not yet complete"}
+    {"architecture": "x86_64", "cleanSourceFiles": 641, "assembledFiles": 878, "manifestEntriesVerified": 1202, "nativeComponentsMatched": 9, "gui": "Kylin V10 under local architecture emulation; startup and About confirmed; empty workspace connection wizard, external native JDBC selection, successful test connection and actual SQL editor query verified. Debug/package regression remains pending."}
   ],
   "nativeReuse": "Reused previously built Kylin launcher, launcher shared library and seven SWT JNI libraries; final embedded bytes compared to retained native outputs. Not a new native compilation.",
   "sources": {
@@ -18,7 +18,8 @@
     "OpenJDK21U-jdk-sources_21.0.12.1_1.tar.gz": "573057d03584ae793fb7ec9a14c76d826d9187a53efeefd99da47403a5308234"
   },
   "armQuery": "Actual SQL editor returns 507, package_lab, package_tester; independent pg_stat_activity shows the same ordinary user, database and release_0733_marker query in idle state",
-  "images": ["linux-state-refresh-20260930/release-state-arm-about.png", "linux-state-refresh-20260930/release-state-x86-about.png", "linux-state-refresh-20260930/release-state-arm-query-clean.png"],
+  "x86Query": "Actual SQL editor returns 507, package_lab, package_tester; independent pg_stat_activity confirms package_tester|package_lab|idle for release_0733_x86_marker. No database writes performed by this query.",
+  "images": ["linux-state-refresh-20260930/release-state-arm-about.png", "linux-state-refresh-20260930/release-state-x86-about.png", "linux-state-refresh-20260930/release-state-arm-query-clean.png", "linux-state-refresh-20260930/release-state-x86-connection.png", "linux-state-refresh-20260930/release-state-x86-query.png"],
   "limits": [
     "Not final release or full functional acceptance; no remote upload or old release replacement performed",
     "Customer desktop-cloud transport is not available here; local GUI is not desktop-cloud certification",

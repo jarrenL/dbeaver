@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-30",
+  "commitReviewed": "e52a9c4cc5",
+  "reviewScope": "Independent diff-only review of two property UI files and PostSaveReadOnlyPropertiesTest; no execution, no confirmed defect",
+  "sourceChecks": [
+    "DatabaseEditorInput.getPropertySource constructs and returns PropertySourceEditable, not null in this implementation. Existing full refresh uses the same re-fetch pattern.",
+    "EntityEditor.doSave waits for SaveJob success before runPostSaveCommands; saveCommandContext refreshes DBPStatefulObject before returning. This supports ordering for the inspected normal save path, not all possible callers.",
+    "ownerControl and formEditor are final constructor-initialized fields; no demonstrated partial-initialization production path.",
+    "Mockito compilation and execution already evidenced by run-0H8BeK; reflection in the test is not a demonstrated runtime defect."
+  ],
+  "remaining": [
+    "Concurrent property loads have no demonstrated generation-order protection; reproduce with controlled completion order before selecting a fix.",
+    "Add focused disposed/no-editors/editability-change tests; current source-preservation evidence combines limited unit coverage and the recorded ARM GUI save/retry scenario.",
+    "Final clean product package/debug GUI regression remains pending."
+  ],
+  "limits": "Independent review is not acceptance, does not add passing tests, and does not certify arbitrary editor input implementations or background callers."
+}
