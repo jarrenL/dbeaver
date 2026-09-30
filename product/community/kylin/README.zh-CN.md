@@ -50,6 +50,16 @@ M 兼容部署另提供 **GaussDB M (version-matched gsjdbc4)** 配置；按客�
 
 产品先按仓库常规 Maven/Tycho 流程构建 Linux GTK 两架构。不得以装有 SWTBot 的测试副本为产品源。
 
+本分支从仓库根目录使用完整聚合入口（相邻的 `dbeaver-common` 必须为匹配版本）：
+
+```sh
+mvn -f product/aggregate/pom.xml -Pproduct-dbeaver-ce package
+```
+
+不要使用 `-pl :standalone -am` 替代完整聚合构建；Maven 项目依赖选择不保证包含产品引用的所有 Eclipse feature。产品输出位于 `product/community/target/products/org.jkiss.dbeaver.core.product/linux/gtk/{x86_64,aarch64}/dbeaver`。若已单独完成当前源码测试，可在仅打包阶段使用 `-DskipTests=true`，但这次打包不构成测试通过证据。
+
+组装器同时检查输入产品和最终目录：拒绝测试插件、工作区、凭据配置和 `global-settings.ini`。最终目录仅允许 `jre/legal` 内指向该目录内真实文件的相对许可证链接；不允许目录链接、目录外目标或损坏链接。该检查不替代最终归档校验和、原生库架构/字节核验、许可证及实际启动验收。组装失败留下的输出目录应视为未完成候选，不能发布。
+
 在每种架构的麒麟构建环境安装 GCC/G++、make、GTK3/Xtst/GLU 开发包及 JDK 头文件，然后执行：
 
 ```sh

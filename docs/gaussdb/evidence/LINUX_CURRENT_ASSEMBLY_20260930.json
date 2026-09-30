@@ -1,0 +1,23 @@
+{
+  "binarySourceCommit": "80e99e65ee",
+  "postAssemblyHygieneCommit": "9c2c69886a",
+  "productVersion": "26.1.5.202609300607",
+  "outputRoot": "/Users/lj/Documents/GaussDB/deliverables/linux-current-20260930-MowagP",
+  "architectures": ["x86_64", "aarch64"],
+  "build": "Full aggregate product-dbeaver-ce package succeeded; tests explicitly skipped in this packaging invocation, separate current-source reactor evidence PROGRESS_NLS_REACTOR_20260930.json",
+  "inputHygiene": "Both product sources passed; no SWTBot, test workspace, vendor JDBC or credentials included",
+  "postAssemblyHygiene": "Both assembled products passed revised checker; contained relative JRE legal links allowed; other links and global user settings rejected",
+  "checkerTests": "31 passed; initial single failure exposed macOS /var to /private/var canonical-path mismatch, fixed before final checks",
+  "nativeVerification": "Final launcher, launcher library and all seven SWT libraries extracted from the shipped SWT jar match their NATIVE-SHA256SUMS on both architectures (9 each)",
+  "architectureVerification": "file reports correct ELF architecture for both final dbeaver launchers and both bundled JRE java executables",
+  "nativeProvenance": {
+    "x86_64": "Reused linux-clean-20260930-baPJkI/native and its existing JRE repack",
+    "aarch64": "Recovered native bytes and repacked unmodified JRE tree from candidate-r4-aarch64, native hashes verified before and after assembly"
+  },
+  "notClaimed": [
+    "No claim that reused JRE archives have the original upstream compressed-archive hash",
+    "No fresh native rebuild in this round",
+    "No GUI acceptance of these new clean products yet",
+    "No final archive/checksum/source companion completion or upload yet"
+  ]
+}
