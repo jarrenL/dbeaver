@@ -1,0 +1,5 @@
+TARGET dbv_gui_tx_20260930a PID=281469788207424
+BEFORE targetRows=2 observerRows=1 schema=dbv_gui_tx_0c15bdee6f1b4ed8987b5847b406d656
+INTERRUPTED SQLSTATE=57P01
+PASS terminate transaction: baseline kept, uncommitted row absent, fresh write committed
+CLEANED dbv_gui_tx_0c15bdee6f1b4ed8987b5847b406d656

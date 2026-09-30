@@ -26,7 +26,22 @@
     "fixtureExit": 0
   },
   "independentDatabaseCheck": {"matchingApplicationMarkersRemaining": 0},
+  "transactionTermination": {
+    "fixture": "gaussdb-dbeaver-tests/integration/GuiTransactionTarget.java",
+    "scope": "Session manager Terminate, not debugger F10",
+    "marker": "dbv_gui_tx_20260930a",
+    "pid": "281469788207424",
+    "before": {"targetRows": 2, "observerRows": 1},
+    "sqlState": "57P01",
+    "committedBaselinePreserved": true,
+    "uncommittedRowAbsent": true,
+    "freshWriteCommitted": true,
+    "fixtureExit": 0,
+    "independentRemainingSchemaCount": 0,
+    "independentRemainingSessionCount": 0,
+    "evidence": ["session-actions-20260930/transaction-target.txt", "session-actions-20260930/transaction-confirmation.txt", "session-actions-20260930/transaction-jdbc.txt"]
+  },
   "afterExplicitRefresh": "Only the DBeaver View sessions connection remains in the visible list; no error dialog",
   "pidReuse": "The server reused the same numeric PID for later connections. Every action was tied to a freshly observed marker and backend start time; this is not proof of race-free behavior between refresh and action.",
-  "limits": ["One GUI run per action, not repeated GUI acceptance", "No thread-pool dual-identifier validation", "No arbitrary-user privilege escalation test", "No automatic refresh claim", "No DML rollback claim: fixture runs read-only pg_sleep"]
+  "limits": ["One GUI run per scenario, not repeated GUI acceptance", "No thread-pool dual-identifier validation", "No arbitrary-user privilege escalation test", "No automatic refresh claim", "Read-only fixtures prove connection outcomes; transactionTermination separately proves uncommitted DML rollback"]
 }
