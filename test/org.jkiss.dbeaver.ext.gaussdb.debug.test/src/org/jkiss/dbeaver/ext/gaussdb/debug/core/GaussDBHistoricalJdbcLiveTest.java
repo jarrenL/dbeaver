@@ -2562,7 +2562,9 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         }
         try (var loader = new URLClassLoader(new java.net.URL[]{Path.of(jar).toUri().toURL()},
             ClassLoader.getPlatformClassLoader())) {
-            var driver = (Driver) loader.loadClass(p.getProperty("driverClass")).getConstructor().newInstance();
+            String driverClass = p.getProperty("driverClass", System.getenv("GAUSSDB_HISTORY_DRIVER_CLASS"));
+            assertNotNull(driverClass, "Vendor driver class required in properties or environment");
+            var driver = (Driver) loader.loadClass(driverClass).getConstructor().newInstance();
             assertTrue(driver.acceptsURL(p.getProperty("url")));
             assertFalse(driver.acceptsURL("jdbc:unrelated:test"));
             assertNull(driver.connect("jdbc:unrelated:test", new Properties()));
