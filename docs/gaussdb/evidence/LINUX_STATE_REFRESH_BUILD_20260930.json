@@ -1,0 +1,29 @@
+{
+  "date": "2026-09-30",
+  "version": "26.1.5.202609300733",
+  "productionSource": "e52a9c4cc5",
+  "commonSource": "2df03e58480c6325732f476e8355e375cec5405e",
+  "build": "Full product/aggregate package with product-dbeaver-ce succeeded; tests skipped only for this packaging pass, separate run-0H8BeK records 2719 passed / 18 skipped / zero failures and errors",
+  "candidateDirectory": "deliverables/linux-state-refresh-20260930-9ym0tr",
+  "architectures": [
+    {"architecture": "aarch64", "cleanSourceFiles": 641, "assembledFiles": 878, "manifestEntriesVerified": 1202, "nativeComponentsMatched": 9, "gui": "native Kylin V10; startup and About version confirmed; saved language retained"},
+    {"architecture": "x86_64", "cleanSourceFiles": 641, "assembledFiles": 878, "manifestEntriesVerified": 1202, "nativeComponentsMatched": 9, "gui": "Kylin V10 under local architecture emulation; startup and About version confirmed; connection wizard opened, connection/function regression not yet complete"}
+  ],
+  "nativeReuse": "Reused previously built Kylin launcher, launcher shared library and seven SWT JNI libraries; final embedded bytes compared to retained native outputs. Not a new native compilation.",
+  "sources": {
+    "dbeaver-e52a9c4cc5.tar.gz": "b3a141c3f3098c11ff35cbf90041abff8ee9e10512dcec95772ca26009db18fc",
+    "dbeaver-common-2df03e5848.tar.gz": "63aa171f2efd2609065a300a849bd6ec22e7004c13f16f08f579e1cdf6872c08",
+    "swt-v4973r12.tar.gz": "3e267e0403491f67aa5135f95eab156e942879951a367ebdb1534d156cf9da05",
+    "equinox-R4_37.tar.gz": "dff9d27890097901b958bc63f815b0e67ea89af2be697bccdb8d8be53a4a6354",
+    "OpenJDK21U-jdk-sources_21.0.12.1_1.tar.gz": "573057d03584ae793fb7ec9a14c76d826d9187a53efeefd99da47403a5308234"
+  },
+  "armQuery": "Actual SQL editor returns 507, package_lab, package_tester; independent pg_stat_activity shows the same ordinary user, database and release_0733_marker query in idle state",
+  "images": ["linux-state-refresh-20260930/release-state-arm-about.png", "linux-state-refresh-20260930/release-state-x86-about.png", "linux-state-refresh-20260930/release-state-arm-query-clean.png"],
+  "limits": [
+    "Not final release or full functional acceptance; no remote upload or old release replacement performed",
+    "Customer desktop-cloud transport is not available here; local GUI is not desktop-cloud certification",
+    "Some upstream tips, resource navigator labels and Help commands remain English; not complete UI localization",
+    "JRE inputs reused from retained runtime files, not compared to the original compressed binary archives in this pass",
+    "Two preexisting test-helper worktree edits are excluded from the git source archive and from the clean product"
+  ]
+}
