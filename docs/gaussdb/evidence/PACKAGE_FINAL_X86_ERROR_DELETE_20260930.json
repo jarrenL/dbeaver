@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-30",
+  "product": "26.1.5.202609300733",
+  "platform": "Clean Kylin V10 x86_64 product under local architecture emulation",
+  "fixture": "Recreated integration/gui-package-compile.sql as package_tester after previous cleanup; current gui_bad OID 72071, namespace OID 72068",
+  "errorNavigation": {
+    "action": "Refresh package folder, open current gui_bad Body, click Compile Body, then Open Source",
+    "dialog": "BODY, editor line 4, column 1, invalid type name",
+    "source": "Caret and highlighted line land on missing dbv_pkg_gui_20260930.no_such_table.id%TYPE; includes leading blank/package header in editor mapping",
+    "server": "GS_ERRORS current OID 72071 / namespace 72068 reports relative line 2, invalid type name. Older unrelated OID 70912 also has same name: excluded from current-object verification."
+  },
+  "batchDelete": {
+    "action": "Close package editor; Ctrl-select gui_valid and gui_bad in navigator, right-click Delete",
+    "confirmation": "Exactly two fully qualified fixture package names shown",
+    "cancel": "Click Cancel; independent gs_package count for fixture schema remains 2",
+    "confirm": "Repeat Delete, verify same two names, click Yes; navigator removes both and independent gs_package count becomes 0",
+    "notAdministrativeDeletion": true
+  },
+  "cleanup": "After GUI deletion, administrative DROP SCHEMA RESTRICT succeeds and independent namespace count=0. Temporary host password copy removed. Unrelated historical error rows not deleted.",
+  "images": [
+    "package-final-x86-20260930/package-final-x86-error-dialog.png",
+    "package-final-x86-20260930/package-final-x86-error-location.png",
+    "package-final-x86-20260930/package-final-x86-delete-confirm.png",
+    "package-final-x86-20260930/package-final-x86-deleted.png"
+  ],
+  "limits": "One clean-product error/delete scenario; not permission-denied/dependency-failure/concurrent-delete acceptance, not customer desktop-cloud certification. Debug and transaction scopes remain separate."
+}
