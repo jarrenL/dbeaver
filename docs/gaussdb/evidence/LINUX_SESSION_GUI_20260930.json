@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-30",
+  "product": "26.1.5.202609300113",
+  "platform": "Kylin Linux x86_64 container, emulated on ARM host",
+  "testInstall": "/opt/acceptance-20260930",
+  "scope": "Full rebuilt Java product with matching previously validated Linux native libraries, JRE 21 and test-only SWTBot bundle. Not a clean release archive.",
+  "actions": ["Chinese startup", "normal exit and restart", "connect isolated distributed GaussDB", "open Administration / Session manager"],
+  "observations": {
+    "uiSnapshot": "queue/025.cmd.result",
+    "metadataPidDisplayed": "281,469,414,914,368",
+    "mainPidDisplayed": "281,469,788,207,424",
+    "independentDatabaseMetadataPid": "281469414914368",
+    "independentDatabaseMainPid": "281469788207424",
+    "database": "distributed_acceptance",
+    "metadataApplication": "DBeaver 26.1.5 - Metadata <distributed_acceptance>",
+    "mainApplication": "DBeaver 26.1.5 - Main <distributed_acceptance>",
+    "greaterThanInt32": true,
+    "matches": true
+  },
+  "fixtureCorrections": ["Initial command-line vmargs replaced normal ini arguments; restarted with test queue property in test-only ini", "Copied vendor JDBC jar and corrected file ownership to the GUI test user before successful connection"],
+  "limitations": ["No cancel or terminate action performed", "A third transient View sessions PID was reused by gsql before the independent query; it is not counted as a matching application identity", "No claim of physical x86 hardware, customer desktop-cloud transport, or full GUI scenario completion", "SWTBot grid-click helper compiled but not exercised"]
+}
