@@ -1,0 +1,21 @@
+{
+  "product": "Clean aarch64 26.1.5.202609300607, Kylin V10, ordinary package_tester on centralized GaussDB 507 A",
+  "fixture": "dbv_pkg_gui_20260930, gui_valid and gui_bad",
+  "passedBeforeFinding": [
+    "Native navigator exposes Compile All, Specification and Body commands",
+    "All three commands report gui_valid success; independent function result 42",
+    "Bad body compilation opens the source with invalid type name, line 4 position 1 and the missing-type declaration selected"
+  ],
+  "failure": "Edit gui_bad body in the actual package editor, replace with valid body returning 43, Save / Execute. Preview includes unchanged CREATE PACKAGE specification; database rejects package already exists. Body remains invalid; repair did not persist.",
+  "cause": "GaussDBPackageManager unconditionally emitted both sources for modifications and preserved plain CREATE returned by gs_source",
+  "fix": "Persist only source properties present in the change command; convert leading CREATE PACKAGE/BODY tokens to CREATE OR REPLACE for modification, preserving comments and already-replace source",
+  "unitRegression": {
+    "initialCompileFailure": "Test referenced nonexistent VoidProgressMonitor.INSTANCE; corrected to constructor, not counted as a red assertion",
+    "beforeFix": "4 tests, 3 failures, zero errors/skips",
+    "afterFix": "6 tests, zero failures/errors/skips; includes comments, nested comments, existing replace and unrelated property cases"
+  },
+  "notYetVerified": ["Fixed editor GUI save", "Full current-source regression", "Rebuilt clean delivery products"],
+  "testInfrastructure": "Temporary fixture adapter initially included commented cleanup after last COMMIT, causing multi-command rejection; transaction rollback and schema count 0 independently checked, extraction corrected to first COMMIT before successful fixture creation. Xvfb blanking later disabled only on isolated display :102; Java remained alive.",
+  "screenshotsDirectory": "package-editor-save-20260930",
+  "cleanupStatus": "Dedicated fixture retained temporarily for fixed-client replay; no customer objects touched"
+}

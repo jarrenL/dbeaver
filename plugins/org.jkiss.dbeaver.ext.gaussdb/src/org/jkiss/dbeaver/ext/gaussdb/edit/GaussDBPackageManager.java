@@ -80,16 +80,16 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
                                           @NotNull List<DBEPersistAction> actions, @NotNull SQLObjectEditor<GaussDBPackage, GaussDBDatabase>.ObjectCreateCommand command,
                                           @NotNull Map<String, Object> options) throws DBException {
         GaussDBPackage pack = command.getObject();
-        createOrReplaceProcedureQuery(actions, pack);
+        addPackageSourceActions(actions, pack, true, true, false);
 
     }
 
     @Override
     protected void addObjectModifyActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext,
                                           @NotNull List<DBEPersistAction> actionList, @NotNull ObjectChangeCommand command, @NotNull Map<String, Object> options) throws DBException {
-        if (command.getProperties().size() > 1 || command.getProperty(DBConstants.PROP_ID_DESCRIPTION) == null) {
-            createOrReplaceProcedureQuery(actionList, command.getObject());
-        }
+        addPackageSourceActions(actionList, command.getObject(),
+            command.hasProperty(DBConstants.PARAM_OBJECT_DEFINITION_TEXT),
+            command.hasProperty(DBConstants.PARAM_EXTENDED_DEFINITION_TEXT), true);
     }
 
     @Override
@@ -104,27 +104,83 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
         );
     }
 
-    private void createOrReplaceProcedureQuery(List<DBEPersistAction> actionList, GaussDBPackage pack) throws DBException {
-        String header = pack.getObjectDefinitionText().trim();
-        if (!CommonUtils.isEmpty(header)) {
+    private void addPackageSourceActions(List<DBEPersistAction> actionList, GaussDBPackage pack,
+                                        boolean declarationChanged, boolean bodyChanged, boolean modify) throws DBException {
+        String header = CommonUtils.notEmpty(pack.getObjectDefinitionText()).trim();
+        if (declarationChanged && !header.isEmpty()) {
+            if (modify) {
+                header = replacePackageDeclaration(header);
+            }
             if (!header.endsWith(";")) {
                 header += ";";
             }
             actionList.add(new SQLDatabasePersistAction("Create package header", header)); // $NON-NLS-1$
         }
-        String body = pack.getExtendedDefinitionText();
-        if (!CommonUtils.isEmpty(body)) {
-            body = body.trim();
+        if (!bodyChanged) {
+            return;
+        }
+        String body = CommonUtils.notEmpty(pack.getExtendedDefinitionText()).trim();
+        if (!body.isEmpty()) {
+            if (modify) {
+                body = replacePackageDeclaration(body);
+            }
             if (!body.endsWith(";")) {
                 body += ";";
             }
             actionList.add(new SQLDatabasePersistAction("Create package body", body));
-        } else {
+        } else if (modify) {
             actionList.add(new SQLDatabasePersistAction(
                 "Drop package body",
                 "DROP PACKAGE BODY IF EXISTS " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL),
                 DBEPersistAction.ActionType.OPTIONAL) // $NON-NLS-1$
             );
         }
+    }
+
+    // gs_source can return CREATE PACKAGE rather than CREATE OR REPLACE.
+    // Change only the leading statement tokens, never strings or nested source.
+    private static String replacePackageDeclaration(String sql) {
+        int create = skipTrivia(sql, 0);
+        int end = create + "CREATE".length();
+        if (end >= sql.length() || !sql.regionMatches(true, create, "CREATE", 0, 6)) {
+            return sql;
+        }
+        int next = skipTrivia(sql, end);
+        int packageEnd = next + "PACKAGE".length();
+        if (next > end && packageEnd < sql.length()
+            && sql.regionMatches(true, next, "PACKAGE", 0, 7)
+            && !Character.isJavaIdentifierPart(sql.charAt(packageEnd))) {
+            return sql.substring(0, end) + " OR REPLACE" + sql.substring(end);
+        }
+        return sql;
+    }
+
+    private static int skipTrivia(String sql, int offset) {
+        while (offset < sql.length()) {
+            if (Character.isWhitespace(sql.charAt(offset))) {
+                offset++;
+            } else if (sql.startsWith("--", offset)) {
+                while (offset < sql.length() && sql.charAt(offset) != '\n' && sql.charAt(offset) != '\r') {
+                    offset++;
+                }
+            } else if (sql.startsWith("/*", offset)) {
+                int depth = 1;
+                offset += 2;
+                while (offset < sql.length() && depth > 0) {
+                    if (sql.startsWith("/*", offset)) {
+                        depth++;
+                        offset += 2;
+                    } else if (sql.startsWith("*/", offset)) {
+                        depth--;
+                        offset += 2;
+                    } else {
+                        offset++;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        return offset;
     }
 }
