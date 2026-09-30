@@ -1,0 +1,3 @@
+TARGET dbv_gui_cancel_20260930a PID=281469332076864 USER=distributed_lab
+INTERRUPTED SQLSTATE=57014
+PASS cancel: same connection still queries

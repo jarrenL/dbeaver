@@ -1,0 +1,3 @@
+TARGET dbv_gui_terminate_20260930a PID=281469332076864 USER=distributed_lab
+INTERRUPTED SQLSTATE=57P01
+PASS terminate: old invalid, fresh connection queries
