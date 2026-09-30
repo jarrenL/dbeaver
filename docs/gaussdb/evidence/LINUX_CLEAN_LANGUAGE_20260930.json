@@ -17,7 +17,8 @@
     "Apply, accept restart and exit confirmation",
     "Observe restarted workbench with Chinese File/Edit/Navigate/Search/Database/Window/Help menus and zh status"
   ],
-  "result": "PASS for clean-product startup and GUI-selected language restart",
+  "result": "PASS for clean-product startup, GUI-selected language restart and subsequent normal exit/relaunch without -nl or -clean",
+  "relaunchScreenshot": "LINUX_CLEAN_LANGUAGE_REPEAT_20260930.png",
   "screenshot": "LINUX_CLEAN_LANGUAGE_20260930.png",
   "initialFixtureFailure": "First display startup as tester failed on a pre-existing root-owned X100 lock. Product reported gtk_init_check failure. Starting isolated Xvfb as root succeeded; DBeaver remained ordinary-user. Failed attempt is not counted as a pass.",
   "limitations": [
