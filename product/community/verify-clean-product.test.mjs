@@ -41,3 +41,28 @@ test('does not follow external symbolic links', t => {
     const root = fixture(t); fs.symlinkSync('/nonexistent-private-location', path.join(root, 'linked'));
     assert.throws(() => verifyCleanProduct(root), /symlink/);
 });
+test('never ships saved global user settings', t => {
+    const root = fixture(t);
+    fs.mkdirSync(path.join(root, 'settings'));
+    fs.writeFileSync(path.join(root, 'settings/global-settings.ini'), 'synthetic=true');
+    assert.throws(() => verifyCleanProduct(root), /global-settings/);
+    assert.throws(() => verifyCleanProduct(root, {assembled: true}), /global-settings/);
+});
+test('assembled mode permits only contained regular license links', t => {
+    const root = fixture(t);
+    fs.mkdirSync(path.join(root, 'jre/legal/base'), {recursive: true});
+    fs.mkdirSync(path.join(root, 'jre/legal/other'));
+    fs.writeFileSync(path.join(root, 'jre/legal/base/LICENSE'), 'synthetic license');
+    fs.symlinkSync('../base/LICENSE', path.join(root, 'jre/legal/other/LICENSE'));
+    assert.throws(() => verifyCleanProduct(root), /symlink/);
+    assert.equal(verifyCleanProduct(root, {assembled: true}).assembled, true);
+});
+for (const target of ['../../../../outside', '../../../dbeaver.ini', '../missing', '../base', '/nonexistent-license']) {
+    test('assembled mode rejects unsafe license target ' + target, t => {
+        const root = fixture(t);
+        fs.mkdirSync(path.join(root, 'jre/legal/base'), {recursive: true});
+        fs.mkdirSync(path.join(root, 'jre/legal/other'));
+        fs.symlinkSync(target, path.join(root, 'jre/legal/other/LICENSE'));
+        assert.throws(() => verifyCleanProduct(root, {assembled: true}), /symlink/);
+    });
+}

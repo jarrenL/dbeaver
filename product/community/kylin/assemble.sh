@@ -51,4 +51,5 @@ cp "$native_source/build-environment.txt" "$native_source/elf-versions.txt" "$de
 cp "$native_source/SHA256SUMS" "$delivery_output/NATIVE-SHA256SUMS"
 printf '%s\n' "architecture=$delivery_arch" 'swt_source=v4973r12' 'launcher_source=R4_37' \
     'native_libraries=locally-rebuilt-unsigned' 'jdbc_driver=customer-supplied' > "$delivery_output/BUILD-INFO.txt"
+node "$(dirname "$0")/../verify-clean-product.mjs" "$delivery_app" --assembled
 echo "Assembled $delivery_output; add release documentation/licenses and run clean-product acceptance before archiving."
