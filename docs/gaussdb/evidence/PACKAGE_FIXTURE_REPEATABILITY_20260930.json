@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-30",
+  "scope": "Repeatable GUI package fixture lifecycle, not DBeaver UI acceptance",
+  "sources": ["gaussdb-dbeaver-tests/integration/GuiPackageFixture.java", "gaussdb-dbeaver-tests/integration/GuiPackageFixtureTest.java"],
+  "compilation": "javac --release 21 with JDK 25 succeeded",
+  "environment": "GaussDB 507 centralized, ordinary package_tester in package_lab; fixed dbv_pkg_gui_repeatable schema",
+  "executions": "Final test version completed twice with exit 0; each invocation creates and cleans three lifecycles",
+  "assertions": [
+    "Existing schema refuses setup with 42P06; never adopts pre-existing state",
+    "Normal package returns 42 and current invalid package BODY has pg_object.valid=false",
+    "Extra guard_table blocks RESTRICT schema cleanup with 2BP01",
+    "Failed cleanup rolls back package drops and preserves guard_table row 42",
+    "Removing only the owned guard_table permits cleanup; namespace absent",
+    "Cleanup succeeds when both packages were already removed, without broad deletion"
+  ],
+  "cleanup": "Independent final namespace count=0; temporary host password copy deleted",
+  "limitations": "No server crash/connection-loss cleanup recovery or concurrent ownership changes tested; existing GUI evidence uses the previous dated fixture, not this newly fixed-name fixture runner."
+}
