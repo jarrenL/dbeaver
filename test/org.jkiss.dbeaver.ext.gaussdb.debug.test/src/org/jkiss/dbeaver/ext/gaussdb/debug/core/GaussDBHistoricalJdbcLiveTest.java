@@ -3785,6 +3785,34 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void strictTlsRejectsExpiredLeafWithoutDowngrade() throws Exception {
+        String config = System.getenv("GAUSSDB_HISTORY_TLS_EXPIRED_CONNECTION");
+        String ca = System.getenv("GAUSSDB_HISTORY_TLS_EXPIRED_CA");
+        assumeTrue(config != null && ca != null, "Dedicated expired leaf and current CA endpoint required");
+        assertTrue(Files.isRegularFile(Path.of(ca)));
+        // Only the isolated negative fixture uses non-verifying TLS as a
+        // reachability control; this is never a recommended client setting.
+        withIndependentConnection(c -> assertRows(c, "SELECT 1", List.of(List.of("1"))),
+            null, java.util.Map.of("sslmode", "require"), config);
+        for (String mode : List.of("verify-ca", "verify-full")) {
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(c -> fail("Expired leaf must not connect"),
+                    null, java.util.Map.of("sslmode", mode, "sslrootcert", ca), config));
+            assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
+            boolean expired = false;
+            for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                expired |= cause instanceof java.security.cert.CertificateExpiredException;
+                if (cause instanceof java.security.cert.CertPathValidatorException validation) {
+                    expired |= validation.getReason() == java.security.cert.CertPathValidatorException.BasicReason.EXPIRED;
+                }
+            }
+            assertTrue(expired, "Must reject certificate expiry, not an unrelated connection failure");
+        }
+        withIndependentConnection(c -> assertRows(c, "SELECT 2", List.of(List.of("2"))),
+            null, java.util.Map.of("sslmode", "require"), config);
+    }
+
+    @Test
     void strictTlsRejectsTrustedCertificateWithWrongHostname() throws Exception {
         String config = tlsConnection("GAUSSDB_HISTORY_TLS_WRONG_HOST_CONNECTION");
         String certificate = System.getenv("GAUSSDB_HISTORY_TLS_WRONG_HOST_CA");
