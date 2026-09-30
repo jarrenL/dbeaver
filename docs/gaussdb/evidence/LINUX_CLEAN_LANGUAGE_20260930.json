@@ -1,0 +1,29 @@
+{
+  "product": "26.1.5.202609300327",
+  "sourceCommit": "c5cc8f319e230d206e0a468a29ac32ab100522d9",
+  "platform": "Kylin V10 Lance x86_64 container, emulated on ARM host",
+  "java": "Temurin 21.0.12.1",
+  "candidate": "linux-clean-20260930-baPJkI/package/dbeaver",
+  "deployedCopy": "/opt/clean-delivery-20260930",
+  "workspace": "/tmp/clean-delivery-workspace-20260930",
+  "display": ":100",
+  "instrumentation": "External X11 pointer input and screenshots; no SWTBot in product",
+  "launchArguments": "-clean -data /tmp/clean-delivery-workspace-20260930",
+  "steps": [
+    "Launch as ordinary tester user without -nl; English workbench opens",
+    "Dismiss upstream update offer without installing an update",
+    "Help > Show Product Configuration > Language > Simplified Chinese",
+    "Acknowledge restart notice; complete wizard, leave procedure debugger enabled, disable anonymous statistics and daily tips",
+    "Apply, accept restart and exit confirmation",
+    "Observe restarted workbench with Chinese File/Edit/Navigate/Search/Database/Window/Help menus and zh status"
+  ],
+  "result": "PASS for clean-product startup and GUI-selected language restart",
+  "screenshot": "LINUX_CLEAN_LANGUAGE_20260930.png",
+  "initialFixtureFailure": "First display startup as tester failed on a pre-existing root-owned X100 lock. Product reported gtk_init_check failure. Starting isolated Xvfb as root succeeded; DBeaver remained ordinary-user. Failed attempt is not counted as a pass.",
+  "limitations": [
+    "New workspace, but existing tester home/global settings; not virgin-user onboarding",
+    "Projects and default folder names remain English in screenshot; not proof of complete localization",
+    "No database connection or original seven-feature acceptance in this clean copy yet",
+    "Not customer desktop-cloud certification, ARM acceptance, archive acceptance or release approval"
+  ]
+}
