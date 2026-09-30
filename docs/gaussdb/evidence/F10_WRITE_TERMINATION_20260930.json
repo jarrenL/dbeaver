@@ -1,0 +1,20 @@
+{
+  "environment": "Kylin x86_64 emulation, product test copy 26.1.5.202609300113, GaussDB 507 CN",
+  "scope": "Real DBeaver debugger toolbar Terminate (F10 command), not session manager; not physical keyboard validation",
+  "fixture": "Dedicated ordinary-user-owned dbv_f10_20260930.audit, committed id=1; write_then_wait(integer) inserts parameter then PERFORM pg_sleep(60)",
+  "launch": "New GUI configuration F10 uncommitted regression 20260930, input p_id=2",
+  "observations": [
+    "Initial pause at INSERT, source line 3",
+    "Step over reaches line 4; independent observer count/min/max=1/1/1",
+    "Second step enters pg_sleep; independent pg_stat_activity confirms active CALL and execute stmt SELECT pg_sleep(60)",
+    "Terminate clicked while target running; initial subsequent snapshot still has target and disabled terminate, not accepted as completion",
+    "After cleanup, tree says terminated, independent audit count/min/max=1/1/1 and matching target calls=0",
+    "Same client/config starts again and pauses line 3; terminate succeeds, observer again 1/1/1 and target calls=0",
+    "Dedicated schema dropped (two fixture objects); role grant revoked; independent schema count=0 and pg_has_role=false"
+  ],
+  "dataOutcome": "PASS: committed baseline retained, uncommitted insert absent, relaunch succeeds",
+  "remainingFinding": "Connection close timeout at 03:52:25 after terminate action 03:52:20, plus statement-not-closed diagnostic. Bounded cleanup behavior requires code review and repeat; not marked fully closed.",
+  "rawUiEvidence": "f10-write-20260930/",
+  "limitations": ["Not clean release package acceptance", "Not a second full running-DML termination round", "No exact end-to-end latency assertion", "No physical F10 key assertion"],
+  "fixtureFailuresExcluded": ["SET ROLE rejected; fixture subsequently created with ordinary account JDBC", "TreeItem F5 and custom-combo automation attempts rejected; corrected via observed GUI controls"]
+}
