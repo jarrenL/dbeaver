@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-30",
+  "scope": "Real Kylin x86_64 GUI test copy on ARM host emulation; GaussDB 507 distributed endpoint; ordinary authorized account; not a customer desktop-cloud certification",
+  "productCopy": "/opt/acceptance-20260930",
+  "fixtureSource": "gaussdb-dbeaver-tests/integration/GuiSessionTarget.java",
+  "replay": "Launch fixture with protected properties, mode cancel or terminate, and a fresh dbv_gui_ marker. Refresh sessions, observe fresh widget IDs and match application marker, PID and backend start time. Select only that row, click Cancel query/Terminate, verify confirmation PID, then confirm. Never replay recorded widget IDs or old PIDs.",
+  "cancel": {
+    "marker": "dbv_gui_cancel_20260930a",
+    "pid": "281469332076864",
+    "uiEvidence": ["028.cmd.result", "029.cmd.result", "030.cmd.result", "031.cmd.result"],
+    "confirmation": "Cancel query of session [281469332076864@distributed_acceptance]?",
+    "sqlState": "57014",
+    "sameConnectionSelect42": true,
+    "fixtureExit": 0
+  },
+  "terminate": {
+    "marker": "dbv_gui_terminate_20260930a",
+    "pid": "281469332076864",
+    "uiEvidence": ["034.cmd.result", "035.cmd.result", "036.cmd.result", "039.cmd.result"],
+    "confirmation": "Terminate session [281469332076864@distributed_acceptance]?",
+    "sqlState": "57P01",
+    "oldConnectionInvalid": true,
+    "freshConnectionSelect42": true,
+    "fixtureExit": 0
+  },
+  "independentDatabaseCheck": {"matchingApplicationMarkersRemaining": 0},
+  "afterExplicitRefresh": "Only the DBeaver View sessions connection remains in the visible list; no error dialog",
+  "pidReuse": "The server reused the same numeric PID for later connections. Every action was tied to a freshly observed marker and backend start time; this is not proof of race-free behavior between refresh and action.",
+  "limits": ["One GUI run per action, not repeated GUI acceptance", "No thread-pool dual-identifier validation", "No arbitrary-user privilege escalation test", "No automatic refresh claim", "No DML rollback claim: fixture runs read-only pg_sleep"]
+}
