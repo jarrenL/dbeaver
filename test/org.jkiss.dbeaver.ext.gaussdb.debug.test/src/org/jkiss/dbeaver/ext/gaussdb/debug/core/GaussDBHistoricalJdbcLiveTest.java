@@ -3786,25 +3786,27 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
 
     @Test
     void strictTlsRejectsTrustedCertificateWithWrongHostname() throws Exception {
+        String config = tlsConnection("GAUSSDB_HISTORY_TLS_WRONG_HOST_CONNECTION");
         String certificate = System.getenv("GAUSSDB_HISTORY_TLS_WRONG_HOST_CA");
         assumeTrue(certificate != null, "Dedicated trusted but wrong-host server certificate required");
         assertTrue(Files.isRegularFile(Path.of(certificate)));
         inIsolatedSchema((c, s) -> {
             withIndependentConnection(connection -> assertRows(connection, "SELECT 1", List.of(List.of("1"))),
-                null, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate));
+                null, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate), config);
             var failure = assertThrows(java.sql.SQLException.class, () ->
                 withIndependentConnection(connection -> fail("Wrong hostname must not connect in verify-full mode"),
-                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate)));
+                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate), config));
             assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
             assertTrue(failure.getMessage().toLowerCase(java.util.Locale.ROOT).contains("hostname"),
                 "Expected hostname verification rejection");
             withIndependentConnection(connection -> assertRows(connection, "SELECT 2", List.of(List.of("2"))),
-                null, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate));
-        });
+                null, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate), config);
+        }, java.util.Map.of("sslmode", "verify-ca", "sslrootcert", certificate), config);
     }
 
     @Test
     void strictTlsRejectsExistingUnrelatedCertificateWithoutDowngrade() throws Exception {
+        String config = tlsConnection("GAUSSDB_HISTORY_TLS_CONNECTION");
         String trusted = System.getenv("GAUSSDB_HISTORY_TLS_CA");
         String unrelated = System.getenv("GAUSSDB_HISTORY_TLS_UNRELATED_CA");
         assumeTrue(trusted != null && unrelated != null, "Dedicated trusted and unrelated TLS certificates required");
@@ -3813,10 +3815,10 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         assertFalse(java.util.Arrays.equals(Files.readAllBytes(Path.of(trusted)), Files.readAllBytes(Path.of(unrelated))));
         inIsolatedSchema((c, s) -> {
             withIndependentConnection(connection -> assertRows(connection, "SELECT 1", List.of(List.of("1"))),
-                null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted));
+                null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted), config);
             var failure = assertThrows(java.sql.SQLException.class, () ->
                 withIndependentConnection(connection -> fail("Untrusted server must not connect"),
-                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", unrelated)));
+                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", unrelated), config));
             assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
             boolean handshakeFailure = false;
             for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
@@ -3824,12 +3826,13 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             }
             assertTrue(handshakeFailure, "Expected certificate handshake rejection, not an unrelated connection failure");
             withIndependentConnection(connection -> assertRows(connection, "SELECT 2", List.of(List.of("2"))),
-                null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted));
-        });
+                null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted), config);
+        }, java.util.Map.of("sslmode", "verify-full", "sslrootcert", trusted), config);
     }
 
     @Test
     void strictTlsConnectsWithTrustedCertificateAndRejectsMissingTrustFile() throws Exception {
+        String config = tlsConnection("GAUSSDB_HISTORY_TLS_CONNECTION");
         String certificate = System.getenv("GAUSSDB_HISTORY_TLS_CA");
         assumeTrue(certificate != null && Files.isRegularFile(Path.of(certificate)), "Dedicated TLS CA required");
         inIsolatedSchema((c, s) -> {
@@ -3840,13 +3843,18 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             withIndependentConnection(connection -> {
                 assertTrue(connection.isValid(5));
                 assertRows(connection, "SELECT '中文 TLS', 42", List.of(List.of("中文 TLS", "42")));
-            }, null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate));
+            }, null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate), config);
             var failure = assertThrows(java.sql.SQLException.class, () ->
                 withIndependentConnection(connection -> fail("Missing trust must not fall back to plaintext"),
-                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate + ".missing")));
+                    null, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate + ".missing"), config));
             assertTrue(failure.getSQLState() != null && failure.getSQLState().startsWith("08"));
             assertRows(c, "SELECT 1", List.of(List.of("1")));
-        });
+        }, java.util.Map.of("sslmode", "verify-full", "sslrootcert", certificate), config);
+    }
+
+    private static String tlsConnection(String variable) {
+        String config = System.getenv(variable);
+        return config == null ? System.getenv("GAUSSDB_HISTORY_CONNECTION") : config;
     }
 
     @Test
