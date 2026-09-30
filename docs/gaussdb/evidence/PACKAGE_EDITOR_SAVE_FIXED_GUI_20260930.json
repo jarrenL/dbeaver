@@ -1,0 +1,30 @@
+{
+  "sourceCommit": "f90f4186a9",
+  "productVersion": "26.1.5.202609300652",
+  "productRoot": "linux-package-save-20260930-pA7xf2",
+  "build": "Full aggregate product build succeeded; packaging skipped tests only after separate regression",
+  "reactor": {"report": "PACKAGE_EDITOR_SAVE_REACTOR_20260930.json", "tests": 2732, "passed": 2715, "skipped": 17, "failures": 0, "errors": 0},
+  "skipDelta": "Compared with PROGRESS_NLS_REACTOR, independent dumpall test was not enabled in this invocation; no claim of current dumpall live coverage",
+  "assembly": "Both architectures assembled with existing native/JRE inputs, input and final hygiene checks passed; no fresh native rebuild",
+  "gui": {
+    "architecture": "aarch64",
+    "path": "/opt/clean-package-save-20260930",
+    "workspace": "Reused isolated clean-current-workspace after graceful exit of previous application; no SWTBot/test plugins",
+    "steps": [
+      "Open invalid gui_bad package Body editor",
+      "Replace with valid plain CREATE PACKAGE BODY returning 43 (without OR REPLACE)",
+      "Click Save: preview contains only CREATE OR REPLACE PACKAGE BODY; no unchanged specification action",
+      "Execute: no error, dirty editor cleared; independent function query returns 43",
+      "Click Compile Body: success message, Normal body status, current package OID 70917 error count 0"
+    ],
+    "screenshots": ["package-editor-save-20260930/package-fixed-arm-preview.png", "package-editor-save-20260930/package-fixed-arm-saved.png", "package-editor-save-20260930/package-fixed-arm-compile.png"]
+  },
+  "followUps": [
+    "Immediately after save, body state remained cached Invalid until explicit Compile Body refreshed it; automatic post-save state refresh remains a UI improvement to evaluate",
+    "Source editor tooltip exposed unresolved %db.editor.source.description resource key",
+    "Only ARM GUI repair path rerun here; new x86 product is assembled but not GUI accepted",
+    "Remaining debugger/full clean-product regression, packaging provenance/checksums and publication not completed"
+  ],
+  "diagnosticBoundary": "gs_errors filtered only by name included an orphan older OID 70912; current package must be matched by OID. Current OID error count verified zero, not all similarly named rows.",
+  "cleanup": "Two dedicated packages and dbv_pkg_gui_20260930 schema dropped in a transaction with schema RESTRICT; independent schema count zero. Local private password copy and its empty temporary directory removed. Reactor temporary database/review role also independently absent. Existing database/user credentials unchanged."
+}
