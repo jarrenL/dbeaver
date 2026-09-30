@@ -1,0 +1,21 @@
+objectClass=org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage
+parentClass=org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder
+objectReadOnly=false
+nodeReadOnly=false
+manager=org.jkiss.dbeaver.ext.gaussdb.edit.GaussDBPackageManager
+maker=true
+managerCanDelete=true
+metadataChangeDisabled=false
+canDelete=true
+ACTION object-actions 347
+objectClass=org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage
+parentClass=org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder
+objectReadOnly=false
+nodeReadOnly=false
+manager=org.jkiss.dbeaver.ext.gaussdb.edit.GaussDBPackageManager
+maker=true
+managerCanDelete=true
+metadataChangeDisabled=false
+canDelete=true
+ACTION object-actions 349
+OK

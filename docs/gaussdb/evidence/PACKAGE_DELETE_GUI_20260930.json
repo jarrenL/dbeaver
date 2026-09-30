@@ -1,0 +1,11 @@
+{
+  "environment": "Kylin x86_64 test copy, centralized GaussDB 507 A, ordinary package_tester",
+  "supersedes": "PACKAGE_GUI_20260930.json openFinding",
+  "diagnostics": "Both GaussDBPackage objects have objectReadOnly=false, nodeReadOnly=false, correct GaussDBPackageManager, maker=true, managerCanDelete=true, metadataChangeDisabled=false, canDelete=true",
+  "observedResolution": "Actual left click in navigator followed by right click exposes Delete. Programmatic selection had not established active navigator context. No production permission or object manager change.",
+  "batchDeletion": "After activating navigator, multi-select gui_valid/gui_bad; Delete confirmation lists precisely dbv_pkg_gui_20260930.gui_valid and dbv_pkg_gui_20260930.gui_bad; click Yes",
+  "independentPackageCountAfterGuiDeletion": 0,
+  "cleanup": "Empty owned schema dropped with RESTRICT, independent schema count 0; temporary host credential copy deleted",
+  "evidenceDirectory": "package-delete-gui-20260930",
+  "limits": ["One batch deletion round, not repeated or final clean package acceptance", "Read-only diagnostic test plugin excluded from delivery", "Test helper compiled Java21 target; source grid-click changes predating this task preserved separately"]
+}

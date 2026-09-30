@@ -243,6 +243,40 @@ public final class Bot implements IStartup {
             case "context-selection" -> new SWTBotTree((Tree) widget).contextMenu(args[2]).click();
             case "dropdown" -> new SWTBotToolbarDropDownButton((ToolItem) widget).menuItem(args[2]).click();
             case "model" -> inspectModel((TreeItem) widget, out);
+            case "object-actions" -> display.syncExec(() -> {
+                try {
+                    Object node = ((TreeItem) widget).getData();
+                    Object object = node.getClass().getMethod("getObject").invoke(node);
+                    var model = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model");
+                    Class<?> objectType = model.loadClass("org.jkiss.dbeaver.model.struct.DBSObject");
+                    Class<?> nodeType = model.loadClass("org.jkiss.dbeaver.model.navigator.DBNNode");
+                    out.println("objectClass=" + object.getClass().getName());
+                    out.println("parentClass=" + node.getClass().getMethod("getParentNode").invoke(node).getClass().getName());
+                    out.println("objectReadOnly=" + model.loadClass("org.jkiss.dbeaver.model.DBUtils")
+                        .getMethod("isReadOnly", objectType).invoke(null, object));
+                    out.println("nodeReadOnly=" + model.loadClass("org.jkiss.dbeaver.model.navigator.DBNUtils")
+                        .getMethod("isReadOnly", nodeType).invoke(null, node));
+                    var registry = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.registry")
+                        .loadClass("org.jkiss.dbeaver.registry.ObjectManagerRegistry");
+                    Object manager = registry.getMethod("getObjectManager", Class.class)
+                        .invoke(registry.getMethod("getInstance").invoke(null), object.getClass());
+                    out.println("manager=" + (manager == null ? "null" : manager.getClass().getName()));
+                    if (manager != null) {
+                        var maker = model.loadClass("org.jkiss.dbeaver.model.edit.DBEObjectMaker");
+                        out.println("maker=" + maker.isInstance(manager));
+                        if (maker.isInstance(manager)) out.println("managerCanDelete=" + maker
+                            .getMethod("canDeleteObject", objectType).invoke(manager, object));
+                    }
+                    Class<?> tester = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.ui.navigator")
+                        .loadClass("org.jkiss.dbeaver.ui.actions.ObjectPropertyTester");
+                    out.println("metadataChangeDisabled=" + tester.getMethod("isMetadataChangeDisabled",
+                        model.loadClass("org.jkiss.dbeaver.model.navigator.DBNDatabaseNode")).invoke(null, node));
+                    out.println("canDelete=" + tester.getMethod("test", Object.class, String.class, Object[].class, Object.class)
+                        .invoke(tester.getConstructor().newInstance(), node, "canDelete", new Object[0], null));
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException("Read-only object-action diagnostic failed", e);
+                }
+            });
             case "modes" -> inspectModes((TreeItem) widget, out);
             case "navigation-race" -> navigationRace((Shell) widget, args[2], out);
             case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], out);
