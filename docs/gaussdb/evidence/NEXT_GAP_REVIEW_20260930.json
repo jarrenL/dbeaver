@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-30",
+  "status": "review-candidates-not-test-results",
+  "method": "Independent read-only review suggestions checked against current production source",
+  "candidates": [
+    {
+      "area": "Query history criteria",
+      "source": "QMRegistryImpl.DefaultEventBrowser.getQueryHistoryCursor",
+      "confirmedObservation": "Current path reverses events and filters object/query types, custom filter, empty SQL and search text; proposed status/date/sort criteria need executable contract coverage",
+      "next": "Inspect criteria defaults and UI use, add controlled status/date/order cases before changing shared behavior"
+    },
+    {
+      "area": "Sequence/object search",
+      "source": "PostgreStructureAssistant.getSearchObjectTypes",
+      "confirmedObservation": "Advertised types include schema/table/constraint/procedure/column/data type, not sequence",
+      "qualification": "Not advertising an unsupported type is not by itself a silent-search bug; sequence search is an applicable requested capability to assess. Package and synonym require separate GaussDB-specific design.",
+      "next": "Verify routing/resolution and existing tests; add supported sequence search without pretending all object types are already covered"
+    },
+    {
+      "area": "Plan node visual categories",
+      "source": "PostgrePlanNodeBase.getNodeKind",
+      "confirmedObservation": "Substring categories have gaps for additional server node labels",
+      "qualification": "Do not blindly map every SetOp to UNION or freeze a misleading Gather Merge classification. Default visual kind does not prove XML parsing or query execution failed.",
+      "next": "Verify plan-kind semantics and actual server labels before red-green tests and classification changes"
+    }
+  ],
+  "limits": [
+    "No new automated/live/GUI pass count from review",
+    "Review baseline predates run-mMqYHr and the latest clean build",
+    "No claim of original internal test source access or full scenario coverage",
+    "Existing clean-product GUI acceptance remains pending independently of these candidates"
+  ]
+}
