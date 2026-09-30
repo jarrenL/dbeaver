@@ -22,6 +22,8 @@ for (const newline of ['\n', '\r\n']) {
         const first = fs.readFileSync(path.join(root, 'dbeaver.ini'), 'utf8');
         assert(first.includes('plugins/org.jkiss.dbeaver.launcher_1.0.59.test.jar'));
         assert(first.includes(['-vm', 'jre/bin/javaw.exe', '-vmargs'].join(newline)));
+        assert(first.includes(`${newline}-Dpolicy.software.update.disabled=true${newline}`));
+        assert(first.indexOf('-Dpolicy.software.update.disabled=true') > first.indexOf('-vmargs'));
         configureLauncher(root);
         assert.equal(fs.readFileSync(path.join(root, 'dbeaver.ini'), 'utf8'), first);
     });
@@ -35,4 +37,18 @@ test('rejects forced locale in a customer package', t => {
     const root = fixture(t);
     fs.appendFileSync(path.join(root, 'dbeaver.ini'), '-nl\nzh\n');
     assert.throws(() => configureLauncher(root), /override/);
+});
+test('rejects conflicting custom-package update policy without changing input', t => {
+    const root = fixture(t);
+    const file = path.join(root, 'dbeaver.ini');
+    fs.appendFileSync(file, '-Dpolicy.software.update.disabled=false\n');
+    const original = fs.readFileSync(file, 'utf8');
+    assert.throws(() => configureLauncher(root), /update policy/);
+    assert.equal(fs.readFileSync(file, 'utf8'), original);
+});
+test('requires exactly one VM arguments section', t => {
+    const root = fixture(t);
+    const file = path.join(root, 'dbeaver.ini');
+    fs.appendFileSync(file, '-vmargs\n');
+    assert.throws(() => configureLauncher(root), /VM arguments/);
 });
