@@ -68,9 +68,9 @@ class GaussDBSessionLiveTest {
         try (Connection observer = connect(); CommitReplyProxy proxy = new CommitReplyProxy();
              Connection target = connect(proxy.port(), 0)) {
             exec(observer, "CREATE SCHEMA review_commit_cancel");
-            exec(observer, "CREATE TABLE review_commit_cancel.rows(id integer)");
             var workers = Executors.newFixedThreadPool(2);
             try {
+                exec(observer, "CREATE TABLE review_commit_cancel.rows(id integer)");
                 target.setAutoCommit(false); exec(target, "INSERT INTO review_commit_cancel.rows VALUES(1)");
                 var session = new GaussDBDebugSession(mock(GaussDBDebugController.class), context(observer),
                     context(target), mock(GaussDBProcedure.class));
@@ -84,6 +84,7 @@ class GaussDBSessionLiveTest {
                 });
                 long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                 while (proxy.commits.get() == 0) { assertTrue(System.nanoTime() < deadline); Thread.sleep(20); }
+                deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                 while (!scalar(observer, "SELECT count(*) FROM review_commit_cancel.rows").equals("1")) {
                     assertTrue(System.nanoTime() < deadline); Thread.sleep(20);
                 }
@@ -110,8 +111,8 @@ class GaussDBSessionLiveTest {
         try (Connection observer = connect(); CommitReplyProxy proxy = new CommitReplyProxy();
              Connection target = connect(proxy.port())) {
             exec(observer, "CREATE SCHEMA review_commit_fault");
-            exec(observer, "CREATE TABLE review_commit_fault.rows(id integer)");
             try {
+                exec(observer, "CREATE TABLE review_commit_fault.rows(id integer)");
                 target.setAutoCommit(false);
                 exec(target, "INSERT INTO review_commit_fault.rows VALUES (1)");
                 var session = new GaussDBDebugSession(mock(GaussDBDebugController.class), context(observer),
@@ -233,8 +234,9 @@ class GaussDBSessionLiveTest {
         try (Connection t = connect(); Connection c = connect()) {
             exec(t, "CREATE SCHEMA review_breakpoints");
             var pool = Executors.newSingleThreadExecutor();
-            Future<?> targetJob = null;
-            try {
+            var targetJob = new java.util.concurrent.atomic.AtomicReference<Future<?>>();
+            // A resource cleanup preserves the primary failure as well as cleanup failures.
+            try (AutoCloseable cleanup = () -> cleanupDebugger(targetJob.get(), pool, t, c)) {
                 exec(t, "CREATE PROCEDURE review_breakpoints.p() AS DECLARE\nv integer := 0;\nBEGIN\nv := v + 1;\nv := v + 2;\nEND;");
                 long oid = Long.parseLong(scalar(t, "SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='review_breakpoints'"));
                 String database = scalar(t, "SELECT current_database()");
@@ -243,7 +245,7 @@ class GaussDBSessionLiveTest {
                 try (Statement s = t.createStatement(); ResultSet r = s.executeQuery("SELECT * FROM DBE_PLDEBUGGER.turn_on(" + oid + "::oid)")) {
                     assertTrue(r.next()); node = r.getString(1); port = r.getInt(2);
                 }
-                targetJob = pool.submit(() -> { try { exec(t, "CALL review_breakpoints.p()"); } catch (Exception e) { throw new RuntimeException(e); } });
+                targetJob.set(pool.submit(() -> { try { exec(t, "CALL review_breakpoints.p()"); } catch (Exception e) { throw new RuntimeException(e); } }));
                 try (PreparedStatement attach = c.prepareStatement("SELECT * FROM DBE_PLDEBUGGER.attach(?, ?)")) {
                     attach.setString(1, node); attach.setInt(2, port); attach.setQueryTimeout(10);
                     GaussDBDebugSession.attachWithRetry(attach, new VoidProgressMonitor(), () -> false);
@@ -297,18 +299,47 @@ class GaussDBSessionLiveTest {
                 assertEquals("0", scalar(c, "SELECT count(*) FROM DBE_PLDEBUGGER.info_breakpoints()"));
                 verify(marker, never()).getMarker();
                 verifyRealWorkspaceMarkerDeletion(c, controller, session, descriptor);
-            } finally {
-                if (targetJob != null && !targetJob.isDone()) {
-                    try { exec(c, "SELECT DBE_PLDEBUGGER.abort()"); } catch (Exception ignored) { }
-                }
-                if (targetJob != null) {
-                    try { targetJob.get(15, TimeUnit.SECONDS); } catch (ExecutionException expectedAbort) { }
-                }
-                pool.shutdownNow();
-                if (!t.getAutoCommit()) { t.rollback(); t.setAutoCommit(true); }
-                exec(t, "DROP SCHEMA review_breakpoints CASCADE");
             }
         }
+    }
+
+    private static void cleanupDebugger(Future<?> job, ExecutorService pool, Connection target, Connection control) {
+        if (job != null && !job.isDone()) {
+            try { exec(control, "SELECT DBE_PLDEBUGGER.abort()"); } catch (Exception ignored) { }
+        }
+        // Each cleanup is attempted even when waiting for the target times out.
+        assertAll("debugger fixture cleanup",
+            () -> {
+                if (job != null) {
+                    try { job.get(15, TimeUnit.SECONDS); }
+                    catch (ExecutionException expectedAbort) { }
+                    catch (TimeoutException | InterruptedException failure) {
+                        try { target.abort(Runnable::run); }
+                        catch (Exception abortFailure) { failure.addSuppressed(abortFailure); }
+                        if (failure instanceof InterruptedException) { Thread.currentThread().interrupt(); }
+                        throw failure;
+                    }
+                }
+            },
+            () -> { pool.shutdownNow(); assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS)); },
+            () -> { if (!target.isClosed() && !target.getAutoCommit()) { target.rollback(); } },
+            () -> exec(control, "DROP SCHEMA review_breakpoints CASCADE"));
+    }
+
+    @Test
+    void debuggerCleanupTimeoutStillStopsWorkersAndDropsOwnedSchema() throws Exception {
+        Future<?> job = mock(Future.class);
+        when(job.get(15, TimeUnit.SECONDS)).thenThrow(new TimeoutException("synthetic timeout"));
+        ExecutorService pool = mock(ExecutorService.class);
+        when(pool.awaitTermination(5, TimeUnit.SECONDS)).thenReturn(true);
+        Connection target = mock(Connection.class), control = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        when(control.createStatement()).thenReturn(statement);
+        assertThrows(org.opentest4j.MultipleFailuresError.class, () -> cleanupDebugger(job, pool, target, control));
+        verify(target).abort(any());
+        verify(pool).shutdownNow();
+        verify(target).rollback();
+        verify(statement).execute("DROP SCHEMA review_breakpoints CASCADE");
     }
 
     private static void verifyRealWorkspaceMarkerDeletion(Connection connection, GaussDBDebugController controller,
