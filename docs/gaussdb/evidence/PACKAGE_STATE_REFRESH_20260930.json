@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-30",
+  "scope": "Post-save read-only property refresh; ARM Kylin V10 native GUI and GaussDB 507 centralized A database",
+  "cause": "EntityEditor already reads DBPStatefulObject state after save; the property form reloads values only on forced refresh, leaving the visible status stale",
+  "fix": "ObjectPropertiesEditor refreshes only read-only form values for stateful objects after successful save processing. No explicit compilation, command reset or nested source-editor refresh. Editability is checked again when asynchronous values are applied.",
+  "unitTests": {
+    "class": "PostSaveReadOnlyPropertiesTest",
+    "tests": 4,
+    "passed": 4,
+    "coverage": ["stateful-only post-save wiring", "absent panel", "read-only selection preserves order and excludes editable fields", "uninitialized form"],
+    "limit": "Does not independently inject an editability change during the asynchronous UI callback"
+  },
+  "reactor": {"id": "run-0H8BeK", "tests": 2737, "passed": 2719, "skipped": 18, "failures": 0, "errors": 0, "freshResultGate": "passed"},
+  "guiArtifact": {
+    "base": "26.1.5.202609300652",
+    "modifiedBundle": "org.jkiss.dbeaver.ui.navigator_1.0.185.202609300723.jar",
+    "sha256": "dc5639e94c802fda5e86e16b6f234cba59cd513bc667c0ad97780d1bd12ff76b",
+    "installation": "Graceful application exit, old bundle retained outside product, built bundle hash matched installed bundle, bundle registration updated, restart with clean cache",
+    "limit": "Targeted replacement in isolated test client, not final rebuilt distribution acceptance"
+  },
+  "steps": [
+    {"action": "Open newly created invalid gui_bad package body", "result": "objectId 72061; declaration Normal and body Invalid", "image": "package-state-refresh-20260930/package-state-invalid.png"},
+    {"action": "Edit actual Body source to return 44 using plain CREATE PACKAGE BODY, Save", "result": "Preview emits only CREATE OR REPLACE PACKAGE BODY", "image": "package-state-refresh-20260930/package-state-preview.png"},
+    {"action": "Execute save without Compile or Refresh", "result": "Dirty marker cleared, body becomes Normal automatically; independent connection returns 44 and current OID has S/B validity true", "image": "package-state-refresh-20260930/package-state-saved.png"},
+    {"action": "Attempt to save incomplete @@@ body", "result": "Save rejected with package-not-ended message; dirty marker retained, independent server still returns 44 with S/B validity true; this does not establish a server SQL execution failure", "image": "package-state-refresh-20260930/package-state-save-error.png"},
+    {"action": "Correct body to return 45 and save again", "result": "Dirty marker cleared, Normal status; independent server returns 45 and S/B validity true", "image": "package-state-refresh-20260930/package-state-retried.png"}
+  ],
+  "cleanup": "Two dedicated fixture packages dropped; schema DROP RESTRICT succeeded in one transaction; schema count zero. Temporary local password copy removed. Other schemas untouched.",
+  "remaining": ["final rebuilt product GUI regression", "x86 repetition", "manual transaction and concurrent edit/state refresh variants", "all other historical scenario groups retain their individual coverage status"]
+}

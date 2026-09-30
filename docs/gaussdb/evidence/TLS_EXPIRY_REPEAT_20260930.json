@@ -1,0 +1,11 @@
+{
+  "date": "2026-09-30",
+  "scope": "Repeat of expired-server-leaf rejection on isolated GaussDB 507",
+  "test": "GaussDBHistoricalJdbcLiveTest.strictTlsRejectsExpiredLeafWithoutDowngrade",
+  "result": "passed, 0.178 seconds, no skipped element",
+  "runner": "run-tls-live.mjs --expiry-only",
+  "checks": "An expired leaf signed by a currently valid CA is rejected in verify-ca and verify-full with expiry-specific cause. Non-verifying TLS is used only as an isolated fixture reachability control before and after, never as a product recommendation.",
+  "run": {"id": "run-QYxaE1", "tests": 2737, "passed": 2721, "skipped": 16, "failures": 0, "errors": 0, "freshResultGate": "passed"},
+  "cleanup": "Owned TLS container removed, dedicated database and roles removed, synthetic cluster stopped and removed, original HBA restored",
+  "limit": "JDBC endpoint verification, not DBeaver SSL settings GUI or target financial-version acceptance"
+}

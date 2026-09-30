@@ -179,6 +179,26 @@ public class TabbedFolderPageForm extends TabbedFolderPage implements IRefreshab
         refreshProperties(null);
     }
 
+    void refreshReadOnlyProperties() {
+        if (curPropertySource == null || ownerControl.isDisposed() || !formEditor.hasEditors()) {
+            return;
+        }
+        curPropertySource = input.getPropertySource();
+        // Saving already refreshes stateful objects in EntityEditor. Reload only
+        // their display values: never reset commands, source text or editable fields.
+        List<DBPPropertyDescriptor> properties = readOnlyProperties(
+            formEditor.filterProperties(curPropertySource.getProperties()), curPropertySource.getEditableValue());
+        if (!properties.isEmpty()) {
+            refreshPropertyValues(properties, false, null, true);
+        }
+    }
+
+    private static List<DBPPropertyDescriptor> readOnlyProperties(
+        List<DBPPropertyDescriptor> properties, Object object
+    ) {
+        return properties.stream().filter(property -> !property.isEditable(object)).toList();
+    }
+
     private void refreshProperties(@Nullable Runnable afterRefresh) {
         if (curPropertySource == null) {
             return;
@@ -324,6 +344,11 @@ public class TabbedFolderPageForm extends TabbedFolderPage implements IRefreshab
     }
 
     private void refreshPropertyValues(List<DBPPropertyDescriptor> allProps, boolean disableControls, Runnable afterRefresh) {
+        refreshPropertyValues(allProps, disableControls, afterRefresh, false);
+    }
+
+    private void refreshPropertyValues(List<DBPPropertyDescriptor> allProps, boolean disableControls,
+        Runnable afterRefresh, boolean readOnlyOnly) {
         DBSObject databaseObject = input.getDatabaseObject();
         if (databaseObject == null) {
             // Disposed
@@ -355,6 +380,10 @@ public class TabbedFolderPageForm extends TabbedFolderPage implements IRefreshab
             ownerControl.createDefaultLoadVisualizer(editorValues -> {
                 if (ownerControl.isDisposed()) {
                     return;
+                }
+                if (readOnlyOnly) {
+                    // Editability may change while the background read is running.
+                    editorValues.keySet().removeIf(property -> property.isEditable(propertySource.getEditableValue()));
                 }
                 formEditor.loadEditorValues(editorValues);
                 if (blockEnableState != null) {

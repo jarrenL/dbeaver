@@ -754,6 +754,9 @@ public class ObjectPropertiesEditor extends AbstractDatabaseObjectEditor<DBSObje
                 }
             }
         }
+        if (propertiesPanel != null && getDatabaseObject() instanceof org.jkiss.dbeaver.model.DBPStatefulObject) {
+            propertiesPanel.refreshReadOnlyProperties();
+        }
     }
 
     void createPropertyRefreshAction(IContributionManager contributionManager) {
