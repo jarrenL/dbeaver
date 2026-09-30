@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-30",
+  "environment": "Kylin x86_64 test copy /opt/acceptance-20260930; GaussDB 507 centralized A package_lab; ordinary package_tester",
+  "evidenceDirectory": "package-gui-20260930",
+  "passed": [
+    "Navigator Compile Specification, Compile Body and Compile All each report gui_valid success",
+    "Independent query gui_valid.value_of returns 42",
+    "gui_bad Body compilation opens diagnostic table and source editor",
+    "Server diagnostic body-relative line 2 corresponds to displayed editor line 4 with CREATE header; caret and diagnostic table agree",
+    "Repair applied through ordinary-user JDBC; subsequent GUI Body compile succeeds",
+    "Editor body state changes Invalid to Normal and diagnostics clear",
+    "Independent query gui_bad.value_of returns 43 and gs_errors count is zero"
+  ],
+  "openFinding": "Multi-selected package context menu has no Delete entry. Keyboard/global Delete produced no confirmation. Batch GUI deletion not accepted; runtime permission, navigator and object-manager gates require diagnosis.",
+  "cleanup": "Owned gui_bad/gui_valid packages and dbv_pkg_gui_20260930 schema removed transactionally by administrative SQL, not GUI deletion. Independent schema count 0. Temporary local password copy deleted; original credential unchanged.",
+  "limits": [
+    "One GUI run; not final clean candidate or repeated acceptance",
+    "No SPEC-error or multi-package diagnostic navigation claim",
+    "External repair left cached editor source until explicit refresh; state refresh alone does not prove source reloading",
+    "Initial unconfigured alternative driver and SET ROLE attempts failed before fixture creation; not product compile failures"
+  ]
+}
