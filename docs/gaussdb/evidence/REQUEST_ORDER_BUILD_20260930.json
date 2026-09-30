@@ -1,0 +1,32 @@
+{
+  "date": "2026-09-30",
+  "status": "clean-build-and-x86-startup-passed-further-gui-acceptance-pending",
+  "productionCommit": "da39ce5467",
+  "productVersion": "26.1.5.202609300906",
+  "build": {
+    "entry": "product/aggregate/pom.xml",
+    "profile": "product-dbeaver-ce",
+    "result": "BUILD SUCCESS",
+    "testPolicy": "Packaging skips tests; separate run-mMqYHr has 2729 passed and 18 skipped"
+  },
+  "architectures": {
+    "x86_64": {"cleanSourceFiles": 641, "assembledFiles": 878, "inventoryEntries": 1202, "matchingNativeFiles": 9, "chineseFragments": 118},
+    "aarch64": {"cleanSourceFiles": 641, "assembledFiles": 878, "inventoryEntries": 1202, "matchingNativeFiles": 9, "chineseFragments": 119}
+  },
+  "x86Gui": {
+    "platform": "Local Kylin V10 container under x86 emulation on ARM host",
+    "upgradeMethod": "Normal File/Exit confirmation, prior product processes absent, copy clean new product to separate directory, launch using existing dedicated test workspace",
+    "aboutVersion": "26.1.5.202609300906",
+    "query": "select 507;",
+    "observedResult": "One row with value 507 using saved package_lab connection",
+    "screenshots": ["request-order-build-20260930/x86-about.png", "request-order-build-20260930/x86-query.png"],
+    "inputIssue": "Initial synthetic key entry produced malformed SQL. After re-focusing and inspecting text, execution button ran valid SQL. This is not counted as a confirmed product defect. Switching back to database perspective cleared lingering completion popup."
+  },
+  "limits": [
+    "No new ARM GUI run or package save/state GUI regression yet",
+    "Request-order race has controlled callback regression evidence, not GUI scheduler stress evidence",
+    "No final archive upload or old remote asset replacement",
+    "Runtime JRE reused from prior validated candidate, not compared with original vendor archive in this step",
+    "Not customer desktop-cloud certification or complete historical scenario acceptance"
+  ]
+}
