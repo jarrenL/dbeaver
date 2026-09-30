@@ -28,7 +28,8 @@
   "cleanup": {
     "activeFixtureCallsBeforeCleanup": 0,
     "schemaRemaining": 0,
-    "temporaryDebugRoleMembershipRestored": false,
+    "debugRoleMembershipAfterCleanup": false,
+    "originalRoleMembershipRestored": true,
     "privatePasswordCopy": "removed",
     "method": "Close routine editor; explicit procedure/table/schema RESTRICT drops in transaction; revoke only temporary grant"
   },
