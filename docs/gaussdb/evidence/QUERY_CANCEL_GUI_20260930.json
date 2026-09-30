@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-30",
+  "environment": "Kylin x86_64 test copy /opt/acceptance-20260930, display :99; GaussDB 507 A package_lab; ordinary package_tester",
+  "sql": "SELECT pg_sleep(120) /* dbv_gui_cancel_20260930 */",
+  "followupSql": "SELECT 42 AS after_cancel /* dbv_gui_cancel_check_20260930 */",
+  "backend": "281469461042880",
+  "rounds": [
+    {"activeObservedSeconds":8.668469,"idleObservedSecondsSinceQueryStart":37.896162,"uiButton":"Cancel","followupOnSameBackend":"idle with exact followup SQL; GUI one row fetched"},
+    {"activeObservedSeconds":8.762928,"idleObservedSecondsSinceQueryStart":30.458395,"uiButton":"Cancel","followupOnSameBackend":"idle with exact followup SQL"}
+  ],
+  "assertions": [
+    "Both queries were independently observed active before the client button was clicked",
+    "Both became idle before the 120-second sleep could finish normally",
+    "No server-side cancellation or termination command was used; cancellation came from the real UI button",
+    "The same backend accepted the followup query after both cancellations",
+    "Final independently observed active fixture query count is zero; no database objects were created"
+  ],
+  "limits": [
+    "Elapsed observations are bounds, not precise cancel latency measurements",
+    "The client intentionally did not display a 57014 error dialog; no UI SQLSTATE claim",
+    "The small split-pane grid did not visibly expose the scalar cell; do not infer displayed 42 from the screenshot",
+    "Autocommit only; cancellation within a manual transaction and slow network are separate scenarios",
+    "Test-only product, not clean final installation package"
+  ],
+  "finding": "ProgressLoaderVisualizer hardcodes Cancel, Canceled, Initializing; source changed to UIMessages English/Chinese resources after these runs. Rebuild and changed-binary GUI validation pending.",
+  "rawSnapshots": [304,306,308,310,312,314],
+  "screenshots": "query-cancel-gui-20260930/"
+}
