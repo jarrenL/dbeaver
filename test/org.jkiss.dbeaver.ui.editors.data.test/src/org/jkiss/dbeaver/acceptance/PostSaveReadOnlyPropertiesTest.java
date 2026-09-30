@@ -190,10 +190,78 @@ class PostSaveReadOnlyPropertiesTest {
         }
     }
 
-    private static void invokeForm(DBPPropertySource source, ObjectEditorPageControl owner,
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void olderReadOnlyResponseCannotOverwriteNewerStatus() throws Exception {
+        var source = mock(DBPPropertySource.class);
+        var owner = mock(ObjectEditorPageControl.class);
+        var editors = mock(CustomFormEditor.class);
+        var input = mock(IDatabaseEditorInput.class);
+        var object = mock(DBSObject.class);
+        var property = mock(DBPPropertyDescriptor.class);
+        doReturn(true).when(editors).hasEditors();
+        doReturn(source).when(input).getPropertySource();
+        doReturn(object).when(input).getDatabaseObject();
+        doReturn(object).when(source).getEditableValue();
+        doReturn("status").when(property).getId();
+        doReturn(List.of(property)).when(editors).filterProperties(any());
+        var form = invokeForm(source, owner, editors, input);
+        var method = Class.forName(FORM).getDeclaredMethod("refreshReadOnlyProperties");
+        method.setAccessible(true);
+        method.invoke(form);
+        ArgumentCaptor<DBRRunnableParametrized<Map<DBPPropertyDescriptor, Object>>> callbacks =
+            ArgumentCaptor.forClass((Class) DBRRunnableParametrized.class);
+        verify(owner, times(2)).createDefaultLoadVisualizer(callbacks.capture());
+        callbacks.getAllValues().get(1).run(new java.util.HashMap<>(Map.of(property, "Normal")));
+        callbacks.getAllValues().get(0).run(new java.util.HashMap<>(Map.of(property, "Invalid")));
+        verify(editors).loadEditorValues(Map.of(property, "Normal"));
+        verify(editors, never()).loadEditorValues(Map.of(property, "Invalid"));
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void readOnlyRefreshDoesNotDiscardUnrelatedFieldsFromEarlierFullLoad() throws Exception {
+        var source = mock(DBPPropertySource.class);
+        var owner = mock(ObjectEditorPageControl.class);
+        var editors = mock(CustomFormEditor.class);
+        var input = mock(IDatabaseEditorInput.class);
+        var object = mock(DBSObject.class);
+        var status = mock(DBPPropertyDescriptor.class);
+        var label = mock(DBPPropertyDescriptor.class);
+        doReturn(true).when(editors).hasEditors();
+        doReturn(source).when(input).getPropertySource();
+        doReturn(object).when(input).getDatabaseObject();
+        doReturn(object).when(source).getEditableValue();
+        doReturn("status").when(status).getId();
+        doReturn("label").when(label).getId();
+        doReturn(true).when(label).isEditable(object);
+        doReturn(List.of(status)).when(editors).filterProperties(any());
+        var form = invokeForm(source, owner, editors, input);
+        var load = Class.forName(FORM).getDeclaredMethod("refreshPropertyValues",
+            List.class, boolean.class, Runnable.class, boolean.class);
+        load.setAccessible(true);
+        load.invoke(form, List.of(status, label), false, null, false);
+        var refresh = Class.forName(FORM).getDeclaredMethod("refreshReadOnlyProperties");
+        refresh.setAccessible(true);
+        refresh.invoke(form);
+        ArgumentCaptor<DBRRunnableParametrized<Map<DBPPropertyDescriptor, Object>>> callbacks =
+            ArgumentCaptor.forClass((Class) DBRRunnableParametrized.class);
+        verify(owner, times(3)).createDefaultLoadVisualizer(callbacks.capture());
+        callbacks.getAllValues().get(2).run(new java.util.HashMap<>(Map.of(status, "Normal")));
+        callbacks.getAllValues().get(1).run(new java.util.HashMap<>(Map.of(status, "Invalid", label, "Name")));
+        callbacks.getAllValues().get(0).run(null);
+        verify(editors).loadEditorValues(Map.of(status, "Normal"));
+        verify(editors).loadEditorValues(Map.of(label, "Name"));
+        verify(editors, times(2)).loadEditorValues(any());
+    }
+
+    private static Object invokeForm(DBPPropertySource source, ObjectEditorPageControl owner,
         CustomFormEditor editors, IDatabaseEditorInput input) throws Exception {
         var type = Class.forName(FORM);
         var form = mock(type, CALLS_REAL_METHODS);
+        var requests = type.getDeclaredField("propertyLoadRequests");
+        requests.setAccessible(true);
+        requests.set(form, new java.util.HashMap<>());
         for (var entry : Map.of("curPropertySource", source, "ownerControl", owner,
             "formEditor", editors, "input", input).entrySet()) {
             var field = type.getDeclaredField(entry.getKey());
@@ -203,5 +271,6 @@ class PostSaveReadOnlyPropertiesTest {
         var method = type.getDeclaredMethod("refreshReadOnlyProperties");
         method.setAccessible(true);
         method.invoke(form);
+        return form;
     }
 }

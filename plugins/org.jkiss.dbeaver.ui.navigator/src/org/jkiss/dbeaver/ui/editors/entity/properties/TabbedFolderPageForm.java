@@ -81,6 +81,8 @@ public class TabbedFolderPageForm extends TabbedFolderPage implements IRefreshab
     private final CustomFormEditor formEditor;
     private Composite propertiesGroup;
     private DBPPropertySource curPropertySource;
+    // Accessed only when scheduling/applying loads on the UI thread.
+    private final Map<Object, Object> propertyLoadRequests = new HashMap<>();
 
     private boolean activated;
     private Button saveButton;
@@ -359,6 +361,10 @@ public class TabbedFolderPageForm extends TabbedFolderPage implements IRefreshab
         ControlEnableState blockEnableState = disableControls ? ControlEnableState.disable(propertiesGroup) : null;
 
         DBPPropertySource propertySource = TabbedFolderPageForm.this.curPropertySource;
+        Object request = new Object();
+        for (DBPPropertyDescriptor property : allProps) {
+            propertyLoadRequests.put(property.getId(), request);
+        }
         LoadingJob<Map<DBPPropertyDescriptor, Object>> service = LoadingJob.createService(
             new DatabaseLoadService<>(
                 "Load '" + DBValueFormatting.getDefaultValueDisplayString(
@@ -378,9 +384,13 @@ public class TabbedFolderPageForm extends TabbedFolderPage implements IRefreshab
                 }
             },
             ownerControl.createDefaultLoadVisualizer(editorValues -> {
-                if (ownerControl.isDisposed()) {
+                if (ownerControl.isDisposed() || editorValues == null) {
                     return;
                 }
+                // A save may start a newer load before an earlier one returns.
+                // Filter per property: a read-only refresh must not discard other
+                // fields still being populated by the initial full load.
+                editorValues.keySet().removeIf(property -> propertyLoadRequests.get(property.getId()) != request);
                 if (readOnlyOnly) {
                     // Editability may change while the background read is running.
                     editorValues.keySet().removeIf(property -> property.isEditable(propertySource.getEditableValue()));

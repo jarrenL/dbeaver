@@ -1,0 +1,36 @@
+{
+  "date": "2026-09-30",
+  "status": "reproduced-fixed-reactor-passed-product-rebuild-pending",
+  "component": "TabbedFolderPageForm.refreshPropertyValues",
+  "defect": "An earlier property-load completion can overwrite a newer displayed status. ObjectEditorPageControl.runService schedules loads without serializing their completions.",
+  "red": {
+    "run": "run-mmQ1qM",
+    "test": "PostSaveReadOnlyPropertiesTest.olderReadOnlyResponseCannotOverwriteNewerStatus",
+    "observed": "Newer completion applies Normal; older completion subsequently calls loadEditorValues with Invalid; never-invoked assertion fails",
+    "method": "Controlled callbacks captured from the actual production loading path; not a timed GUI stress run"
+  },
+  "fix": "Record request ownership by property ID on the UI thread. Completion filters properties superseded by newer loads, while retaining unrelated fields from an earlier full load. Ignore null results from failed loads and retain existing disposed/editability checks.",
+  "green": {
+    "run": "run-mMqYHr",
+    "tests": 2747,
+    "passed": 2729,
+    "skipped": 18,
+    "failures": 0,
+    "errors": 0,
+    "specialistClassTests": 10,
+    "specialistClassFailures": 0,
+    "freshResultGate": "passed",
+    "cleanup": "Temporary centralized fixture and roles removed; original HBA restored"
+  },
+  "newAssertions": [
+    "Older read-only status response cannot overwrite a newer status",
+    "Newer read-only load does not discard unrelated fields from an earlier full load",
+    "Null load completion does not apply values"
+  ],
+  "limits": [
+    "The controlled callback tests are not scheduler-pressure or customer desktop-cloud tests",
+    "No database object validity is changed by this display-only bug",
+    "0733 Linux candidate archives predate this production fix and must be rebuilt before latest release",
+    "18 skipped tests are not passes; remaining historical scenario work is not completed"
+  ]
+}
