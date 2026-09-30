@@ -1,0 +1,20 @@
+{
+  "date": "2026-09-30",
+  "headScanned": "704f2f9b80",
+  "remote": "https://github.com/jarrenL/dbeaver.git",
+  "branch": "codex/icbc-gaussdb-26.1.5",
+  "remoteAhead": 0,
+  "localAheadAtScan": 484,
+  "scanner": "Gitleaks 8.30.1 official darwin_arm64 release; archive SHA256 matched published checksum",
+  "scope": "Unpublished commit history relative to fetched remote branch",
+  "bytesScanned": 119807477,
+  "findings": 0,
+  "result": "PASS automated history secret scan",
+  "validation": "run-myTchS: 2745 total, 2727 passed, 18 skipped, zero failures/errors; fresh report gate passed",
+  "excludedWorkingChanges": "Two existing uncommitted SWTBot files are not part of the push",
+  "limits": [
+    "Automated pattern detection is not proof that every possible secret is absent",
+    "Does not OCR screenshot contents",
+    "Snapshot publication is not completion of all historical coverage or a final release certification"
+  ]
+}
