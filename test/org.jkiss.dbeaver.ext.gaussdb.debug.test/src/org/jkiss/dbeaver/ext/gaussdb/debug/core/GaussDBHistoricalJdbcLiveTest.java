@@ -3785,6 +3785,54 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void mutualTlsRequiresTrustedClientCertificate() throws Exception {
+        String config = System.getenv("GAUSSDB_HISTORY_MTLS_CONNECTION");
+        String ca = System.getenv("GAUSSDB_HISTORY_MTLS_CA");
+        String cert = System.getenv("GAUSSDB_HISTORY_MTLS_CLIENT_CERT");
+        String key = System.getenv("GAUSSDB_HISTORY_MTLS_CLIENT_KEY");
+        String untrustedCert = System.getenv("GAUSSDB_HISTORY_MTLS_UNTRUSTED_CLIENT_CERT");
+        String untrustedKey = System.getenv("GAUSSDB_HISTORY_MTLS_UNTRUSTED_CLIENT_KEY");
+        assumeTrue(config != null && ca != null && cert != null && key != null
+            && untrustedCert != null && untrustedKey != null,
+            "Dedicated mTLS fixture not configured; not a passing database test");
+        for (String file : List.of(config, ca, cert, key, untrustedCert, untrustedKey)) {
+            assertTrue(Files.isRegularFile(Path.of(file)), "Configured mTLS fixture file missing");
+        }
+        var valid = java.util.Map.of("sslmode", "verify-full", "sslrootcert", ca,
+            "sslcert", cert, "sslkey", key);
+        // Empty paths explicitly disable the driver's default client files.
+        // Merely omitting these properties could read a user's default certificate.
+        var absent = java.util.Map.of("sslmode", "verify-full", "sslrootcert", ca,
+            "sslcert", "", "sslkey", "");
+        var untrusted = java.util.Map.of("sslmode", "verify-full", "sslrootcert", ca,
+            "sslcert", untrustedCert, "sslkey", untrustedKey);
+        for (var rejected : List.of(absent, untrusted)) {
+            withIndependentConnection(c -> {
+                assertRows(c, "SELECT current_user", List.of(List.of("tls_client")));
+                assertRows(c, "SHOW ssl", List.of(List.of("on")));
+            }, null, valid, config);
+            var failure = assertThrows(java.sql.SQLException.class, () ->
+                withIndependentConnection(c -> fail("Client certificate authorization must reject this connection"),
+                    null, rejected, config));
+            String state = failure.getSQLState();
+            assertTrue(state != null && (state.startsWith("08") || state.equals("28000")),
+                "Expected connection or authentication refusal");
+            boolean certificateRefused = false;
+            for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                assertFalse(cause instanceof java.io.FileNotFoundException,
+                    "A missing local file is not a server authorization rejection");
+                String message = String.valueOf(cause.getMessage()).toLowerCase(java.util.Locale.ROOT);
+                certificateRefused |= message.contains("valid client certificate")
+                    || message.contains("certificate_required") || message.contains("bad_certificate")
+                    || message.contains("unknown_ca") || message.contains("certificate_unknown");
+            }
+            assertTrue(certificateRefused, "Must observe certificate refusal, not an unrelated connection failure");
+            withIndependentConnection(c -> assertRows(c, "SELECT 42", List.of(List.of("42"))),
+                null, valid, config);
+        }
+    }
+
+    @Test
     void strictTlsRejectsExpiredLeafWithoutDowngrade() throws Exception {
         String config = System.getenv("GAUSSDB_HISTORY_TLS_EXPIRED_CONNECTION");
         String ca = System.getenv("GAUSSDB_HISTORY_TLS_EXPIRED_CA");

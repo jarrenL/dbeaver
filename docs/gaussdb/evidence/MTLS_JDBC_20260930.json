@@ -1,0 +1,55 @@
+{
+  "date": "2026-09-30",
+  "scope": "GaussDB 507 isolated centralized instance, vendor JDBC client-certificate authentication; not SSL configuration GUI acceptance",
+  "test": "GaussDBHistoricalJdbcLiveTest.mutualTlsRequiresTrustedClientCertificate",
+  "checks": [
+    "verify-full and the trusted server CA remain enabled for every connection",
+    "valid client certificate connects as tls_client; SHOW ssl returns on",
+    "explicitly empty sslcert/sslkey disable driver default files; server refuses connection",
+    "well-formed client certificate issued by an unrelated CA is refused",
+    "each negative is bracketed by successful connections on the same endpoint",
+    "negative assertions require certificate-specific refusal, not missing local files or arbitrary connection errors"
+  ],
+  "driverInspection": "Vendor LibPQFactory maps empty certificate/key strings to null rather than reading default files; confirmed from the tested jar bytecode",
+  "fixture": {
+    "runner": "gaussdb-dbeaver-tests/scripts/run-tls-live.mjs --mtls-only",
+    "authentication": "hostssl tls_acceptance tls_client cert; connection properties do not contain a password",
+    "keyFormat": "short-lived RSA client certificate and unencrypted PKCS8 DER key, private temporary directory and mode 0600",
+    "publication": "dynamic host loopback port, inherited Docker Desktop port-policy labels overridden; unrelated published ports rejected",
+    "cleanup": "owned container and certificate directory removed; synthetic native cluster stopped/removed; dedicated database/roles removed and original HBA restored"
+  },
+  "attemptsBeforeSuccess": [
+    "Role initialization failed before JUnit; owned container removed; role creation adjusted to satisfy server password policy without giving the JDBC connection a password",
+    "Runtime port mapping disappeared before JUnit; owned container removed; base image had Docker Desktop v2 reconciliation labels targeting unrelated port 5432"
+  ],
+  "runs": [
+    {
+      "id": "run-RzHDIY",
+      "tests": 2733,
+      "passed": 2717,
+      "skipped": 16,
+      "failures": 0,
+      "errors": 0,
+      "mtlsCase": "passed, 0.284 seconds, no skipped element",
+      "freshResultGate": "passed",
+      "cleanup": "confirmed by runner completion and no remaining labeled TLS container"
+    },
+    {
+      "id": "run-QzrbgW",
+      "tests": 2733,
+      "passed": 2717,
+      "skipped": 16,
+      "failures": 0,
+      "errors": 0,
+      "mtlsCase": "passed; repeated with a new container, CA, client keys and dynamic port",
+      "freshResultGate": "passed",
+      "cleanup": "runner completed; independent central database/role counts zero and no labeled TLS container remains"
+    }
+  ],
+  "limits": [
+    "Skipped tests are not passes",
+    "An untrusted client certificate may be omitted by the TLS issuer-selection logic; the assertion establishes refused access with that material, not which peer performed chain filtering",
+    "Not a complete migration of unavailable historical test sources",
+    "DBeaver SSL settings GUI, encrypted client keys, certificate identity mismatch and target financial server versions are not established by this test"
+  ]
+}
