@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-30",
+  "scope": "Standalone repeatable fixture and independent transaction assertions; not additional GUI debug coverage",
+  "sources": ["integration/GuiDebugFixture.java", "integration/GuiDebugFixtureTest.java"],
+  "sourceRepository": "gaussdb-dbeaver-tests",
+  "compileTarget": "Java 21",
+  "database": "GaussDB 507 centralized A, ordinary fixture owner",
+  "fullInvocations": 2,
+  "lifecyclesPerInvocation": 2,
+  "assertions": [
+    "Existing schema rejected with 42P06",
+    "Independent connection sees only baseline during uncommitted CALL",
+    "Rollback preserves baseline",
+    "Commit exposes exactly rows 1 and 12",
+    "Extra guard table causes cleanup 2BP01; cleanup rollback restores routine and original committed data",
+    "Explicit RESTRICT cleanup leaves zero fixture schemas"
+  ],
+  "result": "PASS",
+  "debugRoleMembershipAfterRun": false,
+  "privatePasswordCopy": "removed",
+  "limits": "Calls are direct JDBC fixture checks, not debugger protocol or GUI tests. GUI instructions require separately provisioned debug API permissions."
+}
