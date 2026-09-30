@@ -1,0 +1,26 @@
+{
+  "productVersion": "26.1.5.202609300607",
+  "architecture": "aarch64",
+  "environment": "Kylin V10 container, ordinary tester, clean application without test plugins, new workspace",
+  "connectionSteps": [
+    "New connection: search GaussDB and choose GaussDB Native",
+    "Edit driver: Libraries / Add file selects external /work/gaussdbjdbc.jar",
+    "Retain com.huawei.gaussdb.jdbc.Driver and configure the isolated package_lab database with ordinary package_tester",
+    "Test Connection reports Connected (234 ms), GaussDB Kernel 507.0.0 build d791c80a",
+    "Finish wizard, open SQL editor from selected connection, execute the marker query"
+  ],
+  "sql": "SELECT 42 AS clean_arm_marker, current_database() AS database_name, current_user AS account_name, current_setting('sql_compatibility') AS compatibility",
+  "guiResult": "One fetched row: 42, package_lab, package_tester, A (last column partially occluded by value viewer)",
+  "independentObservation": "pg_stat_activity shows package_tester idle with the exact marker query, normalized to lowercase by the client",
+  "screenshots": ["linux-current-gui-20260930/arm-connected-507.png", "linux-current-gui-20260930/arm-query-507.png"],
+  "observations": [
+    "Driver version label contains an unresolved vendor build placeholder; connection and query succeed",
+    "A delayed screenshot initially appeared blank; subsequent grid and independent server query confirmed execution. A second typing attempt affected only the unsaved editor text and is not counted as a repeated SQL test"
+  ],
+  "scopeLimits": [
+    "Read-only SQL only; no database objects created",
+    "Not debug/package functional acceptance of the clean product",
+    "Existing external driver and private test password reused, neither included in deliverable",
+    "x86 clean-product database connection has not been tested in this round"
+  ]
+}
