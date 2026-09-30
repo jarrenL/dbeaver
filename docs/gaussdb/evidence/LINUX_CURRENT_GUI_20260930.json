@@ -1,0 +1,30 @@
+{
+  "productVersion": "26.1.5.202609300607",
+  "assemblyEvidence": "LINUX_CURRENT_ASSEMBLY_20260930.json",
+  "scope": "Clean application copies, new workspaces, ordinary user, Kylin V10 containers with Xvfb display :102",
+  "architectures": {
+    "x86_64": "Started successfully under host emulation; About identifies current build; inherited Chinese preference",
+    "aarch64": "Started successfully natively; changed language from English to Simplified Chinese through product configuration wizard, applied and confirmed restart; restarted menus and status show Chinese; About identifies current build"
+  },
+  "launch": "./dbeaver -data /tmp/clean-current-workspace-20260930",
+  "applicationPath": "/opt/clean-current-20260930",
+  "verification": [
+    "No -nl argument and no SWTBot plugin in these application copies",
+    "Help Check for Updates disabled on both architectures",
+    "Help Install New Software remains visible",
+    "ARM language preference applied after actual process restart"
+  ],
+  "screenshots": [
+    "linux-current-gui-20260930/x86-about.png",
+    "linux-current-gui-20260930/arm-about.png",
+    "linux-current-gui-20260930/arm-language-selected.png",
+    "linux-current-gui-20260930/arm-restarted-zh.png"
+  ],
+  "limitations": [
+    "Existing user-global preferences retained; not a brand-new operating-system user test",
+    "New workspaces have no database connection yet; not final database/debugger functional acceptance",
+    "Some upstream labels remain English; not complete translation acceptance",
+    "Container Xvfb checks do not certify a customer's desktop-cloud transport",
+    "About release date remains baseline 2026-08-17; build qualifier identifies current product"
+  ]
+}

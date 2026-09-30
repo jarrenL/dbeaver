@@ -70,3 +70,12 @@ bash assemble.sh /产品/linux/gtk/aarch64/dbeaver /新的输出/native /下载/
 第二条可在有 `jar`、`zip`、`tar` 的组装机运行；x86_64 替换对应架构及 JRE。启动器源码须是 Equinox `R4_37`（11916），SWT 须是 `v4973r12`，不能随意换成新版。脚本唯一 SWT 源构建参数调整为 `gnu17`→`gnu11`，保留 `-Werror`。重建的 SWT jar 不保留已失效的 Eclipse 签名；不声称由 Eclipse 签署或认证。
 
 组装成功后仍须验证干净产品、整理许可证/对应源码、归档并生成校验和，才能作为最终交付。
+
+可在组装机生成应用目录的逐文件清单（清单必须位于应用目录之外）：
+
+```sh
+node product/community/product-manifest.mjs create /交付/x86_64/dbeaver /交付/x86_64/APPLICATION-MANIFEST.json
+node product/community/product-manifest.mjs verify /交付/x86_64/dbeaver /交付/x86_64/APPLICATION-MANIFEST.json
+```
+
+清单记录文件 SHA-256、大小、可执行标志、目录及符号链接目标；验证会拒绝新增、缺失和变化项。创建不会覆盖已有清单。应在首次启动前校验原始交付目录，启动后的配置变化也会导致不一致。该工具需要 Node.js，仅用于构建/验收；客户端运行不依赖 Node.js。归档文件仍需单独提供 `SHA256SUMS`，清单不等于发布签名、来源认证或功能验收。
