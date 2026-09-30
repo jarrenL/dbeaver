@@ -1,0 +1,16 @@
+{
+  "date": "2026-09-30",
+  "scope": "Historical connection/profile import invalid JSON boundary through production parser",
+  "test": "ConfigurationReadFailureTest.malformedReadableJsonDoesNotApplyPartialResultsAndAllowsRetry",
+  "inputs": ["Unclosed root object", "Completed folder prefix but truncated root", "Missing connection value", "Valid object followed by trailing garbage"],
+  "storageVariants": ["plain", "encrypted project"],
+  "assertions": ["JsonParseException propagated", "Input closed exactly once", "No partial parsed changes recorded", "Same parser accepts repaired content on explicit retry and records folder"],
+  "parameterizedTests": 4,
+  "storageExecutionsPerTest": 2,
+  "localRun": "run-myTchS",
+  "reactorResult": {"tests": 2745, "passed": 2727, "skipped": 18, "failures": 0, "errors": 0},
+  "freshReportGate": "passed",
+  "cleanup": "Runner removed temporary central fixture and roles and restored HBA",
+  "initialAttempt": "Test stub incorrectly invoked encryption spy inside thenReturn; fixed by preparing retry stream before stubbing. Not a product defect.",
+  "limits": ["Not file-import wizard GUI acceptance", "Does not assert schema validation for syntactically valid but wrong-shaped JSON", "Skipped tests are not passes"]
+}

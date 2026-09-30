@@ -242,6 +242,27 @@ class ConfigurationReadFailureTest {
         assertEquals("local", profile.getProperties().get("added"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"{", "{\"folders\":{\"fixture\":{}}", "{\"connections\":", "{\"connections\":{}} trailing"})
+    void malformedReadableJsonDoesNotApplyPartialResultsAndAllowsRetry(String malformed) throws Exception {
+        for (boolean encrypted : List.of(false, true)) {
+            configure(encrypted);
+            byte[] bad = malformed.getBytes(StandardCharsets.UTF_8);
+            byte[] good = fixtureConfiguration();
+            var stream = new FixtureStream(encrypted ? encryptor.encryptValue(bad) : bad, false, false, false);
+            var retry = new ByteArrayInputStream(encrypted ? encryptor.encryptValue(good) : good);
+            when(manager.readConfiguration("fixture.json", null)).thenReturn(stream,
+                retry);
+            var results = new DataSourceParseResults();
+            assertThrows(com.google.gson.JsonParseException.class, () -> parse(results));
+            assertTrue(stream.closed);
+            assertEquals(1, stream.closeCount);
+            assertEmptyResults(results);
+            parse(results);
+            assertEquals(1, results.addedFolders.size());
+        }
+    }
+
     @Test
     void failedConfigurationCanBeRetriedWithReadableContent() throws Exception {
         configure(false);
