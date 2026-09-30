@@ -750,32 +750,47 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         // Cancellation is asynchronous. Only issue abort on an idle control connection;
         // otherwise close it to unblock the pending command instead of queueing more SQL.
         boolean idleController = controllerLock.tryLock();
+        boolean controllerCloseAttempted = false;
         try {
-            if (idleController && attached) {
-                doDetach(monitor);
-            }
-            synchronized (transactionLock) {
-                try {
-                    if (!transactionOutcomeUnknown && transactionCompletionPending && targetFinished.getCount() == 0) {
-                        completeTransaction(monitor, DBGTransactionAction.ROLLBACK);
-                    }
-                    if (!transactionOutcomeUnknown && targetFinished.getCount() == 0) {
-                        try {
-                            turnOff(monitor);
-                        } catch (DBGException e) {
-                            log.debug("Unable to turn off GaussDB debugger", e);
+            try {
+                if (idleController && attached) {
+                    doDetach(monitor);
+                } else if (!idleController) {
+                    // Target context close first rolls back its transaction. While the
+                    // controller is waiting for a step, that rollback can wait behind
+                    // the running CALL. Disconnect the autocommit controller first.
+                    controllerCloseAttempted = true;
+                    controllerConnection.close();
+                }
+            } finally {
+                synchronized (transactionLock) {
+                    try {
+                        if (!transactionOutcomeUnknown && transactionCompletionPending && targetFinished.getCount() == 0) {
+                            completeTransaction(monitor, DBGTransactionAction.ROLLBACK);
                         }
+                        if (!transactionOutcomeUnknown && targetFinished.getCount() == 0) {
+                            try {
+                                turnOff(monitor);
+                            } catch (DBGException e) {
+                                log.debug("Unable to turn off GaussDB debugger", e);
+                            }
+                        }
+                    } finally {
+                        // Never close the target connection concurrently with COMMIT/ROLLBACK.
+                        targetConnection.close();
                     }
-                } finally {
-                    // Never close the target connection concurrently with COMMIT/ROLLBACK.
-                    targetConnection.close();
                 }
             }
         } finally {
             attached = false;
-            controllerConnection.close();
-            if (idleController) {
-                controllerLock.unlock();
+            try {
+                if (!controllerCloseAttempted) {
+                    controllerConnection.close();
+                }
+            } finally {
+                if (idleController) {
+                    controllerLock.unlock();
+                }
             }
         }
     }

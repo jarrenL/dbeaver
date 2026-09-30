@@ -873,4 +873,40 @@ class GaussDBDebugSessionTest {
             release.countDown();
         }
     }
+
+    @Test
+    void busyControllerIsDisconnectedBeforeTargetRollbackClose() throws Exception {
+        var control = mock(JDBCExecutionContext.class);
+        var target = mock(JDBCExecutionContext.class);
+        field("controllerConnection", control);
+        field("targetConnection", target);
+        field("targetFinished", new CountDownLatch(1));
+        var lockField = GaussDBDebugSession.class.getDeclaredField("controllerLock");
+        lockField.setAccessible(true);
+        var lock = (java.util.concurrent.locks.ReentrantLock) lockField.get(session);
+        var held = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var command = executor.submit(() -> {
+                lock.lock();
+                try {
+                    held.countDown();
+                    assertTrue(release.await(5, TimeUnit.SECONDS));
+                } finally {
+                    lock.unlock();
+                }
+                return null;
+            });
+            try {
+                assertTrue(held.await(5, TimeUnit.SECONDS));
+                session.closeSession(monitor);
+                var order = inOrder(control, target);
+                order.verify(control).close();
+                order.verify(target).close();
+            } finally {
+                release.countDown();
+            }
+            command.get(5, TimeUnit.SECONDS);
+        }
+    }
 }

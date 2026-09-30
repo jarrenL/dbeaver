@@ -1,0 +1,11 @@
+{
+  "finding": "GUI running-target termination logged Connection close timeout before controller disconnect",
+  "sourceAnalysis": "JDBCExecutionContext.disconnect invokes JDBCDataSource.closeConnection with rollback for the non-autocommit target. GaussDBDebugSession previously closed that target before the busy autocommit controller.",
+  "change": "When controllerLock is busy, disconnect controller first, then target under transactionLock. Target close remains in finally; controller lock release is protected even if controller close throws.",
+  "red": {"tests":142,"failures":1,"errors":0,"skipped":0,"failedTest":"busyControllerIsDisconnectedBeforeTargetRollbackClose"},
+  "green": {"tests":142,"failures":0,"errors":0,"skipped":0,"classes":15},
+  "testScope": "Real compiled production session in OSGi, mocked contexts and lock held by a separate thread; asserts close order, not actual socket cancellation latency",
+  "fullReactor": {"run":"run-UFGm22","tests":2725,"passed":2709,"skipped":16,"failures":0,"errors":0,"scope":"73 modules, centralized review/native and distributed fixtures; TLS/encoding/empty-cluster dumpall not enabled","cleanup":"temporary DB/roles removed and original HBA restored"},
+  "guiRetest": "PENDING: previous GUI evidence predates this change",
+  "releasePackage": "PENDING: previous clean candidate does not contain this change"
+}
