@@ -119,7 +119,12 @@ class GaussDBDumpAllLiveTest {
                 args.add(2, "-i");
                 process = new ProcessBuilder(args).redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(errors.toFile()).start();
                 Properties credentials = new Properties();
-                try (var input = Files.newInputStream(Path.of(System.getenv("GAUSSDB_REVIEW_CONNECTION")))) { credentials.load(input); }
+                String credentialsFile = System.getenv("GAUSSDB_DUMPALL_CONNECTION");
+                if (credentialsFile == null) {
+                    credentialsFile = System.getenv("GAUSSDB_REVIEW_CONNECTION");
+                }
+                assertNotNull(credentialsFile, "Synthetic cluster credentials must be explicitly configured");
+                try (var input = Files.newInputStream(Path.of(credentialsFile))) { credentials.load(input); }
                 try (var input = process.getOutputStream()) { input.write((credentials.getProperty("password") + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
                 if (outcome.equals("failure")) {
                     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
