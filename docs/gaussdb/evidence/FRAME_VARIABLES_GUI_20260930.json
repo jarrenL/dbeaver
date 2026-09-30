@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-30",
+  "environment": "Kylin Linux x86_64 SWTBot test copy, GaussDB 507 distributed, dedicated ordinary user",
+  "fixture": "dbv_frames_20260930 parent_frame/child_frame, each declares v_shared",
+  "observations": [
+    "Step Into reaches child line 4; child variable is 222",
+    "Selecting parent shows its source and v_shared=111",
+    "Child Change Value dialog accepts 999; variable view reports 999",
+    "Selecting parent again reports 111, with Change Value visibly disabled",
+    "Reselecting child still reports 999",
+    "Step Return reaches parent line 5; selecting parent and opening Variables reports 111"
+  ],
+  "evidenceDirectory": "frame-variables-20260930",
+  "cleanup": {
+    "debugSession": "terminated via toolbar",
+    "drop": "parent, child and schema dropped with RESTRICT in one transaction",
+    "independentSchemaCount": 0,
+    "temporaryDebugRoleRevoked": true,
+    "independentRoleMembership": false
+  },
+  "limits": [
+    "One GUI run, not repeated GUI acceptance or final clean package acceptance",
+    "Numeric local variables only; no watch-expression, package-variable or additional type claim",
+    "Step Return used toolbar command, not physical shortcut",
+    "Variable view explicitly reopened after Step Return; automatic view focus not asserted",
+    "Earlier stale widget ID and incorrect menu label caused automation errors, not product assertions"
+  ]
+}
