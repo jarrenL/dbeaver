@@ -1057,8 +1057,12 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
 
     @Test
     void executeDirectOnActualTableNodesReconstructsTheCoordinatorRows() throws Exception {
+        String monitorConfig = System.getenv("GAUSSDB_HISTORY_MONITOR_CONNECTION");
+        assumeTrue(monitorConfig != null,
+            "Dedicated monitor/system admin connection not configured; not a passing EXECUTE DIRECT test");
         inIsolatedSchema((c, s) -> {
-            assumeTrue(canExecuteDirect(c), "EXECUTE DIRECT requires a separately authorized monitor/system admin run");
+            assertTrue(canExecuteDirect(c),
+                "GAUSSDB_HISTORY_MONITOR_CONNECTION must use a monitor/system admin account");
             String table = s + ".direct_rows";
             execute(c, "CREATE TABLE " + table + "(id integer) DISTRIBUTE BY HASH(id)");
             execute(c, "INSERT INTO " + table + " SELECT i FROM generate_series(1,100) i");
@@ -1087,7 +1091,7 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
             actual.sort(Integer::compareTo);
             assertEquals(java.util.stream.IntStream.rangeClosed(1, 100).boxed().toList(), actual);
             assertEquals(100, count(c, table));
-        });
+        }, java.util.Map.of(), monitorConfig);
     }
 
     @Test

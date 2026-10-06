@@ -10,14 +10,18 @@
 
 ## 2. 自动化回归
 
-完整测试集连续执行两次，测试身份和结果完全一致：
+在普通账号、独立 monitor/system admin、集中式隔离库、GB18030 数据库、原生工具、一次性空集群和一次性 TLS 容器启用后，最高覆盖测试集连续执行两次，测试身份和结果完全一致：
 
 | 运行目录 | 总数 | 通过 | 跳过 | 失败 | 错误 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `gaussdb-dbeaver-tests/results/run-KhbNpo` | 2776 | 2758 | 18 | 0 | 0 |
-| `gaussdb-dbeaver-tests/results/run-CXfA4h` | 2776 | 2758 | 18 | 0 | 0 |
+| `gaussdb-dbeaver-tests/results/run-TU56nv` | 2776 | 2766 | 10 | 0 | 0 |
+| `gaussdb-dbeaver-tests/results/run-dyNOvp` | 2776 | 2766 | 10 | 0 | 0 |
 
-18 个跳过项没有计入通过，主要是当前实验环境未提供的 TLS/mTLS、GB18030、空集群 `dumpall`、监控权限，以及服务端不支持的部分序列、重载函数、外键和 round-robin 能力。调试专项真库测试为 5/5 通过。
+另以独立一次性容器完成 mTLS 正向认证、缺少客户端证书拒绝、不受信任客户端证书拒绝，结果见 `gaussdb-dbeaver-tests/results/run-fHLiBY`。正常 TLS 与 mTLS 夹具不能并行装入同一个临时端点，按两组结果取并集，共有 2767 个测试项获得通过证据。
+
+剩余 9 项没有计入通过：其中 7 项由当前 GaussDB 507 服务端明确拒绝，分别为 standalone procedure overload、集中式/分布式 sequence rename、集中式/分布式 sequence restart、foreign key 和 round-robin distribution；另 2 项为 DBeaver 上游以 `#26434` 禁用的 SVG 测试。调试专项真库测试为 5/5 通过。
+
+本轮新增覆盖包括：管理员 `EXECUTE DIRECT` 逐 DN 重建协调节点结果、普通账号 SQLSTATE `42501` 权限拒绝、不存在数据库连接失败后正常连接可继续使用、GB18030 库 UTF8 JDBC 往返、隔离 package 编译与错误行、提交回包丢失/黑洞、真实 `gs_dump`/`gs_restore`、真实 `gs_dumpall` 成功/失败/取消，以及 TLS/mTLS 证书边界。两轮最高覆盖执行后均确认临时角色、数据库、schema、空集群目录和容器完成清理。
 
 ## 3. Linux GUI 与真库连接
 
@@ -56,4 +60,4 @@ x86_64 的验证证明包内 ELF/JRE/GTK 组合能够在该仿真用户空间运
 
 ## 5. 结论与边界
 
-本次 Linux 双架构交付候选已完成现有本地条件可执行的重复回归、麒麟 GUI、GaussDB 507 真库元数据和归档完整性验证。它不宣称完成客户桌面云整机认证，也不把未提供环境或服务端不支持而跳过的 18 项算作通过。Windows 不在本次 Linux 目标范围内。
+本次 Linux 双架构交付候选已完成现有本地条件可执行的重复回归、麒麟 GUI、GaussDB 507 真库元数据和归档完整性验证。它不宣称完成客户桌面云整机认证，也不把服务端不支持或上游禁用而剩余的 9 项算作通过。Windows 不在本次 Linux 目标范围内。
