@@ -57,9 +57,21 @@ public abstract class PostgrePlanNodeBase<NODE extends PostgrePlanNodeBase<?>> e
     static final String ATTR_OBJECT_NAME = "Object name";
 
     private final static List<String> allowedKind = new ArrayList<>( 
-            Arrays.asList("result",
+            Arrays.asList(
+                          // Compound operators must precede their implementation details.
+                          // For example, HashSetOp is a set operation rather than a plain hash,
+                          // and Gather Merge is not a relational MERGE operation.
+                          "gather merge",
+                          "recursive union",
+                          "hash setop",
+                          "hashsetop",
+                          "setop",
+                          "windowagg",
+                          "worktable scan",
+                          "cte scan",
+                          "result",
                           "project",
-                          // Compound operators must precede their implementation detail (e.g. Hash Join).
+                          // Join must precede Hash so Hash Join keeps its semantic category.
                           "join",
                           "loop",
                           "aggregate",
@@ -257,6 +269,24 @@ public abstract class PostgrePlanNodeBase<NODE extends PostgrePlanNodeBase<?>> e
             if (op.contains(kind)) {
 
                 switch (kind) {
+
+                case "gather merge":
+                    return DBCPlanNodeKind.DEFAULT;
+
+                case "recursive union":
+                    return DBCPlanNodeKind.UNION;
+
+                case "hash setop":
+                case "hashsetop":
+                case "setop":
+                    return DBCPlanNodeKind.SET;
+
+                case "windowagg":
+                    return DBCPlanNodeKind.AGGREGATE;
+
+                case "worktable scan":
+                case "cte scan":
+                    return DBCPlanNodeKind.TABLE_SCAN;
 
                 case "result":
                     return DBCPlanNodeKind.RESULT;

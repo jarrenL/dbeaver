@@ -29,13 +29,25 @@ class PostgreXmlPlanHierarchyTest {
         "HashAggregate,AGGREGATE", "Aggregate,AGGREGATE", "Seq Scan,TABLE_SCAN",
         "Parallel Seq Scan,TABLE_SCAN", "Foreign Scan,TABLE_SCAN", "Bitmap Heap Scan,TABLE_SCAN",
         "Index Scan,INDEX_SCAN", "Index Only Scan,INDEX_SCAN", "Insert,MODIFY",
-        "ModifyTable,MODIFY", "Sort,SORT", "Function Scan,FUNCTION", "Unknown Operator,DEFAULT"
+        "ModifyTable,MODIFY", "Sort,SORT", "Function Scan,FUNCTION", "Unknown Operator,DEFAULT",
+        "CTE Scan,TABLE_SCAN", "WorkTable Scan,TABLE_SCAN", "Recursive Union,UNION",
+        "WindowAgg,AGGREGATE", "Gather Merge,DEFAULT", "SetOp,SET", "HashSetOp,SET",
+        "Vec Hash Join,JOIN", "Vec Aggregate,AGGREGATE", "Vec CTE Scan,TABLE_SCAN",
+        "Vec Remote Query,DEFAULT", "Vec HashSetOp,SET"
     })
     void operatorCategoryDistinguishesJoinsAggregatesAndScans(String type,
         org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind expected) throws Exception {
         var node = parse("<Plan><Node-Type>" + type + "</Node-Type></Plan>");
         assertEquals(expected, node.getNodeKind());
         assertEquals(type, node.getNodeType(), "Classification must not rewrite the server label");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"Intersect", "Except"})
+    void setOperationKeepsItsServerCommand(String command) throws Exception {
+        var node = parse("<Plan><Node-Type>SetOp</Node-Type><Command>" + command + "</Command></Plan>");
+        assertEquals(org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.SET, node.getNodeKind());
+        assertEquals(command, node.getPropertyValue(null, "Command"));
     }
 
     @Test

@@ -2628,6 +2628,15 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         });
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"INTERSECT", "EXCEPT"})
+    void realSetOperationPlanKeepsItsSemanticCategory(String operation) throws Exception {
+        inIsolatedSchema((c, s) -> assertRealPlan(c,
+            "SELECT x FROM generate_series(1,3) x " + operation
+                + " SELECT y FROM generate_series(2,4) y",
+            "SetOp"));
+    }
+
     @Test
     void realIndexPlanPreservesIndexScanUnderDistributedParent() throws Exception {
         inIsolatedSchema((c, s) -> {
@@ -2817,6 +2826,14 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         assertNotNull(type);
         var pgNode = (org.jkiss.dbeaver.ext.postgresql.model.plan.PostgrePlanNodeBase<?>) node;
         assertEquals(type, pgNode.getNodeType());
+        var expectedKind = switch (type) {
+            case "CTE Scan", "WorkTable Scan" -> org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.TABLE_SCAN;
+            case "Recursive Union" -> org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.UNION;
+            case "WindowAgg" -> org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.AGGREGATE;
+            case "SetOp", "HashSetOp" -> org.jkiss.dbeaver.model.exec.plan.DBCPlanNodeKind.SET;
+            default -> null;
+        };
+        if (expectedKind != null) assertEquals(expectedKind, pgNode.getNodeKind(), type);
         if (cost != null) assertEquals(Double.parseDouble(cost), pgNode.getNodeCost().doubleValue());
         String displayedRows = actualRows == null ? planRows : actualRows;
         if (displayedRows != null) {

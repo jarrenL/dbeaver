@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-06",
+  "status": "red-green-repeat-passed",
+  "component": "PostgrePlanNodeBase.getNodeKind",
+  "red": {
+    "run": "run-5nvGnh",
+    "observed": [
+      "Recursive Union, WindowAgg, CTE Scan and WorkTable Scan were classified as DEFAULT",
+      "HashSetOp was classified as HASH",
+      "Gather Merge was classified as relational MERGE"
+    ]
+  },
+  "fix": [
+    "Match compound plan operators before their implementation-detail substrings",
+    "Classify recursive union, set operations, window aggregation and CTE/work-table scans by semantic category",
+    "Keep Gather Merge as DEFAULT because it is not a relational MERGE operation",
+    "Preserve the exact server node label and SetOp command metadata"
+  ],
+  "validation": [
+    {
+      "scope": "targeted PostgreSQL XML plan tests",
+      "tests": 40,
+      "passed": 40,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "run": "run-bMWdBs",
+      "tests": 2771,
+      "passed": 2753,
+      "skipped": 18,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "run": "run-g30X13",
+      "tests": 2771,
+      "passed": 2753,
+      "skipped": 18,
+      "failures": 0,
+      "errors": 0
+    }
+  ],
+  "newExecutionItemsSincePreviousGreen": 16,
+  "newCoverage": [
+    "Twelve additional PostgreSQL/GaussDB plan-node labels",
+    "INTERSECT and EXCEPT command preservation",
+    "Real GaussDB 507 INTERSECT and EXCEPT plans through the vendor JDBC driver and production XML parser"
+  ],
+  "repeatability": "All 2771 module/class/name/outcome identities matched between the two full runs",
+  "cleanup": "Both full runs removed their 20261006 databases and roles, removed the temporary distributed grantee and restored the original HBA",
+  "limits": [
+    "The 18 skipped tests are reported separately and are not passes",
+    "This evidence covers execution-plan classification and regression behavior, not execution-plan GUI acceptance",
+    "The retained dbv_hist_central_20260923 fixture predates these runs and was not created or adopted by them"
+  ]
+}
