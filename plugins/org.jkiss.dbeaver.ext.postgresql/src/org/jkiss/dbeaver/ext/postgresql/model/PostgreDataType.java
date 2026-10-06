@@ -1023,8 +1023,9 @@ public class PostgreDataType extends JDBCDataType<PostgreSchema>
             } else {
                 switch (typeCategory) {
                     case F:
+                    case O:
                         // Preserve the element/length-based mapping previously used for
-                        // unknown GaussDB collection categories, without losing metadata.
+                        // GaussDB collection categories, without losing metadata.
                         valueType = JDBCUtils.safeGetLong(dbResult, "typelem") > 0 && typeLength < 0
                             ? Types.ARRAY : Types.OTHER;
                         break;

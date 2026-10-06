@@ -16,6 +16,7 @@ import org.jkiss.dbeaver.ext.postgresql.model.PostgrePrivilegeType;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreRoleReference;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTable;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreTypeCategory;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,30 @@ import static org.mockito.Mockito.*;
 
 /** Opt-in JDBC contracts, not a replacement for an actual debugger or GUI test. */
 class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
+    @Test
+    void realGaussCollectionCategoryIsRecognized() throws Exception {
+        assumeTrue(System.getenv("GAUSSDB_HISTORY_CONNECTION") != null,
+            "Live connection not configured; not a passing database test");
+        assertNotNull(System.getenv("GAUSSDB_HISTORY_JDBC"), "Vendor JDBC jar required");
+        withIndependentConnection(connection -> {
+            int count = 0;
+            try (var statement = connection.createStatement()) {
+                statement.setQueryTimeout(10);
+                try (var rows = statement.executeQuery(
+                    "SELECT typtype,typcategory,typelem FROM pg_catalog.pg_type WHERE typcategory='O'")) {
+                    while (rows.next()) {
+                        count++;
+                        assertEquals("o", rows.getString(1));
+                        assertEquals(PostgreTypeCategory.O,
+                            PostgreTypeCategory.valueOf(rows.getString(2).toUpperCase(java.util.Locale.ENGLISH)));
+                        assertTrue(rows.getLong(3) > 0, "GaussDB collection must identify its element type");
+                    }
+                }
+            }
+            assertTrue(count > 0, "GaussDB 507 should expose built-in collection types in category O");
+        });
+    }
+
     @Test
     void realOwnSessionPreservesBackendIdentityAndDatabase() throws Exception {
         assumeTrue(System.getenv("GAUSSDB_HISTORY_CONNECTION") != null,

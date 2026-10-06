@@ -38,6 +38,7 @@ public enum PostgreTypeCategory implements DBPNamedObject {
     L("Row identifier"), // GaussDB rowid
     M("Unsigned integer"), // GaussDB uint1/uint2/uint4/uint8
     N("Numeric"),
+    O("Collection"), // GaussDB nested table/collection types (typtype 'o')
     P("Pseudo"),
     R("Range"), //$NON-NLS-1$
     S("String"),

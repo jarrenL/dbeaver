@@ -49,7 +49,9 @@ class PostgreCollectionMetadataTest {
         when(row.getLong("oid")).thenReturn(20000L);
         when(row.getString("typname")).thenReturn("number_table");
         when(row.getString("typtype")).thenReturn("o");
-        when(row.getString("typcategory")).thenReturn("F");
+        // GaussDB 507 reports nested-table types with typtype 'o' and
+        // typcategory 'O'.  This is distinct from the older 'F' category.
+        when(row.getString("typcategory")).thenReturn("O");
         when(row.getInt("typlen")).thenReturn(-1);
         when(row.getLong("typelem")).thenReturn(1700L);
         when(server.resolveDataTypeValueType(anyString(), anyLong(), any(), anyInt(), anyInt()))
@@ -58,11 +60,14 @@ class PostgreCollectionMetadataTest {
         var type = PostgreDataType.readDataType(session, database, row, false);
         assertNotNull(type);
         assertEquals(PostgreTypeType.o, type.getTypeType());
-        assertEquals(PostgreTypeCategory.F, type.getTypeCategory());
+        assertEquals(PostgreTypeCategory.O, type.getTypeCategory());
         assertEquals(Types.ARRAY, type.getTypeID());
 
         when(row.getLong("typelem")).thenReturn(0L);
         assertEquals(Types.OTHER, PostgreDataType.readDataType(session, database, row, false).getTypeID());
+        when(row.getLong("typelem")).thenReturn(1700L);
+        when(row.getString("typcategory")).thenReturn("F");
+        assertEquals(Types.ARRAY, PostgreDataType.readDataType(session, database, row, false).getTypeID());
         when(row.getString("typtype")).thenReturn("b");
         when(row.getString("typcategory")).thenReturn("S");
         assertEquals(Types.VARCHAR, PostgreDataType.readDataType(session, database, row, false).getTypeID());
