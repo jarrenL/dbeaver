@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-06",
+  "status": "implementation-and-repeat-live-validation-passed",
+  "component": "PostgreStructureAssistant sequence object search inherited by GaussDB",
+  "previousGap": "TYPE_SEQUENCE was available from PostgreNamespace but was not advertised or handled by PostgreStructureAssistant search",
+  "implementation": [
+    "Advertise TYPE_SEQUENCE as a supported and searchable object type",
+    "Search pg_class sequences using a bound name mask and relkind S",
+    "Honor schema scope, case sensitivity, comments, cancellation and remaining maxResults",
+    "Return a typed PostgreSequence reference with a quoted schema-qualified name and exact-name resolution"
+  ],
+  "validation": [
+    {
+      "scope": "targeted PostgreStructureSearchTest",
+      "tests": 17,
+      "passed": 17,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "run": "run-r4VB6y",
+      "tests": 2775,
+      "passed": 2757,
+      "skipped": 18,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "run": "run-XTKV7s",
+      "tests": 2775,
+      "passed": 2757,
+      "skipped": 18,
+      "failures": 0,
+      "errors": 0
+    }
+  ],
+  "newExecutionItemsSincePreviousGreen": 4,
+  "liveCoverage": [
+    "GaussDB 507 vendor JDBC path through the production structure assistant",
+    "Mixed-case sequence name containing a space",
+    "Case-insensitive name matching and comment matching",
+    "Maximum result count",
+    "Same-named sequences isolated across two schemas before and after one is dropped"
+  ],
+  "repeatability": "All 2775 module/class/name/outcome identities matched between the two full runs",
+  "cleanup": "Both full runs removed their 20261006 databases and roles, removed the temporary distributed grantee and restored the original HBA; independent residual counts were zero",
+  "limits": [
+    "The 18 skipped tests are reported separately and are not passes",
+    "This validates the model search path, not a GUI object-search dialog interaction",
+    "Sequence create, rename, comment and DDL behavior have separate coverage and are not inferred from this search evidence"
+  ]
+}

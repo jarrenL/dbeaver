@@ -57,6 +57,7 @@ class PostgreStructureSearchTest {
         when(session.getProgressMonitor()).thenReturn(monitor);
         when(session.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(result);
+        when(source.getSQLDialect()).thenReturn(new PostgreDialect());
         assistant = new PostgreStructureAssistant(source);
     }
 
@@ -213,5 +214,67 @@ class PostgreStructureSearchTest {
         verify(result).close();
         verify(statement).close();
         verify(session).close();
+    }
+
+    @Test
+    void sequenceSearchIsSupportedScopedBoundTypedAndQuoted() throws Exception {
+        var schema = mock(PostgreSchema.class);
+        var sequence = mock(PostgreSequence.class);
+        when(schema.getDatabase()).thenReturn(database);
+        when(schema.getDataSource()).thenReturn(source);
+        when(schema.getName()).thenReturn("Sales Schema");
+        when(schema.getObjectId()).thenReturn(42L);
+        when(database.getSchema(monitor, 42L)).thenReturn(schema);
+        when(schema.getSequence(monitor, "Order Sequence")).thenReturn(sequence);
+        when(result.next()).thenReturn(true, false);
+        when(result.getLong("relnamespace")).thenReturn(42L);
+        when(result.getString("relname")).thenReturn("Order Sequence");
+        var params = new DBSStructureAssistant.ObjectsSearchParams(
+            new DBSObjectType[] {RelationalObjectType.TYPE_SEQUENCE}, "order%");
+        params.setParentObject(schema);
+        params.setCaseSensitive(false);
+        params.setSearchInComments(true);
+        params.setMaxResults(2);
+
+        var references = assistant.findObjectsByMask(monitor, context, params);
+
+        assertEquals(1, references.size());
+        var reference = references.getFirst();
+        assertEquals(PostgreSequence.class, reference.getObjectClass());
+        assertEquals(RelationalObjectType.TYPE_SEQUENCE, reference.getObjectType());
+        assertEquals("\"Sales Schema\".\"Order Sequence\"", reference.getFullyQualifiedName(
+            org.jkiss.dbeaver.model.DBPEvaluationContext.DDL));
+        assertSame(sequence, reference.resolveObject(monitor));
+        verify(session).prepareStatement(argThat(sql -> sql.contains("pc.relkind = 'S'")
+            && sql.contains("pc.relnamespace IN (?)") && sql.contains("obj_description")
+            && sql.endsWith("LIMIT 2")));
+        verify(statement).setString(1, "order%");
+        verify(statement).setString(2, "order%");
+        verify(statement).setLong(3, 42L);
+    }
+
+    @Test
+    void sequenceSearchCancellationDoesNotReadRowsAndStillClosesResources() throws Exception {
+        when(monitor.isCanceled()).thenReturn(true);
+        var params = new DBSStructureAssistant.ObjectsSearchParams(
+            new DBSObjectType[] {RelationalObjectType.TYPE_SEQUENCE}, "%");
+        params.setGlobalSearch(true);
+
+        assertTrue(assistant.findObjectsByMask(monitor, context, params).isEmpty());
+
+        verify(session).prepareStatement(argThat(sql -> sql.contains("pc.relkind = 'S'")));
+        verify(result, never()).next();
+        verify(result).close();
+        verify(statement).close();
+        verify(session).close();
+    }
+
+    @Test
+    void sequenceTypeIsAdvertisedForSearchAndCommentMatching() {
+        assertTrue(java.util.Arrays.asList(assistant.getSupportedObjectTypes())
+            .contains(RelationalObjectType.TYPE_SEQUENCE));
+        assertTrue(java.util.Arrays.asList(assistant.getSearchObjectTypes())
+            .contains(RelationalObjectType.TYPE_SEQUENCE));
+        assertTrue(assistant.supportsSearchInCommentsFor(RelationalObjectType.TYPE_SEQUENCE));
     }
 }

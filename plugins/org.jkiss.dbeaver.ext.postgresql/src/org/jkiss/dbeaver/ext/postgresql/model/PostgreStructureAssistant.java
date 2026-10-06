@@ -70,6 +70,7 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
             RelationalObjectType.TYPE_PROCEDURE,
             RelationalObjectType.TYPE_TABLE_COLUMN,
             RelationalObjectType.TYPE_DATA_TYPE,
+            RelationalObjectType.TYPE_SEQUENCE,
             };
     }
 
@@ -101,6 +102,7 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
             RelationalObjectType.TYPE_PROCEDURE,
             RelationalObjectType.TYPE_TABLE_COLUMN,
             RelationalObjectType.TYPE_DATA_TYPE,
+            RelationalObjectType.TYPE_SEQUENCE,
         };
     }
 
@@ -171,6 +173,8 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
                     findSchemaByMask(session, database, nsList, params, references);
                 } else if (type == RelationalObjectType.TYPE_DATA_TYPE) {
                     findDataTypesByMask(session, database, nsList, params, references);
+                } else if (type == RelationalObjectType.TYPE_SEQUENCE) {
+                    findSequencesByMask(session, database, nsList, params, references);
                 }
                 if (references.size() >= params.getMaxResults()) {
                     break;
@@ -180,6 +184,65 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
             throw new DBDatabaseException(ex, getDataSource());
         }
         return references;
+    }
+
+    private static void findSequencesByMask(
+        @NotNull JDBCSession session,
+        @NotNull PostgreDatabase database,
+        @NotNull List<PostgreSchema> schemas,
+        @NotNull ObjectsSearchParams params,
+        @NotNull Collection<? super DBSObjectReference> objects
+    ) throws SQLException, DBException {
+        DBRProgressMonitor monitor = session.getProgressMonitor();
+        PostgreQueryBuilder queryParams = new PostgreQueryBuilder(
+            "pc.oid,pc.relname,pc.relnamespace",
+            "pg_catalog.pg_class pc",
+            "pc.relname",
+            schemas,
+            "pc.relnamespace",
+            "pc.relname"
+        );
+        queryParams.setWhereClause("pc.relkind = 'S'");
+        queryParams.setCaseSensitive(params.isCaseSensitive());
+        if (params.isSearchInComments()) {
+            queryParams.setDescriptionClause("obj_description(pc.oid, 'pg_class')");
+        }
+        queryParams.setMaxResults(params.getMaxResults() - objects.size());
+
+        try (JDBCPreparedStatement statement = session.prepareStatement(queryParams.build())) {
+            fillParams(statement, params, schemas, false);
+            try (JDBCResultSet result = statement.executeQuery()) {
+                while (!monitor.isCanceled() && result.next()) {
+                    long schemaId = JDBCUtils.safeGetLong(result, "relnamespace");
+                    String sequenceName = JDBCUtils.safeGetString(result, "relname");
+                    PostgreSchema sequenceSchema = database.getSchema(monitor, schemaId);
+                    if (sequenceSchema == null) {
+                        log.debug("Sequence's schema '" + schemaId + "' not found");
+                        continue;
+                    }
+                    objects.add(new AbstractObjectReference<>(
+                        sequenceName,
+                        sequenceSchema,
+                        null,
+                        PostgreSequence.class,
+                        RelationalObjectType.TYPE_SEQUENCE,
+                        DBUtils.getQuotedIdentifier(sequenceSchema) + "."
+                            + DBUtils.getQuotedIdentifier(sequenceSchema.getDataSource(), sequenceName)
+                    ) {
+                        @NotNull
+                        @Override
+                        public DBSObject resolveObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+                            PostgreSequence sequence = sequenceSchema.getSequence(monitor, sequenceName);
+                            if (sequence == null) {
+                                throw new DBException("Sequence '" + sequenceName + "' not found in schema '"
+                                    + sequenceSchema.getName() + "'");
+                            }
+                            return sequence;
+                        }
+                    });
+                }
+            }
+        }
     }
 
     private static void findDataTypesByMask(
@@ -564,7 +627,8 @@ public class PostgreStructureAssistant implements DBSStructureAssistant<PostgreE
         return objectType == RelationalObjectType.TYPE_TABLE
             || objectType == RelationalObjectType.TYPE_CONSTRAINT
             || objectType == RelationalObjectType.TYPE_PROCEDURE
-            || objectType == RelationalObjectType.TYPE_TABLE_COLUMN;
+            || objectType == RelationalObjectType.TYPE_TABLE_COLUMN
+            || objectType == RelationalObjectType.TYPE_SEQUENCE;
     }
 
     @Override

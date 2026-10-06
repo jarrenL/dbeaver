@@ -1132,6 +1132,30 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     @Test
+    void productionSequenceSearchUsesCatalogCaseCommentsLimitAndSchema() throws Exception {
+        inIsolatedSchema((c, s) -> inIsolatedSchema((other, otherSchema) -> {
+            execute(c, "CREATE SEQUENCE " + s + ".\"Search Sequence\"");
+            execute(c, "CREATE SEQUENCE " + s + ".search_second");
+            execute(other, "CREATE SEQUENCE " + otherSchema + ".search_second");
+            execute(c, "COMMENT ON SEQUENCE " + s + ".\"Search Sequence\" IS 'sequence_comment_token'");
+            var type = org.jkiss.dbeaver.model.impl.struct.RelationalObjectType.TYPE_SEQUENCE;
+            var matches = searchObjects(c, s, "search%", false, 10, false, type);
+            assertEquals(List.of("Search Sequence", "search_second"), matches.stream()
+                .map(reference -> reference.getName()).toList());
+            assertTrue(matches.stream().allMatch(reference -> reference.getObjectClass()
+                == org.jkiss.dbeaver.ext.postgresql.model.PostgreSequence.class));
+            assertEquals(1, searchObjects(c, s, "search%", false, 1, false, type).size());
+            assertEquals(List.of("Search Sequence"), searchObjects(
+                c, s, "%sequence_comment_token%", false, 10, true, type
+            ).stream().map(reference -> reference.getName()).toList());
+            assertEquals(1, searchObjects(c, otherSchema, "search_second", true, 10, false, type).size());
+            execute(other, "DROP SEQUENCE " + otherSchema + ".search_second");
+            assertEquals(1, searchObjects(c, s, "search_second", true, 10, false, type).size());
+            assertTrue(searchObjects(c, otherSchema, "search_second", true, 10, false, type).isEmpty());
+        }));
+    }
+
+    @Test
     void productionSearchKeepsSameNamedTablesInTheirRequestedSchema() throws Exception {
         inIsolatedSchema((c, s) -> inIsolatedSchema((other, otherSchema) -> {
             execute(c, "CREATE TABLE " + s + ".same_name(id integer)");
