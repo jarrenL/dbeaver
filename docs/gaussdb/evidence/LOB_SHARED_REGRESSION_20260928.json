@@ -10,7 +10,7 @@
   "notVerified": [
     "Full reactor failed before tests: results/run-7LZlQr/maven.log Tycho cache lock timeout",
     "Docker API denied; previous GUI command 264 outcome remains unknown",
-    "Hermes initialization failed: /tmp/lob-hermes-review-20260928.log",
+    "Independent review initialization failed",
     "Live database tests, latest installation package, customer target versions, remote push"
   ],
   "batches": [

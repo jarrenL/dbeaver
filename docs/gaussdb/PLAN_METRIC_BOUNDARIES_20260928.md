@@ -26,7 +26,7 @@
 
 找回本地原有隔离配置，允许通过GAUSSDB_HISTORY_DRIVER_CLASS补充其未包含的driverClass字段，密码不写入代码或文档。首次按驱动服务描述设置org.postgresql.Driver失败，检查jar实际类后修正为com.huawei.gauss200.jdbc.Driver。正确驱动下直接编译成功，但4项计划回归＋2项事务测试均在建立连接时被SocketException: Operation not permitted拒绝（`/tmp/live-plan-transaction-driver-20260928.log`）；0通过、6失败、0跳过，未执行测试DDL。Docker容器内只读gsql连接检查成功不能替代JDBC产品链路验收。
 
-再次尝试本机Hermes只读审查，因会话目录不可写及Operation not permitted初始化失败（`/tmp/hermes-plan-review-20260928.log`），未获得审查结论。完整构建、真实事务数据断言、Linux GUI和最新推送仍待，不以此专项结果宣称全量验收。
+再次尝试本机辅助只读审查，因会话目录不可写及Operation not permitted初始化失败，未获得审查结论。完整构建、真实事务数据断言、Linux GUI和最新推送仍待，不以此专项结果宣称全量验收。
 
 对应历史清单7.1–7.2，使用GaussDB复用的PostgrePlanNodeXML/PostgrePlanNodeBase生产解析器。输入为独立构造的XML，不冒充服务器实测计划。
 

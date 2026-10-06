@@ -16,7 +16,7 @@
 
 源码调用点QueryResultsContainer.getSupportedFeatures会依据isModifying添加FEATURE_DATA_MODIFIED_ON_REFRESH；修复保持集合查询不被误标为刷新会修改数据的语句。尚未运行实际刷新确认界面，不能将模型判断等同SQL无副作用（例如查询调用有副作用的函数）。
 
-本轮Hermes只读审查请求仍在初始化时Operation not permitted退出，无审查报告，不能记为审核通过。
+本轮辅助只读审查请求仍在初始化时因Operation not permitted退出，无审查报告，不能记为审核通过。
 
 ## 后续：替换文本与reset的解析缓存
 

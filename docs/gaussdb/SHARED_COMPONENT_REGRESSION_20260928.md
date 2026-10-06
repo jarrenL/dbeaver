@@ -15,7 +15,7 @@
 
 复现：测试仓执行`node scripts/run-shared-focused.mjs --gauss-core --gauss-debug --compile-only`，用打印的编译目录分别执行`node scripts/run-existing-osgi.mjs <编译目录> --module=org.jkiss.dbeaver.ext.gaussdb.test --all-module`及`node scripts/run-existing-osgi.mjs <编译目录> --module=org.jkiss.dbeaver.ext.gaussdb.debug.test --all-module`。每次改源码后重新编译。普通classpath直接执行调试模块会加载到不匹配的GTK依赖并中止，故使用真实OSGi平台选择而非删减断言。
 
-仍需完整Tycho构建、GaussDB真库、Linux GUI、Hermes审核及验证后推送；本批不表示总目标完成。
+仍需完整Tycho构建、GaussDB真库、Linux GUI、独立审核及验证后推送；本批不表示总目标完成。
 
 ## 最新OSGi复验：34类629项通过
 
@@ -95,4 +95,4 @@
 
 ## 未覆盖边界
 
-联合组件测试没有访问GaussDB、没有启动Linux GUI、没有验证驱动下载，也不是全部客户端历史清单验收。完整构建最近仍在run-M0GyL5因Tycho缓存锁失败，真库Java连接复验仍因权限失败；Hermes初始化权限问题也没有被本次本地编译解决。共享修改仍需完整回归、实际环境验收后再作为已验收版本推送。
+联合组件测试没有访问GaussDB、没有启动Linux GUI、没有验证驱动下载，也不是全部客户端历史清单验收。完整构建最近仍在run-M0GyL5因Tycho缓存锁失败，真库Java连接复验仍因权限失败；辅助审查初始化权限问题也没有被本次本地编译解决。共享修改仍需完整回归、实际环境验收后再作为已验收版本推送。
