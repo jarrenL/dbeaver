@@ -1,4 +1,4 @@
-\set ON_ERROR_STOP on
+-- DBeaver/SWTBot fixture: do not use gsql-only meta commands such as \set.
 SET enable_force_create_obj=on;
 SET plsql_show_all_error=off;
 CREATE OR REPLACE PACKAGE ui_pkg.boundary_body AS
