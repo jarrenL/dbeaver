@@ -26,6 +26,12 @@ public class LiveDebug {
     static void exec(Connection c, String sql) throws Exception {
         try (Statement s=c.createStatement()) {s.setQueryTimeout(15);s.execute(sql);}
     }
+    static void execTarget(Connection c, String sql) throws Exception {
+        // A debug target is expected to remain blocked while the controller is
+        // stopped at breakpoints. A JDBC query timeout would cancel the CALL
+        // itself and leave the target transaction aborted on a slow test host.
+        try (Statement s=c.createStatement()) {s.execute(sql);}
+    }
     static String scalar(Connection c,String sql) throws Exception {
         try(Statement s=c.createStatement();ResultSet r=s.executeQuery(sql)) {return r.next()?r.getString(1):null;}
     }
@@ -72,7 +78,7 @@ public class LiveDebug {
                     s.setLong(1,oid);try(ResultSet r=s.executeQuery()){r.next();node=r.getString(1);port=r.getInt(2);}
                 }
                 ExecutorService pool=Executors.newSingleThreadExecutor();
-                Future<?> job=pool.submit(()-> {try {exec(target,"CALL fix.fix_target(6)");}catch(Exception e){System.err.println("TARGET FAILURE: "+e.getMessage());throw new RuntimeException(e);}});
+                Future<?> job=pool.submit(()-> {try {execTarget(target,"CALL fix.fix_target(6)");}catch(Exception e){System.err.println("TARGET FAILURE: "+e.getMessage());throw new RuntimeException(e);}});
                 try {
                     try(PreparedStatement s=controller.prepareStatement("SELECT * FROM DBE_PLDEBUGGER.attach(?, ?)")) {
                         s.setQueryTimeout(10);s.setString(1,node);s.setInt(2,port);

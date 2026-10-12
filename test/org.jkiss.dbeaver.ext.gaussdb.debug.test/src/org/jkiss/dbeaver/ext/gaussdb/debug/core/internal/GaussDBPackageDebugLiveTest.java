@@ -103,7 +103,7 @@ class GaussDBPackageDebugLiveTest {
 
                 targetJob = worker.submit(() -> {
                     try {
-                        execute(target, "CALL pkg_alpha.entry()");
+                        executeTarget(target, "CALL pkg_alpha.entry()");
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -220,7 +220,7 @@ class GaussDBPackageDebugLiveTest {
                 }
                 targetJob = worker.submit(() -> {
                     try {
-                        execute(target, "CALL review_standalone_stack.live_entry()");
+                        executeTarget(target, "CALL review_standalone_stack.live_entry()");
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -305,6 +305,14 @@ class GaussDBPackageDebugLiveTest {
     private static void execute(Connection connection, String sql) throws Exception {
         try (Statement statement = connection.createStatement()) {
             statement.setQueryTimeout(15);
+            statement.execute(sql);
+        }
+    }
+
+    private static void executeTarget(Connection connection, String sql) throws Exception {
+        // Debug target calls are deliberately suspended by the controller.
+        // Future.get and the fixture cleanup own the overall timeout instead.
+        try (Statement statement = connection.createStatement()) {
             statement.execute(sql);
         }
     }

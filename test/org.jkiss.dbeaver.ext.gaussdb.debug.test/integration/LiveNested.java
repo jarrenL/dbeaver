@@ -25,7 +25,7 @@ public class LiveNested extends LiveDebug {
     String node;int port;
     try(Statement s=t.createStatement();ResultSet r=s.executeQuery("SELECT * FROM DBE_PLDEBUGGER.turn_on("+oid+"::oid)")){r.next();node=r.getString(1);port=r.getInt(2);}
     ExecutorService pool=Executors.newSingleThreadExecutor();
-    Future<?> job=pool.submit(()->{try{exec(t,"CALL fix.fix_outer()");}catch(Exception e){throw new RuntimeException(e);}});
+    Future<?> job=pool.submit(()->{try{execTarget(t,"CALL fix.fix_outer()");}catch(Exception e){throw new RuntimeException(e);}});
     try {
      try(PreparedStatement s=c.prepareStatement("SELECT * FROM DBE_PLDEBUGGER.attach(?, ?)")) {
       s.setString(1,node);s.setInt(2,port);s.setQueryTimeout(10);
@@ -45,6 +45,7 @@ public class LiveNested extends LiveDebug {
      }
      check("1".equals(scalar(c,"SELECT count(*) FROM DBE_PLDEBUGGER.backtrace()")),"finish returns to caller");
      String response=control(c,"continue");
+     for(int i=0;i<10&&!response.contains("[EXECUTION FINISHED]");i++)response=control(c,"continue");
      check(response.contains("[EXECUTION FINISHED]"),"outer procedure completes");
      job.get(10,TimeUnit.SECONDS);t.rollback();
      exec(t,"SELECT DBE_PLDEBUGGER.turn_off("+oid+"::oid)");t.rollback();

@@ -210,8 +210,27 @@ class GaussDBSessionLiveTest {
         try (Statement s = c.createStatement()) { s.setQueryTimeout(15); s.execute(sql); }
     }
 
+    private static void execTarget(Connection c, String sql) throws Exception {
+        // The target CALL intentionally blocks while the debugger is paused.
+        // Lifecycle timeouts are enforced by Future.get and cleanupDebugger.
+        try (Statement s = c.createStatement()) { s.execute(sql); }
+    }
+
     private static String scalar(Connection c, String sql) throws Exception {
         try (Statement s = c.createStatement(); ResultSet r = s.executeQuery(sql)) { assertTrue(r.next()); return r.getString(1); }
+    }
+
+    @Test
+    void pausedDebugTargetCallHasNoJdbcStatementTimeout() throws Exception {
+        Connection target = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        when(target.createStatement()).thenReturn(statement);
+
+        execTarget(target, "CALL review_target.p()");
+
+        verify(statement, never()).setQueryTimeout(anyInt());
+        verify(statement).execute("CALL review_target.p()");
+        verify(statement).close();
     }
 
     @Test
@@ -268,7 +287,7 @@ class GaussDBSessionLiveTest {
                 }
                 targetJob.set(pool.submit(() -> {
                     try {
-                        exec(target, "CALL pkg_alpha.p()");
+                        execTarget(target, "CALL pkg_alpha.p()");
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -314,7 +333,7 @@ class GaussDBSessionLiveTest {
                 try (Statement s = t.createStatement(); ResultSet r = s.executeQuery("SELECT * FROM DBE_PLDEBUGGER.turn_on(" + oid + "::oid)")) {
                     assertTrue(r.next()); node = r.getString(1); port = r.getInt(2);
                 }
-                targetJob.set(pool.submit(() -> { try { exec(t, "CALL review_breakpoints.p()"); } catch (Exception e) { throw new RuntimeException(e); } }));
+                targetJob.set(pool.submit(() -> { try { execTarget(t, "CALL review_breakpoints.p()"); } catch (Exception e) { throw new RuntimeException(e); } }));
                 try (PreparedStatement attach = c.prepareStatement("SELECT * FROM DBE_PLDEBUGGER.attach(?, ?)")) {
                     attach.setString(1, node); attach.setInt(2, port); attach.setQueryTimeout(10);
                     GaussDBDebugSession.attachWithRetry(attach, new VoidProgressMonitor(), () -> false);
