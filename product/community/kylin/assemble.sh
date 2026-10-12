@@ -6,6 +6,8 @@ native_source=${2:?Native output directory required}
 jre_archive=${3:?JRE archive required}
 delivery_output=${4:?A new output directory required}
 delivery_arch=${5:?Use aarch64 or x86_64}
+script_directory=$(cd "$(dirname "$0")" && pwd)
+repository_root=$(cd "$script_directory/../../.." && pwd)
 case "$delivery_arch" in aarch64|x86_64) ;; *) exit 1;; esac
 test ! -e "$delivery_output"
 test -f "$product_source/dbeaver.ini"
@@ -49,6 +51,12 @@ zip -dq "$swt_bundle" META-INF/ECLIPSE_.SF META-INF/ECLIPSE_.RSA
 chmod 755 "$delivery_app/dbeaver"
 cp "$native_source/build-environment.txt" "$native_source/elf-versions.txt" "$delivery_output/"
 cp "$native_source/SHA256SUMS" "$delivery_output/NATIVE-SHA256SUMS"
+cp "$repository_root/README.md" "$delivery_output/README.md"
+cp "$repository_root/GAUSSDB_GUI_OPERATION_MANUAL_20260922.md" "$delivery_output/GAUSSDB_GUI_OPERATION_MANUAL_20260922.md"
+cp "$repository_root/GaussDB_DBeaver_调试与Package操作手册_20261006.docx" \
+    "$delivery_output/GaussDB_DBeaver_调试与Package操作手册_20261006.docx"
+cp "$script_directory/README.zh-CN.md" "$delivery_output/README-KYLIN.zh-CN.md"
+cp "$script_directory/THIRD-PARTY-SOURCES.md" "$delivery_output/THIRD-PARTY-SOURCES.md"
 printf '%s\n' "architecture=$delivery_arch" 'swt_source=v4973r12' 'launcher_source=R4_37' \
     'native_libraries=locally-rebuilt-unsigned' 'jdbc_driver=customer-supplied' > "$delivery_output/BUILD-INFO.txt"
 node "$(dirname "$0")/../verify-clean-product.mjs" "$delivery_app" --assembled

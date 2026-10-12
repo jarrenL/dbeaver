@@ -1,6 +1,6 @@
 # GaussDB 适配版 DBeaver：麒麟 V10 服务器版
 
-本目录为交付构建说明；当前验收进度见仓库根目录 `GAUSSDB_KYLIN_LINUX_ACCEPTANCE_20260909.md`。仅有候选目录不代表已完成发布。
+本目录为交付构建说明；客户操作步骤见仓库根目录 `GAUSSDB_GUI_OPERATION_MANUAL_20260922.md` 和 `GaussDB_DBeaver_调试与Package操作手册_20261006.docx`。仅有候选目录不代表已完成发布。
 
 ## 平台范围
 

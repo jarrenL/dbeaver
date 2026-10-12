@@ -36,7 +36,8 @@ assert(!/^\s*-vm\s*$/m.test(ini), 'Unexpected preconfigured VM');
 assert(ini.includes('-vmargs'), 'Missing VM arguments');
 fs.writeFileSync(iniFile, ini.replace('-vmargs', '-vm\njre/bin/javaw.exe\n-vmargs'));
 const root = path.resolve(import.meta.dirname, '../../..');
-for (const name of ['LICENSE.md', 'GAUSSDB_CROSS_PLATFORM_USER_GUIDE.md', 'GAUSSDB_WINDOWS_TEST_GUIDE.md']) {
+for (const name of ['LICENSE.md', 'README.md', 'GAUSSDB_GUI_OPERATION_MANUAL_20260922.md',
+  'GaussDB_DBeaver_调试与Package操作手册_20261006.docx']) {
   fs.copyFileSync(path.join(root, name), path.join(payload, name));
 }
 fs.copyFileSync(path.join(import.meta.dirname, 'README.md'), path.join(payload, 'WINDOWS-PREVIEW.md'));

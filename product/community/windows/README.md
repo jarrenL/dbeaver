@@ -11,14 +11,14 @@
 - 本包未签名，SmartScreen/企业终端策略可能拦截。核对 Release 的 SHA256SUMS，由 IT 批准；不要关闭系统防护。
 - JDBC 和 GaussDB 原生备份工具不捆绑。由 DBA 提供匹配服务器版本的 JDBC，使用 GaussDB Native 或 GaussDB 对应驱动类和 URL 连接远端 CN/集中式入口。
 - 首次配置启用 Procedure debugger。M 模式不启用 PL 调试；包功能需要支持它的集中式 ORA。Watch 只支持变量名。
-- 包内跨平台指南中的相对源码链接需在源码仓库浏览，完整在线文档见发布页面对应提交。
+- 包内 README 中的相对源码链接需在源码仓库浏览；调试与 Package 操作手册同时提供 Markdown 和 Word 版本。
 
 ## Reproduction
 
 1. Build the product using Maven/Tycho as documented in the repository. Source must be committed and identified by its full SHA; do not claim uncommitted code matches a commit.
 2. Obtain a matching Windows x64 Temurin 21 JRE from Adoptium. Verify its SHA-256 against the upstream asset metadata before extraction; retain all legal files and publish the corresponding JDK source archive with the release.
 3. With Node.js 22+ run `node product/community/windows/assemble.mjs PRODUCT_DIR EXTRACTED_JRE NEW_OUTPUT FULL_SOURCE_SHA`.
-4. With NSIS 3 on a supported build host, run `makensis -DRELEASE=20260921 -DPAYLOAD=/absolute/output/dbeaver -DREMOVE_MANIFEST=/absolute/output/remove-files.nsh -DOUTPUT=/absolute/output/dbeaver-gaussdb-26.1.5-windows-x86_64-setup.exe product/community/windows/gaussdb-installer.nsi`. On Windows NSIS, use the appropriate `/D` argument syntax.
+4. With NSIS 3 on a supported build host, run `makensis -DRELEASE=YYYYMMDD -DPAYLOAD=/absolute/output/dbeaver -DREMOVE_MANIFEST=/absolute/output/remove-files.nsh -DOUTPUT=/absolute/output/dbeaver-gaussdb-26.1.5-windows-x86_64-setup.exe product/community/windows/gaussdb-installer.nsi`. On Windows NSIS, use the appropriate `/D` argument syntax.
 5. Archive the same `dbeaver` payload as ZIP. Publish checksums, source SHA, JRE source archive and limitations. Test on Windows before promoting beyond preview.
 
 The generated uninstall manifest contains exact packaged files and non-recursive directory removal only. The installer intentionally has no selectable destination and does not merge into an existing directory. This avoids overwriting a user's existing DBeaver installation or recursively deleting user-added files.
