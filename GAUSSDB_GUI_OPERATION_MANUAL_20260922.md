@@ -1,10 +1,10 @@
 # GaussDB 适配版 DBeaver：图形界面使用说明书
 
-日期：2026-09-22。适用于数据库开发、测试及运维人员。本文可直接在代码仓库在线阅读，无需下载 HTML 文件。
+更新日期：2026-10-12。适用于数据库开发、测试及运维人员。本文可直接在代码仓库在线阅读，无需下载 HTML 文件。
 
-适用版本：DBeaver 26.1.5 GaussDB 适配版（2026-09-22 中文界面更新）。源码版本见发布页的构建清单；适用条件和验证范围见第 14 节。
+适用版本：DBeaver 26.1.5 GaussDB 适配版（构建标识 `202610120248`）。源码版本见发布页的构建清单；适用条件和验证范围见第 14 节。
 
-发布页（完整地址）：https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20260922
+发布页（完整地址）：https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20261012
 
 **重要：PL/SQL 调试、包管理测 O/Oracle 兼容库；M 模式只测连接、对象浏览、SQL 和表数据操作。不要在 M 库找 PL/SQL 调试入口。** 包测试要求服务端确实支持 Package；当前依据的是支持包的集中式 507 环境。客户端不能使不支持包的服务器突然支持包。
 
@@ -34,9 +34,10 @@
 
 DBeaver 安装在用户登录使用的麒麟图形桌面云里，连接远端 GaussDB 服务器；不要求安装到数据库服务器上。客户端不需要 Docker，也不需要 gdb。
 
-- 麒麟 x86_64：下载 Linux tar.gz，解压，进入 `dbeaver` 目录，双击 `dbeaver`，或终端执行 `./dbeaver`。
+- 麒麟 x86_64：下载文件名含 `KylinV10-x86_64` 的 Linux tar.gz，解压，进入 `dbeaver` 目录，双击 `dbeaver`，或终端执行 `./dbeaver`。
+- 麒麟 ARM64/aarch64：下载文件名含 `KylinV10-aarch64` 的 Linux tar.gz，操作步骤与 x86_64 相同。
 - Windows x86_64：使用 setup.exe 或解压 ZIP，运行 `dbeaver.exe`。本版 Windows 包尚无实机 GUI 验收。
-- 当前发布的这两个包不适用于 ARM64 客户端。`uname -m` 为 `aarch64` 时，不能运行 Linux x86_64 包。
+- 安装包必须与 CPU 和操作系统匹配。`uname -m` 为 `aarch64` 时不能运行 Linux x86_64 包；Windows ARM64、macOS 和 LoongArch 安装包不在本次发布范围。
 - 包里自带 Java，不需要将系统 Java 替换掉；JDBC 驱动需客户或供应商提供。
 
 ### 2.2 切换中文

@@ -44,6 +44,11 @@ for (const [source, destination] of [
 ]) {
   fs.copyFileSync(path.join(root, source), path.join(payload, destination));
 }
+const manualImageOutput = path.join(payload, 'docs/gaussdb/images');
+fs.mkdirSync(manualImageOutput, {recursive: true});
+for (const manualImage of ['language-config.png', 'debug-source.png', 'call-stack.png', 'package-errors.png']) {
+  fs.copyFileSync(path.join(root, 'docs/gaussdb/images', manualImage), path.join(manualImageOutput, manualImage));
+}
 fs.copyFileSync(path.join(import.meta.dirname, 'README.md'), path.join(payload, 'WINDOWS-PREVIEW.md'));
 fs.writeFileSync(path.join(payload, 'BUILD-MANIFEST.txt'),
   `Source: https://github.com/jarrenL/dbeaver\nRevision: ${revision}\nPlatform: win32/win32/x86_64\nUnsigned preview; Windows execution NOT validated.\nJDBC/native GaussDB tools are NOT bundled.\n\n${fs.readFileSync(path.join(jre, 'release'), 'utf8')}`);
