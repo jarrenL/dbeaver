@@ -136,6 +136,37 @@ public class GaussDBPackageTest {
         }
     }
 
+    @Test
+    public void packageChildrenContainOnlyMembersOfTheRequestedKindAndPackage() throws Exception {
+        GaussDBSchema schema = Mockito.mock(GaussDBSchema.class);
+        JDBCResultSet packageResult = Mockito.mock(JDBCResultSet.class);
+        Mockito.when(packageResult.getLong("oid")).thenReturn(73L);
+        Mockito.when(packageResult.getString("name")).thenReturn("test_package");
+        GaussDBPackage gaussPackage = new GaussDBPackage(Mockito.mock(JDBCSession.class), schema, packageResult);
+        DBRProgressMonitor monitor = Mockito.mock(DBRProgressMonitor.class);
+
+        GaussDBProcedure memberProcedure = Mockito.mock(GaussDBProcedure.class);
+        Mockito.when(memberProcedure.getPropackageid()).thenReturn(73L);
+        Mockito.when(memberProcedure.getKind()).thenReturn(org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind.p);
+        GaussDBProcedure otherPackageProcedure = Mockito.mock(GaussDBProcedure.class);
+        Mockito.when(otherPackageProcedure.getPropackageid()).thenReturn(74L);
+        Mockito.when(otherPackageProcedure.getKind()).thenReturn(org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind.p);
+        GaussDBFunction memberFunction = Mockito.mock(GaussDBFunction.class);
+        Mockito.when(memberFunction.getPropackageid()).thenReturn(73L);
+        Mockito.when(memberFunction.getKind()).thenReturn(org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind.f);
+
+        GaussDBSchema.ProceduresCache procedures = Mockito.mock(GaussDBSchema.ProceduresCache.class);
+        GaussDBSchema.FunctionsCache functions = Mockito.mock(GaussDBSchema.FunctionsCache.class);
+        Mockito.when(schema.getGaussDBProceduresCache()).thenReturn(procedures);
+        Mockito.when(schema.getGaussDBFunctionsCache()).thenReturn(functions);
+        Mockito.when(procedures.getAllObjects(monitor, schema))
+            .thenReturn(List.of(memberProcedure, otherPackageProcedure));
+        Mockito.when(functions.getAllObjects(monitor, schema)).thenReturn(List.of(memberFunction));
+
+        Assertions.assertEquals(List.of(memberProcedure), gaussPackage.getPackageProcedures(monitor));
+        Assertions.assertEquals(List.of(memberFunction), gaussPackage.getPackageFunctions(monitor));
+    }
+
     private static void assertSourceErrorPropagates(String sqlState) throws Exception {
         JDBCSession cacheSession = Mockito.mock(JDBCSession.class);
         JDBCSession sourceSession = Mockito.mock(JDBCSession.class);

@@ -11,10 +11,10 @@
 本仓库提供基于 DBeaver 26.1.5 的 GaussDB 适配实现与交付文档。
 
 - **[图形界面使用说明书（在线阅读，含截图）](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)**：安装、连接、调试入口、断点、变量、调用栈、事务及包编译的逐步操作。
-- [客户文档导航](docs/gaussdb/README.md)：平台安装、功能范围、使用步骤与验证记录。
-- [软件下载及版本附件](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-20260922)。
+- [存储过程调试与 Package 管理操作手册（Word 版）](GaussDB_DBeaver_调试与Package操作手册_20261006.docx)：适合下载、打印和离线使用。
+- [软件下载及版本附件](https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-linux-20261006)。
 
-PL/SQL 调试与 Package 用于 O/Oracle 模式；M 模式用于基础数据库操作。各平台的已验证范围和部署前提见客户文档，不以构建成功代替现场验收。以下为上游 DBeaver 项目介绍。
+PL/SQL 调试与 Package 用于 O/Oracle 模式；M 模式用于基础数据库操作。安装、使用步骤、功能边界和验收方法统一以上述操作手册为准。以下为上游 DBeaver 项目介绍。
 
 Free multi-platform database tool for developers, SQL programmers, database administrators and analysts.  
 

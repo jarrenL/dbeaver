@@ -282,6 +282,20 @@ public final class Bot implements IStartup {
             case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], out);
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
+            case "grid-click" -> {
+                org.eclipse.swt.graphics.Rectangle[] bounds = new org.eclipse.swt.graphics.Rectangle[1];
+                display.syncExec(() -> {
+                    try {
+                        bounds[0] = (org.eclipse.swt.graphics.Rectangle) widget.getClass()
+                            .getMethod("getCellBounds", int.class, int.class)
+                            .invoke(widget, Integer.parseInt(args[3]), Integer.parseInt(args[2]));
+                        if (bounds[0].x < 0 || bounds[0].y < 0 || bounds[0].width <= 0 || bounds[0].height <= 0) {
+                            throw new IllegalArgumentException("Grid cell is not visible");
+                        }
+                    } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
+                });
+                new CustomControl((Control) widget).clickAt(bounds[0].x + bounds[0].width / 2, bounds[0].y + bounds[0].height / 2);
+            }
             case "table-select" -> new SWTBotTable((Table) widget).select(Integer.parseInt(args[2]));
             case "table-context" -> new SWTBotTable((Table) widget).contextMenu(args[2]).click();
             case "focus" -> display.syncExec(() -> ((Control) widget).setFocus());
@@ -494,6 +508,10 @@ public final class Bot implements IStartup {
     private static final class CustomControl extends AbstractSWTBotControl<Control> {
         CustomControl(Control control) {
             super(control);
+        }
+
+        void clickAt(int x, int y) {
+            clickXY(x, y);
         }
 
         @Override

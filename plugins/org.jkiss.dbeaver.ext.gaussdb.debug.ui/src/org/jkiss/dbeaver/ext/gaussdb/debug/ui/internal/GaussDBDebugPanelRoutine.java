@@ -11,8 +11,10 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableItem;
@@ -24,6 +26,7 @@ import org.jkiss.dbeaver.debug.ui.DBGConfigurationPanelContainer;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugConstants;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugCore;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugArguments;
+import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugSessionSettings;
 import org.jkiss.dbeaver.debug.DBGException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureParameter;
@@ -51,6 +54,9 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
     private DBGConfigurationPanelContainer container;
     private CSmartSelector<GaussDBProcedure> routineSelector;
     private Table parametersTable;
+    private Composite sessionSettingsGroup;
+    private Label sessionSettingsDescription;
+    private Button sessionSettingsConsent;
     private GaussDBProcedure selectedRoutine;
     private final Map<DBSProcedureParameter, String> parameterValues = new HashMap<>();
     private final Map<DBSProcedureParameter, String> parameterModes = new HashMap<>();
@@ -142,6 +148,16 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
                 container.updateDialogState();
             }
         };
+
+        sessionSettingsGroup = UIUtils.createTitledComposite(
+            parent, GaussDBDebugMessages.session_settings_group, 1, GridData.FILL_HORIZONTAL);
+        sessionSettingsDescription = new Label(sessionSettingsGroup, SWT.WRAP);
+        sessionSettingsDescription.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+        sessionSettingsConsent = new Button(sessionSettingsGroup, SWT.CHECK | SWT.WRAP);
+        sessionSettingsConsent.setText(GaussDBDebugMessages.session_settings_consent);
+        sessionSettingsConsent.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+        sessionSettingsConsent.addListener(SWT.Selection, event -> container.updateDialogState());
+        updateSessionSettingsControls();
     }
 
     private void selectRoutine(Shell shell) {
@@ -162,12 +178,14 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
                     selectedRoutine = null;
                     routineSelector.removeAll();
                     parametersTable.removeAll();
+                    updateSessionSettingsControls();
                     container.setWarningMessage(eligibilityError);
                     container.updateDialogState();
                     return;
                 }
             } catch (DBException e) {
                 selectedRoutine = null;
+                updateSessionSettingsControls();
                 container.setWarningMessage(e.getMessage());
                 container.updateDialogState();
                 return;
@@ -179,6 +197,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
             routineSelector.addItem(routine);
             routineSelector.select(routine);
             updateParameters();
+            updateSessionSettingsControls();
             container.setWarningMessage(null);
             container.updateDialogState();
         }
@@ -189,6 +208,9 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         selectedRoutine = null;
         parameterValues.clear();
         parameterModes.clear();
+        if (sessionSettingsConsent != null) {
+            sessionSettingsConsent.setSelection(false);
+        }
         if (CommonUtils.toLong(configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_OID)) != 0 && dataSource != null) {
             try {
                 container.getRunnableContext().run(true, true, monitor -> {
@@ -211,6 +233,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
             }
         }
         if (selectedRoutine == null) {
+            updateSessionSettingsControls();
             return;
         }
         Object rawValues = configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETERS);
@@ -236,6 +259,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         routineSelector.addItem(selectedRoutine);
         routineSelector.select(selectedRoutine);
         updateParameters();
+        updateSessionSettingsControls();
     }
 
     private void updateParameters() {
@@ -251,8 +275,29 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         }
     }
 
+    private void updateSessionSettingsControls() {
+        if (sessionSettingsGroup == null || sessionSettingsGroup.isDisposed()) {
+            return;
+        }
+        boolean required = selectedRoutine != null && GaussDBDebugSessionSettings.requiresConsent(selectedRoutine);
+        GridData layoutData = (GridData) sessionSettingsGroup.getLayoutData();
+        layoutData.exclude = !required;
+        sessionSettingsGroup.setVisible(required);
+        sessionSettingsConsent.setSelection(false);
+        if (required) {
+            sessionSettingsDescription.setText(NLS.bind(
+                GaussDBDebugMessages.session_settings_description,
+                selectedRoutine.getInvocationSchema()
+            ));
+        } else {
+            sessionSettingsDescription.setText("");
+        }
+        sessionSettingsGroup.getParent().layout(true, true);
+    }
+
     @Override
     public void saveConfiguration(DBPDataSourceContainer dataSource, Map<String, Object> configuration) {
+        configuration.remove(GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN);
         if (selectedRoutine == null) {
             configuration.remove(GaussDBDebugConstants.ATTR_ROUTINE_OID);
             return;
@@ -267,11 +312,21 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         }
         configuration.put(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETERS, values);
         configuration.put(GaussDBDebugConstants.ATTR_ROUTINE_PARAMETER_MODES, modes);
+        if (GaussDBDebugSessionSettings.requiresConsent(selectedRoutine) && sessionSettingsConsent.getSelection()) {
+            configuration.put(
+                GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN,
+                GaussDBDebugSessionSettings.issueConsentToken()
+            );
+        }
     }
 
     @Override
     public boolean isValid() {
         if (selectedRoutine == null) {
+            return false;
+        }
+        if (GaussDBDebugSessionSettings.requiresConsent(selectedRoutine) && !sessionSettingsConsent.getSelection()) {
+            container.setWarningMessage(GaussDBDebugMessages.session_settings_required);
             return false;
         }
         List<PostgreProcedureParameter> parameters = selectedRoutine.getInputParameters();

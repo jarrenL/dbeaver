@@ -188,10 +188,12 @@ class GaussDBSessionLiveTest {
         return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
             if (type == JDBCSession.class && method.getName().equals("close")) { return null; }
             Class<?> jdbcType = delegate instanceof Connection ? Connection.class
-                : delegate instanceof PreparedStatement ? PreparedStatement.class : ResultSet.class;
+                : delegate instanceof PreparedStatement ? PreparedStatement.class
+                : delegate instanceof Statement ? Statement.class : ResultSet.class;
             try {
                 Object value = jdbcType.getMethod(method.getName(), method.getParameterTypes()).invoke(delegate, args);
                 if (value instanceof PreparedStatement s) { return bridge(JDBCPreparedStatement.class, s); }
+                if (value instanceof Statement s) { return bridge(JDBCStatement.class, s); }
                 if (value instanceof ResultSet r) { return bridge(JDBCResultSet.class, r); }
                 return value;
             } catch (InvocationTargetException e) { throw e.getCause(); }
@@ -226,6 +228,73 @@ class GaussDBSessionLiveTest {
                 exec(c, "CREATE FUNCTION review_defaults.f(p text) RETURNS text AS $$ BEGIN RETURN p; END; $$ LANGUAGE plpgsql");
                 assertThrows(DBGException.class, () -> session.validateDefaultInvocation(new VoidProgressMonitor()));
             } finally { exec(c, "DROP SCHEMA review_defaults CASCADE"); }
+        }
+    }
+
+    @Test
+    void packageMemberDebugUsesPackageSearchPathAndIgnoresSameNameInAnotherPackage() throws Exception {
+        try (Connection target = connect(); Connection control = connect()) {
+            exec(target, "CREATE SCHEMA review_package_debug");
+            var pool = Executors.newSingleThreadExecutor();
+            var targetJob = new java.util.concurrent.atomic.AtomicReference<Future<?>>();
+            try {
+                exec(target, "CREATE PACKAGE review_package_debug.pkg_alpha AS "
+                    + "PROCEDURE p(v integer DEFAULT 7); FUNCTION f(v integer DEFAULT 11) RETURN integer; END pkg_alpha;");
+                exec(target, "CREATE PACKAGE BODY review_package_debug.pkg_alpha AS "
+                    + "PROCEDURE p(v integer DEFAULT 7) AS BEGIN NULL; END; "
+                    + "FUNCTION f(v integer DEFAULT 11) RETURN integer AS BEGIN RETURN v + 1; END; END pkg_alpha;");
+                exec(target, "CREATE PACKAGE review_package_debug.pkg_beta AS "
+                    + "PROCEDURE p(v integer DEFAULT 8); END pkg_beta;");
+                exec(target, "CREATE PACKAGE BODY review_package_debug.pkg_beta AS "
+                    + "PROCEDURE p(v integer DEFAULT 8) AS BEGIN NULL; END; END pkg_beta;");
+                long oid = Long.parseLong(scalar(target, "SELECT p.oid FROM pg_proc p JOIN pg_namespace n "
+                    + "ON n.oid=p.pronamespace JOIN gs_package pkg ON pkg.oid=p.propackageid "
+                    + "WHERE n.nspname='review_package_debug' AND pkg.pkgname='pkg_alpha' AND p.proname='p'"));
+                assertEquals("0", scalar(target, "SELECT count(*) FROM pg_proc p JOIN pg_proc target "
+                    + "ON p.proname=target.proname AND p.pronamespace=target.pronamespace "
+                    + "AND p.propackageid=target.propackageid WHERE target.oid=" + oid + " AND p.oid<>target.oid"));
+
+                target.setAutoCommit(false);
+                GaussDBProcedure routine = mock(GaussDBProcedure.class);
+                when(routine.getInvocationSchema()).thenReturn("review_package_debug");
+                GaussDBDebugSession.configureInvocationSchema(bridge(JDBCSession.class, target), routine);
+                String node;
+                int port;
+                try (Statement statement = target.createStatement();
+                     ResultSet result = statement.executeQuery("SELECT * FROM DBE_PLDEBUGGER.turn_on(" + oid + "::oid)")) {
+                    assertTrue(result.next());
+                    node = result.getString(1);
+                    port = result.getInt(2);
+                }
+                targetJob.set(pool.submit(() -> {
+                    try {
+                        exec(target, "CALL pkg_alpha.p()");
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }));
+                try (PreparedStatement attach = control.prepareStatement("SELECT * FROM DBE_PLDEBUGGER.attach(?, ?)")) {
+                    attach.setString(1, node);
+                    attach.setInt(2, port);
+                    attach.setQueryTimeout(10);
+                    GaussDBDebugSession.attachWithRetry(attach, new VoidProgressMonitor(), () -> false);
+                }
+                assertEquals("pkg_alpha.p", scalar(control, "SELECT funcname FROM DBE_PLDEBUGGER.backtrace() WHERE frameno=0"));
+                assertEquals("7", scalar(control, "SELECT value FROM DBE_PLDEBUGGER.info_locals(0) WHERE varname='v'"));
+                exec(control, "SELECT * FROM DBE_PLDEBUGGER.continue()");
+                targetJob.get().get(15, TimeUnit.SECONDS);
+                target.commit();
+                exec(target, "SET search_path=review_package_debug,public");
+                assertEquals("12", scalar(target, "SELECT pkg_alpha.f()"));
+            } finally {
+                if (targetJob.get() != null && !targetJob.get().isDone()) {
+                    try { exec(control, "SELECT DBE_PLDEBUGGER.abort()"); } catch (Exception ignored) { }
+                }
+                pool.shutdownNow();
+                assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS));
+                if (!target.getAutoCommit()) { target.rollback(); target.setAutoCommit(true); }
+                exec(control, "DROP SCHEMA review_package_debug CASCADE");
+            }
         }
     }
 

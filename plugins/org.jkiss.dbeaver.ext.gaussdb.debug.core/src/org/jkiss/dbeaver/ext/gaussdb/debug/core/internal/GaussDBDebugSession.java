@@ -17,9 +17,9 @@ import org.jkiss.dbeaver.debug.jdbc.DBGJDBCSession;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugConstants;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugArguments;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugCore;
+import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugSessionSettings;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureParameter;
-import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
@@ -72,17 +72,17 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         throws DBGException {
         super(controller);
         this.configuration = configuration;
+        GaussDBProcedure resolvedRoutine;
         try {
-            routine = GaussDBDebugCore.resolveRoutine(monitor, controller.getDataSourceContainer(), configuration);
-            controllerConnection = (JDBCExecutionContext) routine.getDatabase().openIsolatedContext(
-                monitor, "GaussDB debugger controller", null);
-            targetConnection = (JDBCExecutionContext) routine.getDatabase().openIsolatedContext(
-                monitor, "GaussDB debugger target", null);
-            controllerConnection.setAutoCommit(monitor, true);
-            targetConnection.setAutoCommit(monitor, false);
+            resolvedRoutine = GaussDBDebugCore.resolveRoutine(
+                monitor, controller.getDataSourceContainer(), configuration);
         } catch (DBException e) {
-            throw new DBGException("Unable to create GaussDB debug connections", e);
+            throw new DBGException("Unable to resolve the GaussDB debug target", e);
         }
+        DebugConnections connections = openDebugConnections(monitor, resolvedRoutine);
+        routine = resolvedRoutine;
+        controllerConnection = connections.controller();
+        targetConnection = connections.target();
     }
 
     @org.jkiss.dbeaver.model.meta.ForTest
@@ -108,19 +108,24 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         } catch (DBException e) {
             throw new DBGException("Unable to validate the GaussDB routine for debugging", e);
         }
+        // Consent is single-use and must be consumed before any session setting is changed.
+        GaussDBDebugSessionSettings.requireAndConsumeConsent(routine, configuration);
         checkCapabilities(monitor);
         long processId = queryLong(targetConnection, monitor, "SELECT pg_backend_pid()", "Read target process");
         String node;
         int port;
-        try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Enable PL/SQL debugger");
-             PreparedStatement statement = session.prepareStatement("SELECT * FROM " + API + "turn_on(?::oid)")) {
-            statement.setLong(1, routine.getObjectId());
-            try (ResultSet result = statement.executeQuery()) {
-                if (!result.next()) {
-                    throw new DBGException("DBE_PLDEBUGGER.turn_on did not return a debug endpoint");
+        try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Enable PL/SQL debugger")) {
+            // Package member lookup inside turn_on follows search_path as well as the invocation itself.
+            configureInvocationSchema(session, routine);
+            try (PreparedStatement statement = session.prepareStatement("SELECT * FROM " + API + "turn_on(?::oid)")) {
+                statement.setLong(1, routine.getObjectId());
+                try (ResultSet result = statement.executeQuery()) {
+                    if (!result.next()) {
+                        throw new DBGException("DBE_PLDEBUGGER.turn_on did not return a debug endpoint");
+                    }
+                    node = result.getString(1);
+                    port = result.getInt(2);
                 }
-                node = result.getString(1);
-                port = result.getInt(2);
             }
         } catch (SQLException e) {
             throw sqlError("Unable to enable GaussDB PL/SQL debugger", e);
@@ -147,7 +152,16 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         DBRProgressMonitor monitor,
         java.util.function.BooleanSupplier targetDone
     ) throws SQLException, DBGException {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        attachWithRetry(statement, monitor, targetDone, System.nanoTime() + TimeUnit.SECONDS.toNanos(10));
+    }
+
+    @org.jkiss.dbeaver.model.meta.ForTest
+    static void attachWithRetry(
+        PreparedStatement statement,
+        DBRProgressMonitor monitor,
+        java.util.function.BooleanSupplier targetDone,
+        long deadline
+    ) throws SQLException, DBGException {
         while (true) {
             if (monitor.isCanceled() || targetDone.getAsBoolean()) {
                 throw new DBGException("GaussDB debug target stopped before attachment");
@@ -186,8 +200,14 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         if (values.size() < parameters.size()) {
             validateDefaultInvocation(monitor);
         }
+        final String invocationName;
+        try {
+            invocationName = routine.getInvocationName(monitor);
+        } catch (DBException e) {
+            throw new DBGException("Unable to resolve GaussDB routine invocation name", e);
+        }
         String sql = (routine.getProcedureType() == DBSProcedureType.PROCEDURE ? "CALL " : "SELECT ") +
-            routine.getFullyQualifiedName(DBPEvaluationContext.DML) + '(' + arguments.sql() + ')';
+            invocationName + '(' + arguments.sql() + ')';
 
         targetFinished = new CountDownLatch(1);
         targetSucceeded = false;
@@ -195,17 +215,18 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             @NotNull
             @Override
             protected IStatus run(@NotNull DBRProgressMonitor monitor) {
-                try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.USER, "Run debug target");
-                     PreparedStatement statement = session.prepareStatement(sql.toString())) {
-                    for (int i = 0; i < values.size(); i++) {
-                        String value = values.get(i);
-                        if (value == null) {
-                            statement.setNull(i + 1, Types.NULL);
-                        } else {
-                            statement.setString(i + 1, value);
+                try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.USER, "Run debug target")) {
+                    try (PreparedStatement statement = session.prepareStatement(sql)) {
+                        for (int i = 0; i < values.size(); i++) {
+                            String value = values.get(i);
+                            if (value == null) {
+                                statement.setNull(i + 1, Types.NULL);
+                            } else {
+                                statement.setString(i + 1, value);
+                            }
                         }
+                        statement.execute();
                     }
-                    statement.execute();
                 } catch (Exception e) {
                     targetFinished.countDown();
                     return handleTargetFailure(e);
@@ -220,6 +241,15 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         targetJob.schedule();
     }
 
+    static void configureInvocationSchema(JDBCSession session, GaussDBProcedure routine) throws SQLException {
+        String invocationSchema = routine.getInvocationSchema();
+        if (invocationSchema != null) {
+            try (Statement statement = session.createStatement()) {
+                statement.execute("SET LOCAL search_path = " + invocationSchema);
+            }
+        }
+    }
+
     void validateDefaultInvocation(DBRProgressMonitor monitor) throws DBGException {
         if (monitor.isCanceled()) {
             throw new DBGException("Default argument validation canceled");
@@ -228,6 +258,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         // Reject ambiguous names conservatively instead of running an unintended routine.
         String sql = "SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_proc target " +
             "ON p.proname=target.proname AND p.pronamespace=target.pronamespace " +
+            "AND p.propackageid=target.propackageid " +
             "WHERE target.oid=? AND p.oid<>target.oid LIMIT 1";
         try (JDBCSession session = targetConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Validate default arguments");
              PreparedStatement statement = session.prepareStatement(sql)) {
@@ -870,13 +901,52 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         try (JDBCSession session = context.openSession(monitor, DBCExecutionPurpose.UTIL, task);
              Statement statement = session.createStatement();
              ResultSet result = statement.executeQuery(sql)) {
-            if (result.next()) {
-                return result.getLong(1);
+            if (!result.next()) {
+                throw new DBGException(task + " returned no result");
             }
-            throw new DBGException(task + " returned no result");
+            long value = result.getLong(1);
+            if (result.wasNull() || value <= 0) {
+                throw new DBGException(task + " returned an invalid identifier");
+            }
+            return value;
         } catch (SQLException e) {
             throw sqlError(task, e);
         }
+    }
+
+    @org.jkiss.dbeaver.model.meta.ForTest
+    static DebugConnections openDebugConnections(DBRProgressMonitor monitor, GaussDBProcedure routine)
+        throws DBGException {
+        JDBCExecutionContext controller = null;
+        JDBCExecutionContext target = null;
+        try {
+            controller = (JDBCExecutionContext) routine.getDatabase().openIsolatedContext(
+                monitor, "GaussDB debugger controller", null);
+            target = (JDBCExecutionContext) routine.getDatabase().openIsolatedContext(
+                monitor, "GaussDB debugger target", null);
+            controller.setAutoCommit(monitor, true);
+            target.setAutoCommit(monitor, false);
+            return new DebugConnections(controller, target);
+        } catch (DBException | RuntimeException e) {
+            DBGException failure = new DBGException("Unable to create GaussDB debug connections", e);
+            closeFailedContext(target, failure);
+            closeFailedContext(controller, failure);
+            throw failure;
+        }
+    }
+
+    private static void closeFailedContext(JDBCExecutionContext context, DBGException failure) {
+        if (context == null) {
+            return;
+        }
+        try {
+            context.close();
+        } catch (RuntimeException closeError) {
+            failure.addSuppressed(closeError);
+        }
+    }
+
+    record DebugConnections(JDBCExecutionContext controller, JDBCExecutionContext target) {
     }
 
     private static String queryString(JDBCExecutionContext context, DBRProgressMonitor monitor, String sql, String task)

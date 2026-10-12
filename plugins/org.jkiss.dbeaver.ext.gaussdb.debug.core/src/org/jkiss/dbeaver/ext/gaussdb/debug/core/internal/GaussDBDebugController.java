@@ -21,7 +21,7 @@ public class GaussDBDebugController extends DBGBaseController {
 
     @Override
     public GaussDBDebugSession createSession(DBRProgressMonitor monitor, Map<String, Object> configuration) throws DBGException {
-        GaussDBDebugSession session = new GaussDBDebugSession(monitor, this, configuration);
+        GaussDBDebugSession session = newSession(monitor, configuration);
         try {
             session.attach(monitor);
             return session;
@@ -33,6 +33,11 @@ public class GaussDBDebugController extends DBGBaseController {
             }
             throw e;
         }
+    }
+
+    @org.jkiss.dbeaver.model.meta.ForTest
+    GaussDBDebugSession newSession(DBRProgressMonitor monitor, Map<String, Object> configuration) throws DBGException {
+        return new GaussDBDebugSession(monitor, this, configuration);
     }
 
     @Override

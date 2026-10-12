@@ -174,6 +174,44 @@ public class GaussDBProcedureTest {
         Assertions.assertTrue(ddl.contains("AS $$"));
     }
 
+    @Test
+    public void standaloneInvocationUsesSchemaAndRoutineName() throws Exception {
+        Assertions.assertEquals(
+            "public.refresh_totals",
+            procedure.getInvocationName(Mockito.mock(DBRProgressMonitor.class))
+        );
+        Assertions.assertNull(procedure.getInvocationSchema());
+    }
+
+    @Test
+    public void packageMemberInvocationIncludesPackageAndQuotesEveryIdentifier() throws Exception {
+        DBRProgressMonitor monitor = Mockito.mock(DBRProgressMonitor.class);
+        GaussDBPackage gaussPackage = Mockito.mock(GaussDBPackage.class);
+        Mockito.when(gaussPackage.getObjectId()).thenReturn(73L);
+        Mockito.when(gaussPackage.getName()).thenReturn("Order Tools");
+        Mockito.when(schema.getPackages(monitor)).thenReturn(List.of(gaussPackage));
+        Mockito.when(schema.getName()).thenReturn("Business Data");
+        procedure.setName("Refresh Totals");
+        procedure.propackageid = 73L;
+
+        Assertions.assertEquals(
+            "\"Order Tools\".\"Refresh Totals\"",
+            procedure.getInvocationName(monitor)
+        );
+        Assertions.assertEquals("\"Business Data\"", procedure.getInvocationSchema());
+    }
+
+    @Test
+    public void missingPackageMetadataNeverFallsBackToCallingStandaloneRoutine() throws Exception {
+        DBRProgressMonitor monitor = Mockito.mock(DBRProgressMonitor.class);
+        Mockito.when(schema.getPackages(monitor)).thenReturn(List.of());
+        procedure.propackageid = 73L;
+
+        DBException error = Assertions.assertThrows(DBException.class, () -> procedure.getInvocationName(monitor));
+        Assertions.assertTrue(error.getMessage().contains("73"));
+        Assertions.assertTrue(error.getMessage().contains("refresh_totals"));
+    }
+
     private static class TestProcedure extends GaussDBProcedure {
         TestProcedure(GaussDBSchema schema) {
             super(schema);

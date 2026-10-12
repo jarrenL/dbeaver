@@ -6,11 +6,17 @@
 package org.jkiss.dbeaver.ext.gaussdb.debug.core.internal;
 
 import org.jkiss.dbeaver.debug.DBGException;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase;
+import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugConstants;
+import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugSessionSettings;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreExecutionContext;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
+import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -18,6 +24,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
+import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -71,6 +80,85 @@ class GaussDBDebugSessionTest {
         assertTrue(info.getTitle().contains(Long.toString(pid)));
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(longs = {-1, 0})
+    void rejectsNonPositiveBackendProcessIds(long pid) throws Exception {
+        JDBCExecutionContext context = mock(JDBCExecutionContext.class);
+        JDBCSession jdbc = mock(JDBCSession.class);
+        JDBCStatement statement = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(context.openSession(any(), any(), anyString())).thenReturn(jdbc);
+        when(jdbc.createStatement()).thenReturn(statement);
+        when(statement.executeQuery("SELECT pg_backend_pid()" )).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        when(result.getLong(1)).thenReturn(pid);
+
+        DBGException failure = assertThrows(DBGException.class, () -> GaussDBDebugSession.queryLong(
+            context, new VoidProgressMonitor(), "SELECT pg_backend_pid()", "Read target process"));
+
+        assertTrue(failure.getMessage().contains("invalid identifier"));
+    }
+
+    @Test
+    void rejectsNullBackendProcessId() throws Exception {
+        JDBCExecutionContext context = mock(JDBCExecutionContext.class);
+        JDBCSession jdbc = mock(JDBCSession.class);
+        JDBCStatement statement = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(context.openSession(any(), any(), anyString())).thenReturn(jdbc);
+        when(jdbc.createStatement()).thenReturn(statement);
+        when(statement.executeQuery("SELECT pg_backend_pid()" )).thenReturn(result);
+        when(result.next()).thenReturn(true);
+        when(result.getLong(1)).thenReturn(0L);
+        when(result.wasNull()).thenReturn(true);
+
+        DBGException failure = assertThrows(DBGException.class, () -> GaussDBDebugSession.queryLong(
+            context, new VoidProgressMonitor(), "SELECT pg_backend_pid()", "Read target process"));
+
+        assertTrue(failure.getMessage().contains("invalid identifier"));
+    }
+
+    @Test
+    void closesControllerContextWhenOpeningTargetContextFails() throws Exception {
+        GaussDBProcedure routine = mock(GaussDBProcedure.class);
+        GaussDBDatabase database = mock(GaussDBDatabase.class);
+        PostgreExecutionContext controllerContext = mock(PostgreExecutionContext.class);
+        when(routine.getDatabase()).thenReturn(database);
+        when(database.openIsolatedContext(any(), anyString(), isNull()))
+            .thenReturn(controllerContext)
+            .thenThrow(new DBException("target context failure"));
+
+        assertThrows(DBGException.class,
+            () -> GaussDBDebugSession.openDebugConnections(monitor, routine));
+
+        verify(controllerContext).close();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void closesBothContextsWhenAutoCommitInitializationFails(boolean controllerFails) throws Exception {
+        GaussDBProcedure routine = mock(GaussDBProcedure.class);
+        GaussDBDatabase database = mock(GaussDBDatabase.class);
+        PostgreExecutionContext controllerContext = mock(PostgreExecutionContext.class);
+        PostgreExecutionContext targetContext = mock(PostgreExecutionContext.class);
+        when(routine.getDatabase()).thenReturn(database);
+        when(database.openIsolatedContext(any(), anyString(), isNull()))
+            .thenReturn(controllerContext, targetContext);
+        if (controllerFails) {
+            doThrow(new DBCException("controller autocommit failure"))
+                .when(controllerContext).setAutoCommit(monitor, true);
+        } else {
+            doThrow(new DBCException("target autocommit failure"))
+                .when(targetContext).setAutoCommit(monitor, false);
+        }
+
+        assertThrows(DBGException.class,
+            () -> GaussDBDebugSession.openDebugConnections(monitor, routine));
+
+        verify(targetContext).close();
+        verify(controllerContext).close();
+    }
+
     private final VoidProgressMonitor monitor = new VoidProgressMonitor();
     private JDBCSession connection;
     private GaussDBDebugSession session;
@@ -99,6 +187,56 @@ class GaussDBDebugSessionTest {
     private JDBCPreparedStatement validBreakpoint(int id) throws SQLException {
         query("SELECT canbreak FROM DBE_PLDEBUGGER.info_code(?::oid) WHERE lineno=?", true, true, 0);
         return query("SELECT DBE_PLDEBUGGER.add_breakpoint(?::oid, ?::integer)", true, true, id);
+    }
+
+    @Test
+    void packageTargetSelectsItsSchemaOnlyForTheCurrentDebugTransaction() throws Exception {
+        GaussDBProcedure routine = mock(GaussDBProcedure.class);
+        JDBCStatement statement = mock(JDBCStatement.class);
+        when(routine.getInvocationSchema()).thenReturn("\"Business Data\"");
+        when(connection.createStatement()).thenReturn(statement);
+
+        GaussDBDebugSession.configureInvocationSchema(connection, routine);
+
+        verify(statement).execute("SET LOCAL search_path = \"Business Data\"");
+        verify(statement).close();
+    }
+
+    @Test
+    void standaloneTargetDoesNotChangeSearchPath() throws Exception {
+        GaussDBProcedure routine = mock(GaussDBProcedure.class);
+        when(routine.getInvocationSchema()).thenReturn(null);
+
+        GaussDBDebugSession.configureInvocationSchema(connection, routine);
+
+        verify(connection, never()).createStatement();
+    }
+
+    @Test
+    void packageSessionSettingRequiresFreshConsentForEveryLaunch() throws Exception {
+        GaussDBProcedure routine = mock(GaussDBProcedure.class);
+        when(routine.getInvocationSchema()).thenReturn("\"Business Data\"");
+        Map<String, Object> configuration = new HashMap<>();
+
+        assertThrows(DBGException.class,
+            () -> GaussDBDebugSessionSettings.requireAndConsumeConsent(routine, configuration));
+
+        configuration.put(
+            GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN,
+            GaussDBDebugSessionSettings.issueConsentToken()
+        );
+        assertDoesNotThrow(() -> GaussDBDebugSessionSettings.requireAndConsumeConsent(routine, configuration));
+        assertThrows(DBGException.class,
+            () -> GaussDBDebugSessionSettings.requireAndConsumeConsent(routine, configuration),
+            "A saved launch configuration must not silently reuse consent from an earlier debug run");
+    }
+
+    @Test
+    void standaloneRoutineDoesNotRequireSessionSettingConsent() {
+        GaussDBProcedure routine = mock(GaussDBProcedure.class);
+        when(routine.getInvocationSchema()).thenReturn(null);
+
+        assertDoesNotThrow(() -> GaussDBDebugSessionSettings.requireAndConsumeConsent(routine, Map.of()));
     }
 
     @Test
@@ -429,6 +567,35 @@ class GaussDBDebugSessionTest {
         assertNull(variable.getVal());
     }
 
+    @Test
+    void cursorAndPackageVariableMetadataSurvivesTheDebuggerResultSet() throws Exception {
+        JDBCStatement locals = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(connection.createStatement()).thenReturn(locals);
+        when(locals.executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(2)")).thenReturn(result);
+        when(result.next()).thenReturn(true, true, false);
+        when(result.getString("varname")).thenReturn("rows_cursor", "package_counter");
+        when(result.getString("vartype")).thenReturn("refcursor", "integer");
+        when(result.getString("value")).thenReturn("<unnamed portal 1>", "42");
+        when(result.getString("package_name")).thenReturn(null, "finance_package");
+        when(result.getBoolean("isconst")).thenReturn(false, true);
+
+        var frame = new GaussDBDebugStackFrame(2, "nested_member", 8, 73L, "OPEN rows_cursor");
+        List<org.jkiss.dbeaver.debug.DBGVariable<?>> variables = session.getVariables(frame);
+
+        assertEquals(2, variables.size());
+        var cursor = (GaussDBDebugVariable) variables.get(0);
+        assertEquals("rows_cursor", cursor.getName());
+        assertEquals("refcursor", cursor.getDataType());
+        assertEquals("<unnamed portal 1>", cursor.getVal());
+        assertNull(cursor.getPackageName());
+        assertTrue(cursor.isReadOnly(), "non-current-frame cursor must not be edited through set_var");
+        var packageVariable = (GaussDBDebugVariable) variables.get(1);
+        assertEquals("finance_package", packageVariable.getPackageName());
+        assertEquals("42", packageVariable.getVal());
+        assertTrue(packageVariable.isReadOnly(), "constants must remain read-only");
+    }
+
     private JDBCResultSet localVariableResult(String value) throws SQLException {
         JDBCStatement locals = mock(JDBCStatement.class);
         JDBCResultSet result = mock(JDBCResultSet.class);
@@ -501,6 +668,44 @@ class GaussDBDebugSessionTest {
     }
 
     @Test
+    void attachStopsBeforeJdbcWhenMonitorIsCanceled() throws Exception {
+        JDBCPreparedStatement attach = mock(JDBCPreparedStatement.class);
+        DBRProgressMonitor canceled = mock(DBRProgressMonitor.class);
+        when(canceled.isCanceled()).thenReturn(true);
+
+        assertThrows(DBGException.class,
+            () -> GaussDBDebugSession.attachWithRetry(attach, canceled, () -> false));
+
+        verifyNoInteractions(attach);
+    }
+
+    @Test
+    void attachDeadlineDoesNotRetryForever() throws Exception {
+        JDBCPreparedStatement attach = mock(JDBCPreparedStatement.class);
+        when(attach.execute()).thenThrow(new SQLException("not ready", "D0011"));
+
+        assertThrows(SQLException.class, () -> GaussDBDebugSession.attachWithRetry(
+            attach, monitor, () -> false, System.nanoTime() - 1));
+
+        verify(attach).execute();
+    }
+
+    @Test
+    void attachPreservesThreadInterrupt() throws Exception {
+        JDBCPreparedStatement attach = mock(JDBCPreparedStatement.class);
+        when(attach.execute()).thenThrow(new SQLException("not ready", "D0011"));
+        Thread.currentThread().interrupt();
+        try {
+            DBGException failure = assertThrows(DBGException.class,
+                () -> GaussDBDebugSession.attachWithRetry(attach, monitor, () -> false));
+            assertTrue(failure.getMessage().contains("Interrupted"));
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     void callerFrameVariablesCannotAccidentallyModifyTheCurrentFrame() {
         GaussDBDebugVariable caller = new GaussDBDebugVariable("x", "int4", "111", null, false, 1);
         assertTrue(caller.isReadOnly());
@@ -542,6 +747,7 @@ class GaussDBDebugSessionTest {
     private static final String DEFAULT_OVERLOAD_QUERY =
         "SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_proc target " +
         "ON p.proname=target.proname AND p.pronamespace=target.pronamespace " +
+        "AND p.propackageid=target.propackageid " +
         "WHERE target.oid=? AND p.oid<>target.oid LIMIT 1";
 
     @Test

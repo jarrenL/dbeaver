@@ -28,6 +28,7 @@ import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedure;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureKind;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreSchema;
 import org.jkiss.dbeaver.model.DBPScriptObject;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.model.exec.DBCException;
@@ -56,6 +57,30 @@ public class GaussDBProcedure extends PostgreProcedure {
 
     public long getPropackageid() {
         return propackageid;
+    }
+
+    /**
+     * Returns the SQL name used to invoke this routine. GaussDB treats a three-part
+     * schema.package.member name as a cross-database reference, so package members are invoked
+     * as package.member after the debugger transaction selects their schema in search_path.
+     */
+    @NotNull
+    public String getInvocationName(@NotNull DBRProgressMonitor monitor) throws DBException {
+        if (propackageid == 0) {
+            return getFullyQualifiedName(DBPEvaluationContext.DML);
+        }
+        GaussDBSchema schema = (GaussDBSchema) getContainer();
+        GaussDBPackage gaussPackage = schema.getPackages(monitor).stream()
+            .filter(candidate -> candidate.getObjectId() == propackageid)
+            .findFirst()
+            .orElseThrow(() -> new DBException(
+                "Package " + propackageid + " for routine '" + getName() + "' is unavailable"));
+        return DBUtils.getFullQualifiedName(getDataSource(), gaussPackage, this);
+    }
+
+    /** The quoted schema that must lead search_path when invoking a package member. */
+    public String getInvocationSchema() {
+        return propackageid == 0 ? null : DBUtils.getQuotedIdentifier(getContainer());
     }
 
     public GaussDBProcedure(PostgreSchema schema) {

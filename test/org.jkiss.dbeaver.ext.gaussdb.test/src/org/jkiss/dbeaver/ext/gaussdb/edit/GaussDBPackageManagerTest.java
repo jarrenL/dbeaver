@@ -19,6 +19,7 @@ package org.jkiss.dbeaver.ext.gaussdb.edit;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
 import org.jkiss.dbeaver.model.DBConstants;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
@@ -40,12 +41,22 @@ public class GaussDBPackageManagerTest {
             GaussDBPackage pack = mock(GaussDBPackage.class);
             when(pack.getObjectDefinitionText()).thenReturn(declaration);
             when(pack.getExtendedDefinitionText()).thenReturn(body);
+            when(pack.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("\"Business Data\".\"p\"\"kg\"");
             ObjectChangeCommand command = new ObjectChangeCommand(pack);
             for (String property : changed) {
                 command.getProperties().put(property, "changed");
             }
             List<DBEPersistAction> actions = new ArrayList<>();
             addObjectModifyActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
+            return actions;
+        }
+
+        List<DBEPersistAction> drop(String qualifiedName) throws DBException {
+            GaussDBPackage pack = mock(GaussDBPackage.class);
+            when(pack.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn(qualifiedName);
+            ObjectDeleteCommand command = new ObjectDeleteCommand(pack, "Drop fixture package");
+            List<DBEPersistAction> actions = new ArrayList<>();
+            addObjectDeleteActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
             return actions;
         }
     }
@@ -77,6 +88,22 @@ public class GaussDBPackageManagerTest {
     @Test
     void unrelatedPropertyDoesNotRecreatePackage() throws Exception {
         assertTrue(new Manager().modify(SPEC, BODY, DBConstants.PROP_ID_DESCRIPTION).isEmpty());
+    }
+
+    @Test
+    void clearingBodyDropsOnlyTheQualifiedPackageBody() throws Exception {
+        var actions = new Manager().modify(SPEC, "", DBConstants.PARAM_EXTENDED_DEFINITION_TEXT);
+        assertEquals(1, actions.size());
+        assertEquals("DROP PACKAGE BODY IF EXISTS \"Business Data\".\"p\"\"kg\"", actions.getFirst().getScript());
+        assertEquals(DBEPersistAction.ActionType.OPTIONAL, actions.getFirst().getType());
+    }
+
+    @Test
+    void deletingPackageUsesTheQualifiedNameWithoutCascade() throws Exception {
+        var actions = new Manager().drop("\"Business Data\".\"p\"\"kg\"");
+        assertEquals(1, actions.size());
+        assertEquals("DROP PACKAGE IF EXISTS \"Business Data\".\"p\"\"kg\"", actions.getFirst().getScript());
+        assertEquals(DBEPersistAction.ActionType.NORMAL, actions.getFirst().getType());
     }
 
     @Test

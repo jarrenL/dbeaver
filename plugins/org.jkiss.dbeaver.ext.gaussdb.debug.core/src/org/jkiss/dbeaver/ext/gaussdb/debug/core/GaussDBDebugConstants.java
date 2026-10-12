@@ -11,6 +11,8 @@ public final class GaussDBDebugConstants {
     public static final String ATTR_ROUTINE_OID = "GAUSSDB.DEBUG.ROUTINE_OID"; //$NON-NLS-1$
     public static final String ATTR_ROUTINE_PARAMETERS = "GAUSSDB.DEBUG.ROUTINE_PARAMETERS"; //$NON-NLS-1$
     public static final String ATTR_ROUTINE_PARAMETER_MODES = "GAUSSDB.DEBUG.ROUTINE_PARAMETER_MODES"; //$NON-NLS-1$
+    /** Single-use acknowledgement for session settings required by a Package member debug launch. */
+    public static final String ATTR_SESSION_SETTINGS_CONSENT_TOKEN = "GAUSSDB.DEBUG.SESSION_SETTINGS_CONSENT_TOKEN"; //$NON-NLS-1$
     public static final String DEBUG_TYPE_ROUTINE = "org.jkiss.dbeaver.ext.gaussdb.debug.routine"; //$NON-NLS-1$
 
     private GaussDBDebugConstants() {
