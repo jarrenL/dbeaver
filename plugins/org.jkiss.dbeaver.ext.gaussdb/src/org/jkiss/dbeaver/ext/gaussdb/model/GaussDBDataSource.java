@@ -23,8 +23,10 @@ import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.*;
 import org.jkiss.dbeaver.model.DBUtils;
+import org.jkiss.dbeaver.model.DBPErrorAssistant;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
+import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.utils.CommonUtils;
@@ -106,5 +108,39 @@ public class GaussDBDataSource extends PostgreDataSource {
             serverExtension = new PostgreServerGaussDB(this);
         }
         return serverExtension;
+    }
+
+    @Override
+    public ErrorPosition[] getErrorPosition(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBCExecutionContext context,
+        @NotNull String query,
+        @NotNull Throwable error
+    ) {
+        ErrorPosition[] serverPositions = super.getErrorPosition(monitor, context, query, error);
+        if (serverPositions != null) {
+            for (ErrorPosition position : serverPositions) {
+                if (position != null && (position.line >= 0 || position.position >= 0)) {
+                    return serverPositions;
+                }
+            }
+        }
+
+        // Distributed 505 can reject an invalid %TYPE while reporting Position=0.
+        // EntityEditor delegates save failures to the active SQL source editor, so
+        // locating the uniquely quoted invalid type here keeps the dirty editor text
+        // visible and selects the actual failing token without modifying server state.
+        return inferInvalidTypePosition(query, error);
+    }
+
+    static ErrorPosition[] inferInvalidTypePosition(@NotNull String query, @NotNull Throwable error) {
+        int offset = GaussDBPackageCompiler.findUniqueInvalidTypeOffset(query, error);
+        if (offset < 0) {
+            return null;
+        }
+        DBPErrorAssistant.ErrorPosition position = new DBPErrorAssistant.ErrorPosition();
+        position.position = offset;
+        position.info = "Approximate location inferred from the unique invalid type in the current editor source";
+        return new ErrorPosition[] {position};
     }
 }

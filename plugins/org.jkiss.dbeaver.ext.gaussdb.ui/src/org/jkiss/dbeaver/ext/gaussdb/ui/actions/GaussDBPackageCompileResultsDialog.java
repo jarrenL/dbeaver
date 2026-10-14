@@ -95,7 +95,8 @@ final class GaussDBPackageCompileResultsDialog extends BaseDialog {
             TableItem item = new TableItem(table, SWT.NONE);
             item.setData(result);
             item.setText(new String[] {result.object().getFullyQualifiedName(DBPEvaluationContext.UI),
-                result.part().name(), Integer.toString(result.error().getLine()), result.error().toString()});
+                result.part().name(), result.error().getLine() > 0 ? Integer.toString(result.error().getLine()) : "-",
+                result.error().toString()});
         }
         table.addListener(SWT.DefaultSelection, event -> navigateSelected());
         table.setSelection(0);
@@ -163,7 +164,9 @@ final class GaussDBPackageCompileResultsDialog extends BaseDialog {
                 host.getCompileLog().error(entry.error());
             }
         }
-        host.positionSource(result.error().getLine(), Math.max(1, result.error().getPosition()));
+        if (result.error().getLine() > 0) {
+            host.positionSource(result.error().getLine(), Math.max(1, result.error().getPosition()));
+        }
         host.setCompileInfo(result.object().getName() + " / " + result.part().name(), true);
         host.showCompileLog();
     }

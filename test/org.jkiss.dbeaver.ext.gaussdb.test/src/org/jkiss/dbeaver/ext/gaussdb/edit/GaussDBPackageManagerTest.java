@@ -18,16 +18,23 @@ package org.jkiss.dbeaver.ext.gaussdb.edit;
 
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDataSource;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBSchema;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBServerInfo;
 import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
+import org.jkiss.dbeaver.model.exec.DBCException;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -38,10 +45,16 @@ public class GaussDBPackageManagerTest {
 
     private static class Manager extends GaussDBPackageManager {
         List<DBEPersistAction> modify(String declaration, String body, String... changed) throws DBException {
-            GaussDBPackage pack = mock(GaussDBPackage.class);
-            when(pack.getObjectDefinitionText()).thenReturn(declaration);
-            when(pack.getExtendedDefinitionText()).thenReturn(body);
-            when(pack.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn("\"Business Data\".\"p\"\"kg\"");
+            return modify(declaration, body, GaussDBServerInfo.Deployment.CENTRALIZED, changed);
+        }
+
+        List<DBEPersistAction> modify(
+            String declaration,
+            String body,
+            GaussDBServerInfo.Deployment deployment,
+            String... changed
+        ) throws DBException {
+            GaussDBPackage pack = packageObject(declaration, body, "\"Business Data\".\"p\"\"kg\"", deployment);
             ObjectChangeCommand command = new ObjectChangeCommand(pack);
             for (String property : changed) {
                 command.getProperties().put(property, "changed");
@@ -52,12 +65,50 @@ public class GaussDBPackageManagerTest {
         }
 
         List<DBEPersistAction> drop(String qualifiedName) throws DBException {
-            GaussDBPackage pack = mock(GaussDBPackage.class);
-            when(pack.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn(qualifiedName);
+            return drop(qualifiedName, GaussDBServerInfo.Deployment.CENTRALIZED);
+        }
+
+        List<DBEPersistAction> drop(
+            String qualifiedName,
+            GaussDBServerInfo.Deployment deployment
+        ) throws DBException {
+            GaussDBPackage pack = packageObject(SPEC, BODY, qualifiedName, deployment);
             ObjectDeleteCommand command = new ObjectDeleteCommand(pack, "Drop fixture package");
             List<DBEPersistAction> actions = new ArrayList<>();
             addObjectDeleteActions(new VoidProgressMonitor(), mock(DBCExecutionContext.class), actions, command, Map.of());
             return actions;
+        }
+
+        List<DBEPersistAction> create(GaussDBServerInfo.Deployment deployment) throws DBException {
+            GaussDBPackage pack = packageObject(SPEC, BODY, "s.p", deployment);
+            List<DBEPersistAction> actions = new ArrayList<>();
+            addPackageSourceActions(actions, pack, true, true, false);
+            return actions;
+        }
+
+        private static GaussDBPackage packageObject(
+            String declaration,
+            String body,
+            String qualifiedName,
+            GaussDBServerInfo.Deployment deployment
+        ) {
+            GaussDBPackage pack = mock(GaussDBPackage.class);
+            GaussDBDataSource dataSource = mock(GaussDBDataSource.class);
+            GaussDBDatabase database = mock(GaussDBDatabase.class);
+            GaussDBSchema schema = mock(GaussDBSchema.class);
+            when(pack.getObjectDefinitionText()).thenReturn(declaration);
+            when(pack.getExtendedDefinitionText()).thenReturn(body);
+            when(pack.getFullyQualifiedName(DBPEvaluationContext.DDL)).thenReturn(qualifiedName);
+            when(pack.getName()).thenReturn("p\"kg");
+            when(pack.getDataSource()).thenReturn(dataSource);
+            when(pack.getDatabase()).thenReturn(database);
+            when(pack.getSchema()).thenReturn(schema);
+            when(dataSource.getServerInfo()).thenReturn(
+                GaussDBServerInfo.forTest(deployment, Set.of("gs_package")));
+            when(database.getObjectId()).thenReturn(10L);
+            when(schema.getObjectId()).thenReturn(20L);
+            when(schema.getName()).thenReturn("Business Data");
+            return pack;
         }
     }
 
@@ -104,6 +155,51 @@ public class GaussDBPackageManagerTest {
         assertEquals(1, actions.size());
         assertEquals("DROP PACKAGE IF EXISTS \"Business Data\".\"p\"\"kg\"", actions.getFirst().getScript());
         assertEquals(DBEPersistAction.ActionType.NORMAL, actions.getFirst().getType());
+    }
+
+    @Test
+    void distributedCreateModifyAndDeleteAcquireTheSameLockFirst() throws Exception {
+        Manager manager = new Manager();
+
+        var create = manager.create(GaussDBServerInfo.Deployment.DISTRIBUTED);
+        assertEquals(3, create.size());
+        assertTrue(create.get(0).getScript().startsWith("SELECT pg_catalog.pg_advisory_xact_lock("));
+        assertEquals(SPEC, create.get(1).getScript());
+        assertEquals(BODY, create.get(2).getScript());
+
+        var modify = manager.modify(SPEC, BODY, GaussDBServerInfo.Deployment.DISTRIBUTED,
+            DBConstants.PARAM_EXTENDED_DEFINITION_TEXT);
+        assertEquals(2, modify.size());
+        assertEquals(create.get(0).getScript(), modify.get(0).getScript());
+        assertEquals(BODY.replaceFirst("CREATE", "CREATE OR REPLACE"), modify.get(1).getScript());
+
+        var delete = manager.drop("\"Business Data\".\"p\"\"kg\"",
+            GaussDBServerInfo.Deployment.DISTRIBUTED);
+        assertEquals(2, delete.size());
+        assertEquals(create.get(0).getScript(), delete.get(0).getScript());
+        assertEquals("DROP PACKAGE IF EXISTS \"Business Data\".\"p\"\"kg\"", delete.get(1).getScript());
+    }
+
+    @Test
+    void centralizedPackageActionsDoNotAddApplicationLock() throws Exception {
+        var actions = new Manager().create(GaussDBServerInfo.Deployment.CENTRALIZED);
+        assertEquals(2, actions.size());
+        assertEquals(SPEC, actions.get(0).getScript());
+        assertEquals(BODY, actions.get(1).getScript());
+    }
+
+    @Test
+    void distributedLockRefusesAutoCommitAndAllowsExplicitTransaction() throws Exception {
+        var action = new Manager().modify(SPEC, BODY, GaussDBServerInfo.Deployment.DISTRIBUTED,
+            DBConstants.PARAM_EXTENDED_DEFINITION_TEXT).getFirst();
+        JDBCSession session = mock(JDBCSession.class);
+
+        when(session.getAutoCommit()).thenReturn(true);
+        DBCException error = assertThrows(DBCException.class, () -> action.beforeExecute(session));
+        assertTrue(error.getMessage().contains("explicit transaction"));
+
+        when(session.getAutoCommit()).thenReturn(false);
+        assertDoesNotThrow(() -> action.beforeExecute(session));
     }
 
     @Test

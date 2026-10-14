@@ -30,6 +30,7 @@ import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureType;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.*;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -45,13 +46,21 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     private static final String API = "DBE_PLDEBUGGER."; //$NON-NLS-1$
     private static final String FINISHED = "[EXECUTION FINISHED]"; //$NON-NLS-1$
     private static final int TRANSACTION_NETWORK_TIMEOUT_MS = 10000;
+    private static final long CONTROLLER_WAIT_POLL_NANOS = TimeUnit.MILLISECONDS.toNanos(50);
+    private static final long BREAKPOINT_WAIT_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(60);
 
     private final Map<String, Object> configuration;
     private final JDBCExecutionContext controllerConnection;
     private final JDBCExecutionContext targetConnection;
     private final GaussDBProcedure routine;
     private final List<GaussDBDebugBreakpointDescriptor> breakpoints = new CopyOnWriteArrayList<>();
-    private final ReentrantLock controllerLock = new ReentrantLock();
+    // The lock protects every command on the single controller connection. Breakpoint
+    // notifications additionally use an explicit FIFO queue: repeatedly timing out a
+    // fair ReentrantLock.tryLock call would otherwise remove and re-enqueue a waiter,
+    // allowing newer notifications to overtake it.
+    private final ReentrantLock controllerLock = new ReentrantLock(true);
+    private final Object controllerWaitMonitor = new Object();
+    private final ArrayDeque<Object> controllerWaiters = new ArrayDeque<>();
     private final Object transactionLock = new Object();
     private volatile CountDownLatch targetFinished = new CountDownLatch(0);
     private volatile boolean targetSucceeded;
@@ -318,8 +327,17 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     }
 
     private void acquireController() throws DBGException {
-        if (!controllerLock.tryLock()) {
-            throw new DBGException("The debugger is busy; wait for the current operation to finish");
+        if (controllerLock.isHeldByCurrentThread()) {
+            controllerLock.lock();
+        } else {
+            // Hold the queue monitor across the non-blocking lock attempt. A breakpoint
+            // waiter can therefore either enqueue first (and this operation must yield)
+            // or enqueue after this operation owns the controller, never in between.
+            synchronized (controllerWaitMonitor) {
+                if (!controllerWaiters.isEmpty() || !controllerLock.tryLock()) {
+                    throw new DBGException("The debugger is busy; wait for the current operation to finish");
+                }
+            }
         }
         if (closing || commandJob != null) {
             controllerLock.unlock();
@@ -328,20 +346,85 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     }
 
     private void acquireController(DBRProgressMonitor monitor) throws DBGException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        acquireController(monitor, System.nanoTime() + BREAKPOINT_WAIT_TIMEOUT_NANOS);
+    }
+
+    @org.jkiss.dbeaver.model.meta.ForTest
+    void acquireController(DBRProgressMonitor monitor, long deadline) throws DBGException {
+        if (controllerLock.isHeldByCurrentThread()) {
+            controllerLock.lock();
+            if (closing || commandJob != null || monitor.isCanceled()) {
+                controllerLock.unlock();
+                throw new DBGException("The debugger is running or closing; breakpoint update was not executed");
+            }
+            return;
+        }
+
+        Object waiter = new Object();
+        synchronized (controllerWaitMonitor) {
+            controllerWaiters.addLast(waiter);
+            controllerWaitMonitor.notifyAll();
+        }
+        boolean acquired = false;
         try {
-            while (!controllerLock.tryLock(50, TimeUnit.MILLISECONDS)) {
-                if (closing || commandJob != null || monitor.isCanceled() || System.nanoTime() >= deadline) {
+            while (true) {
+                if (closing || commandJob != null || monitor.isCanceled()) {
                     throw new DBGException("The debugger is busy; breakpoint update was not executed");
                 }
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    throw new DBGException("Timed out waiting for the debugger controller; breakpoint update was not executed");
+                }
+                long waitNanos = Math.min(CONTROLLER_WAIT_POLL_NANOS, remaining);
+                synchronized (controllerWaitMonitor) {
+                    if (controllerWaiters.peekFirst() != waiter) {
+                        controllerWaitMonitor.wait(
+                            TimeUnit.NANOSECONDS.toMillis(waitNanos),
+                            (int) (waitNanos % TimeUnit.MILLISECONDS.toNanos(1))
+                        );
+                        continue;
+                    }
+                }
+                // Only the FIFO head is allowed to contend for the controller lock.
+                // The short timed wait keeps cancellation and lifecycle state responsive.
+                if (!controllerLock.tryLock(waitNanos, TimeUnit.NANOSECONDS)) {
+                    continue;
+                }
+                removeControllerWaiter(waiter);
+                if (System.nanoTime() >= deadline) {
+                    controllerLock.unlock();
+                    throw new DBGException(
+                        "Timed out waiting for the debugger controller; breakpoint update was not executed"
+                    );
+                }
+                if (closing || commandJob != null || monitor.isCanceled()) {
+                    controllerLock.unlock();
+                    throw new DBGException("The debugger is running or closing; breakpoint update was not executed");
+                }
+                acquired = true;
+                return;
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new DBGException("Interrupted while updating a breakpoint", e);
+        } finally {
+            if (!acquired) {
+                removeControllerWaiter(waiter);
+            }
         }
-        if (closing || commandJob != null || monitor.isCanceled()) {
-            controllerLock.unlock();
-            throw new DBGException("The debugger is running or closing; breakpoint update was not executed");
+    }
+
+    private void removeControllerWaiter(Object waiter) {
+        synchronized (controllerWaitMonitor) {
+            if (controllerWaiters.remove(waiter)) {
+                controllerWaitMonitor.notifyAll();
+            }
+        }
+    }
+
+    private void signalControllerWaiters() {
+        synchronized (controllerWaitMonitor) {
+            controllerWaitMonitor.notifyAll();
         }
     }
 
@@ -395,6 +478,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                     }
                 }
             };
+            signalControllerWaiters();
             fireEvent(new DBGEvent(this, DBGEvent.RESUME, detail));
             commandJob.schedule();
         } finally {
@@ -755,6 +839,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     @Override
     protected void doDetach(DBRProgressMonitor monitor) throws DBGException {
         closing = true;
+        signalControllerWaiters();
         if (!done) {
             try (JDBCSession session = controllerConnection.openSession(monitor, DBCExecutionPurpose.UTIL, "Abort debug target");
                  Statement statement = session.createStatement()) {
@@ -771,6 +856,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     @Override
     public void closeSession(DBRProgressMonitor monitor) throws DBGException {
         closing = true;
+        signalControllerWaiters();
         Job runningCommand = commandJob;
         if (runningCommand != null) {
             runningCommand.cancel();

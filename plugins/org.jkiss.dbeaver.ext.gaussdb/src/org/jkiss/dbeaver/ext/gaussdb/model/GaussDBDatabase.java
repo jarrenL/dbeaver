@@ -200,7 +200,6 @@ public class GaussDBDatabase extends PostgreDatabase {
         GaussDBServerInfo info = getDataSource().getServerInfo();
         setPackageSupported(
             "Oracle".equalsIgnoreCase(DBCompatibilityEnum.queryTextByValue(this.databaseCompatibleMode)) &&
-                info.getDeployment() == GaussDBServerInfo.Deployment.CENTRALIZED &&
                 info.hasRelation("gs_package")
         );
     }

@@ -17,34 +17,39 @@ class GaussDBPackageSourceLinesTest {
     }
 
     @Test
-    void headerOffsetCannotOverflowToNegativeEditorLine() {
-        assertEquals(1, GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p AS\n bad;", Integer.MAX_VALUE));
-        assertEquals(1, GaussDBPackageSourceLines.toEditorLine("CREATE\nPACKAGE s.p AS\n bad;", Integer.MAX_VALUE - 1));
+    void serverLineCannotOverflowThroughClientSideHeaderArithmetic() {
         assertEquals(Integer.MAX_VALUE,
-            GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p AS\n bad;", Integer.MAX_VALUE - 1));
+            GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p AS\n bad;", Integer.MAX_VALUE));
+        assertEquals(Integer.MAX_VALUE - 1,
+            GaussDBPackageSourceLines.toEditorLine("CREATE\nPACKAGE s.p AS\n bad;", Integer.MAX_VALUE - 1));
     }
 
     @Test
-    void quotedNamesAndNestedCommentsDoNotBecomeHeaderDelimiters() {
-        String source = "/* AS\n /* IS */ */\nCREATE PACKAGE \"a\"\"AS\".\"IS\" AS\n bad;";
-        assertEquals(4, GaussDBPackageSourceLines.toEditorLine(source, 1));
+    void centralized505CoordinatesAlreadyMatchCompleteServerSource() {
+        String body = "CREATE OR REPLACE PACKAGE BODY review_live.review_pkg AS\n"
+            + " FUNCTION value_of RETURN INTEGER AS\n"
+            + " v review_live.missing_dependency.id%TYPE;\n"
+            + " BEGIN\n RETURN 7;\n END;\nEND review_pkg;";
+        String specification = "CREATE OR REPLACE PACKAGE review_live.review_pkg AS\n"
+            + " v review_live.missing_dependency.id%TYPE;\n"
+            + " FUNCTION value_of RETURN INTEGER;\nEND review_pkg;";
+
+        assertEquals(3, GaussDBPackageSourceLines.toEditorLine(body, 3));
+        assertTrue(body.split("\\R", -1)[GaussDBPackageSourceLines.toEditorLine(body, 3) - 1]
+            .contains("missing_dependency"));
+        assertEquals(2, GaussDBPackageSourceLines.toEditorLine(specification, 2));
+        assertTrue(specification.split("\\R", -1)[GaussDBPackageSourceLines.toEditorLine(specification, 2) - 1]
+            .contains("missing_dependency"));
     }
 
     @Test
-    void blankBodyLinesRemainInContentCoordinates() {
-        assertEquals(4, GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p AS\n\n\n bad;", 3));
-    }
-    @Test
-    void mapsSpecAndBodyContentPastCreateHeader() {
-        assertEquals(3, GaussDBPackageSourceLines.toEditorLine("CREATE OR REPLACE PACKAGE BODY s.p AS\n f\n bad;", 2));
-        assertEquals(2, GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p IS\n bad;", 1));
+    void preservesServerCoordinatesRegardlessOfHeaderFormatting() {
+        assertEquals(3, GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p AS\n\n\n bad;", 3));
+        assertEquals(2, GaussDBPackageSourceLines.toEditorLine(
+            "/* AS\n /* IS */ */\nCREATE PACKAGE \"a\"\"AS\".\"IS\" AS\n bad;", 2));
+        assertEquals(2, GaussDBPackageSourceLines.toEditorLine(
+            "-- AS\nCREATE OR REPLACE\nPACKAGE BODY \"AS\".\"IS\" /* AS */ AS\r\n f\n bad;", 2));
         assertEquals(1, GaussDBPackageSourceLines.toEditorLine("CREATE PACKAGE s.p AS bad;", 1));
-    }
-
-    @Test
-    void ignoresQuotedNamesAndCommentsWhileCountingMultilineHeaders() {
-        String source = "-- AS\nCREATE OR REPLACE\nPACKAGE BODY \"AS\".\"IS\" /* AS */ AS\r\n f\n bad;";
-        assertEquals(5, GaussDBPackageSourceLines.toEditorLine(source, 2));
     }
 
     @Test

@@ -22,6 +22,7 @@ import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBDatabase;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackage;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBPackageLock;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBSchema;
 import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBPDataSource;
@@ -30,6 +31,9 @@ import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.edit.DBEPersistAction;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
+import org.jkiss.dbeaver.model.exec.DBCException;
+import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.edit.SQLDatabasePersistAction;
 import org.jkiss.dbeaver.model.impl.sql.edit.SQLObjectEditor;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -37,6 +41,7 @@ import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.cache.DBSObjectCache;
 import org.jkiss.utils.CommonUtils;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 
@@ -98,14 +103,17 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
                                           @NotNull Map<String, Object> options) throws DBException {
 
         GaussDBPackage pack = command.getObject();
+        int firstAction = actions.size();
         actions.add(new SQLDatabasePersistAction(
             "Drop package",
             "DROP PACKAGE IF EXISTS " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL)) //$NON-NLS-2$
         );
+        addPackageLockAction(actions, pack, firstAction);
     }
 
-    private void addPackageSourceActions(List<DBEPersistAction> actionList, GaussDBPackage pack,
+    protected void addPackageSourceActions(List<DBEPersistAction> actionList, GaussDBPackage pack,
                                         boolean declarationChanged, boolean bodyChanged, boolean modify) throws DBException {
+        int firstAction = actionList.size();
         String header = CommonUtils.notEmpty(pack.getObjectDefinitionText()).trim();
         if (declarationChanged && !header.isEmpty()) {
             if (modify) {
@@ -117,6 +125,7 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
             actionList.add(new SQLDatabasePersistAction("Create package header", header)); // $NON-NLS-1$
         }
         if (!bodyChanged) {
+            addPackageLockAction(actionList, pack, firstAction);
             return;
         }
         String body = CommonUtils.notEmpty(pack.getExtendedDefinitionText()).trim();
@@ -134,6 +143,44 @@ public class GaussDBPackageManager extends SQLObjectEditor<GaussDBPackage, Gauss
                 "DROP PACKAGE BODY IF EXISTS " + DBUtils.getObjectFullName(pack, DBPEvaluationContext.DDL),
                 DBEPersistAction.ActionType.OPTIONAL) // $NON-NLS-1$
             );
+        }
+        addPackageLockAction(actionList, pack, firstAction);
+    }
+
+    private static void addPackageLockAction(
+        @NotNull List<DBEPersistAction> actions,
+        @NotNull GaussDBPackage pack,
+        int firstAction
+    ) {
+        if (actions.size() > firstAction && GaussDBPackageLock.isRequired(pack)) {
+            actions.add(firstAction, new PackageTransactionLockAction(pack));
+        }
+    }
+
+    /**
+     * The command context runs GaussDB DDL saves in one explicit transaction, so
+     * this first action holds the advisory lock through every following package
+     * action. Fail closed if that transaction setup did not take effect: in
+     * auto-commit mode a transaction lock would be released before the DDL.
+     */
+    static final class PackageTransactionLockAction extends SQLDatabasePersistAction {
+        private PackageTransactionLockAction(@NotNull GaussDBPackage pack) {
+            super("Lock package for update", GaussDBPackageLock.getSQL(pack));
+        }
+
+        @Override
+        public void beforeExecute(@NotNull DBCSession session) throws DBCException {
+            if (!(session instanceof JDBCSession jdbcSession)) {
+                throw new DBCException("GaussDB package persistence requires a JDBC session");
+            }
+            try {
+                if (jdbcSession.getAutoCommit()) {
+                    throw new DBCException(
+                        "GaussDB package persistence requires an explicit transaction; no package SQL was executed");
+                }
+            } catch (SQLException e) {
+                throw new DBCException("Unable to verify the GaussDB package persistence transaction", e);
+            }
         }
     }
 

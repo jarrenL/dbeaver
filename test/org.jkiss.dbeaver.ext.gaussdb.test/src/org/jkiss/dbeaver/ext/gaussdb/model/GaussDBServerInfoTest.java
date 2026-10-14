@@ -34,6 +34,9 @@ public class GaussDBServerInfoTest {
         Assertions.assertFalse(database.isPackageSupported());
         Mockito.when(dataSource.getServerInfo()).thenReturn(discovered);
         Assertions.assertTrue(database.isPackageSupported());
+        Mockito.when(dataSource.getServerInfo()).thenReturn(GaussDBServerInfo.forTest(
+            GaussDBServerInfo.Deployment.DISTRIBUTED, java.util.Set.of("gs_package")));
+        Assertions.assertTrue(database.isPackageSupported());
         database.setDatabaseCompatibleMode("M");
         Assertions.assertFalse(database.isPackageSupported());
     }

@@ -9,6 +9,8 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class LiveDebug {
+    private static final List<String> DEFAULT_REVIEW_MODES = List.of("ora", "mysql", "pg");
+    private static final Set<String> SUPPORTED_REVIEW_MODES = Set.copyOf(DEFAULT_REVIEW_MODES);
     static Properties props = new Properties();
     static int checks;
     static String prefix;
@@ -59,6 +61,28 @@ public class LiveDebug {
                 return r.next()?r.getString("query"):null;
             }
         }
+    }
+    static List<String> reviewModes() {
+        String configured = props.getProperty("review.modes");
+        if (configured == null) {
+            return DEFAULT_REVIEW_MODES;
+        }
+        if (configured.isBlank()) {
+            throw new IllegalArgumentException("review.modes must not be empty; supported values: ora,mysql,pg");
+        }
+        Set<String> selected = new LinkedHashSet<>();
+        for (String token : configured.split(",", -1)) {
+            String mode = token.trim().toLowerCase(Locale.ROOT);
+            if (mode.isEmpty()) {
+                throw new IllegalArgumentException("review.modes contains an empty value; supported values: ora,mysql,pg");
+            }
+            if (!SUPPORTED_REVIEW_MODES.contains(mode)) {
+                throw new IllegalArgumentException("Unsupported review.modes value '" + token.trim()
+                    + "'; supported values: ora,mysql,pg");
+            }
+            selected.add(mode);
+        }
+        return List.copyOf(selected);
     }
     static void run(String mode,boolean nativeDriver,boolean commit,boolean abort) throws Exception {
         String db="dbeaver_fix_0905_"+mode;
@@ -139,7 +163,9 @@ public class LiveDebug {
         props.setProperty("socketTimeout","20");props.setProperty("connectTimeout","10");
         boolean nativeDriver = args.length < 2 || !"--postgresql".equals(args[1]);
         Class.forName(props.getProperty("review.driverClass", nativeDriver ? "com.huawei.gaussdb.jdbc.Driver" : "org.postgresql.Driver"));
-        for(String mode:List.of("ora","mysql","pg")) {
+        List<String> modes = reviewModes();
+        System.out.println("REVIEW MODES " + String.join(",", modes));
+        for(String mode:modes) {
             run(mode,nativeDriver,false,false);
             run(mode,nativeDriver,true,false);
             run(mode,nativeDriver,false,true);

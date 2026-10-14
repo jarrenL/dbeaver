@@ -27,7 +27,16 @@ public class GaussDBPackageCompileError extends DBCCompileError {
         @NotNull String message,
         int line
     ) {
-        super(true, message, line, 1);
+        this(sourcePart, message, line, line > 0 ? 1 : 0);
+    }
+
+    public GaussDBPackageCompileError(
+        @NotNull GaussDBPackageCompileTarget sourcePart,
+        @NotNull String message,
+        int line,
+        int position
+    ) {
+        super(true, message, line, position);
         this.sourcePart = sourcePart;
     }
 

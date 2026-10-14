@@ -351,14 +351,17 @@ class GaussDBSessionLiveTest {
                 assertEquals("1", scalar(c, "SELECT count(*) FROM DBE_PLDEBUGGER.info_breakpoints()"));
                 session.disableBreakpoint(new VoidProgressMonitor(), descriptor);
                 session.enableBreakpoint(new VoidProgressMonitor(), descriptor);
-                var contenders = Executors.newFixedThreadPool(4);
+                int workerCount = 4;
+                int iterationsPerWorker = 10;
+                int operationsPerIteration = 4;
+                var contenders = Executors.newFixedThreadPool(workerCount);
                 try {
-                    var start = new CyclicBarrier(4);
+                    var start = new CyclicBarrier(workerCount);
                     List<Future<?>> jobs = new ArrayList<>();
-                    for (int worker = 0; worker < 4; worker++) {
+                    for (int worker = 0; worker < workerCount; worker++) {
                         jobs.add(contenders.submit(() -> {
                             start.await(5, TimeUnit.SECONDS);
-                            for (int iteration = 0; iteration < 10; iteration++) {
+                            for (int iteration = 0; iteration < iterationsPerWorker; iteration++) {
                                 var concurrent = new GaussDBDebugBreakpointDescriptor(oid, line, database);
                                 session.addBreakpoint(new VoidProgressMonitor(), concurrent);
                                 session.disableBreakpoint(new VoidProgressMonitor(), concurrent);
@@ -368,7 +371,19 @@ class GaussDBSessionLiveTest {
                             return null;
                         }));
                     }
-                    for (Future<?> job : jobs) { job.get(15, TimeUnit.SECONDS); }
+                    // All 4 x 10 x 4 = 160 client operations deliberately share one
+                    // controller connection and are therefore serialized. A centralized
+                    // 505 cloud instance needs about 22 seconds for this workload. Give
+                    // the complete batch one shared 60-second ceiling (roughly 2.7x the
+                    // measured duration), without reducing the workload or hiding a worker
+                    // exception behind independent per-future timeouts.
+                    int operationCount = workerCount * iterationsPerWorker * operationsPerIteration;
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+                    for (Future<?> job : jobs) {
+                        long remaining = deadline - System.nanoTime();
+                        assertTrue(remaining > 0, "Timed out waiting for " + operationCount + " breakpoint operations");
+                        job.get(remaining, TimeUnit.NANOSECONDS);
+                    }
                 } finally { contenders.shutdownNow(); assertTrue(contenders.awaitTermination(5, TimeUnit.SECONDS)); }
                 session.addBreakpoint(new VoidProgressMonitor(), descriptor);
                 assertEquals("1", scalar(c, "SELECT count(*) FROM DBE_PLDEBUGGER.info_breakpoints()"));

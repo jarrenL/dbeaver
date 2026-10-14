@@ -15,7 +15,8 @@ public class LiveNested extends LiveDebug {
  public static void main(String[] args)throws Exception {
   try(var r=Files.newBufferedReader(Path.of(args[0]))){props.load(r);}
   props.setProperty("socketTimeout","20");Class.forName(props.getProperty("review.driverClass","com.huawei.gaussdb.jdbc.Driver"));
-  for(String mode:new String[]{"ora","mysql","pg"}) {
+  var modes=reviewModes();System.out.println("REVIEW MODES "+String.join(",",modes));
+  for(String mode:modes) {
    prefix=mode+"/nested";String db="dbeaver_fix_0905_"+mode;
    try(Connection t=open(db,true);Connection c=open(db,true)) {
     exec(t,"CREATE OR REPLACE PROCEDURE fix.fix_inner() AS DECLARE\nv_local integer := 222;\nBEGIN\nv_local := v_local + 1;\nv_local := v_local + 2;\nEND;");

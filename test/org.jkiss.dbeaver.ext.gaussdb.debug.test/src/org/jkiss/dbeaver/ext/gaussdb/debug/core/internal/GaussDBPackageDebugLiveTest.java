@@ -204,9 +204,6 @@ class GaussDBPackageDebugLiveTest {
                 entryOid = standaloneOid(controller, "review_standalone_stack", "live_entry");
                 long middleOid = standaloneOid(controller, "review_standalone_stack", "live_middle");
                 long leafOid = standaloneOid(controller, "review_standalone_stack", "live_leaf");
-                int executableLeafLine = Integer.parseInt(scalar(controller,
-                    "SELECT max(lineno) FROM DBE_PLDEBUGGER.info_code(" + leafOid + "::oid) WHERE canbreak"));
-                assertTrue(executableLeafLine > 0);
 
                 target.setAutoCommit(false);
                 String node;
@@ -232,27 +229,21 @@ class GaussDBPackageDebugLiveTest {
                     attach.setQueryTimeout(10);
                     GaussDBDebugSession.attachWithRetry(attach, new VoidProgressMonitor(), targetJob::isDone);
                 }
-                try (PreparedStatement add = controller.prepareStatement(
-                    "SELECT DBE_PLDEBUGGER.add_breakpoint(?::oid, ?::integer)")) {
-                    add.setLong(1, leafOid);
-                    add.setInt(2, executableLeafLine);
-                    try (ResultSet result = add.executeQuery()) {
-                        assertTrue(result.next());
-                        assertTrue(result.getInt(1) >= 0);
-                    }
+                // Validate the user-visible F7 path. On GaussDB 505, jumping directly to a deep breakpoint with
+                // continue() may omit an intermediate frame from the server snapshot, while step() retains it.
+                long steppedOid = 0;
+                for (int attempt = 0; attempt < 32 && steppedOid != leafOid; attempt++) {
+                    steppedOid = Long.parseLong(scalar(controller,
+                        "SELECT funcoid FROM DBE_PLDEBUGGER.step()"));
                 }
-
-                String paused = scalar(controller, "SELECT query FROM DBE_PLDEBUGGER.continue()");
-                assertFalse(paused.contains("[EXECUTION FINISHED]"));
+                assertEquals(leafOid, steppedOid, "Step Into must enter the leaf routine");
                 List<Long> stackOids = columnLongs(controller,
                     "SELECT funcoid FROM DBE_PLDEBUGGER.backtrace() ORDER BY frameno");
-                assertTrue(stackOids.equals(List.of(leafOid, middleOid, entryOid))
-                    || stackOids.equals(List.of(leafOid, entryOid)));
-                assertNotNull(frameLocal(controller, 0, "leaf_value"));
-                assumeTrue(stackOids.size() == 3,
-                    "GaussDB 507 DBE_PLDEBUGGER.backtrace() omits the intermediate routine frame");
-                assertNotNull(frameLocal(controller, 1, "middle_value"));
-                assertNotNull(frameLocal(controller, 2, "entry_value"));
+                assertEquals(List.of(leafOid, middleOid, entryOid), stackOids,
+                    "Step Into must retain every standalone routine frame");
+                assertEquals("30", frameLocal(controller, 0, "leaf_value"));
+                assertEquals("20", frameLocal(controller, 1, "middle_value"));
+                assertEquals("10", frameLocal(controller, 2, "entry_value"));
 
                 assertTrue(scalar(controller, "SELECT query FROM DBE_PLDEBUGGER.continue()")
                     .contains("[EXECUTION FINISHED]"));

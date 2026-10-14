@@ -24,12 +24,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -1018,6 +1021,273 @@ class GaussDBDebugSessionTest {
         } finally {
             release.countDown();
         }
+    }
+
+    @Test
+    void queuedBreakpointUpdateIsNotDiscardedAfterFiveSeconds() throws Exception {
+        var lockField = GaussDBDebugSession.class.getDeclaredField("controllerLock");
+        lockField.setAccessible(true);
+        var lock = (java.util.concurrent.locks.ReentrantLock) lockField.get(session);
+        assertTrue(lock.isFair(), "concurrent breakpoint notifications must not starve older updates");
+        var held = new CountDownLatch(1);
+        var queued = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var holder = executor.submit(() -> {
+                lock.lock();
+                try {
+                    held.countDown();
+                    assertTrue(release.await(10, TimeUnit.SECONDS));
+                } finally {
+                    lock.unlock();
+                }
+                return null;
+            });
+            assertTrue(held.await(5, TimeUnit.SECONDS));
+            var update = executor.submit(() -> {
+                queued.countDown();
+                session.removeBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(1, 4));
+                return null;
+            });
+            assertTrue(queued.await(5, TimeUnit.SECONDS));
+            try {
+                assertThrows(
+                    java.util.concurrent.TimeoutException.class,
+                    () -> update.get(5200, TimeUnit.MILLISECONDS),
+                    "a queued update must still be waiting after the former five-second cutoff"
+                );
+            } finally {
+                release.countDown();
+            }
+            update.get(5, TimeUnit.SECONDS);
+            holder.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+        assertTrue(session.getBreakpoints().isEmpty());
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void concurrentBreakpointWaitersAcquireControllerInFifoOrder() throws Exception {
+        var lock = controllerLock();
+        List<Integer> completionOrder = Collections.synchronizedList(new ArrayList<>());
+        List<Future<?>> waiters = new ArrayList<>();
+        lock.lock();
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            try {
+                for (int id = 1; id <= 3; id++) {
+                    int waiterId = id;
+                    DBRProgressMonitor waiterMonitor = mock(DBRProgressMonitor.class);
+                    when(waiterMonitor.isCanceled()).thenAnswer(call -> {
+                        if (lock.isHeldByCurrentThread()) {
+                            completionOrder.add(waiterId);
+                        }
+                        return false;
+                    });
+                    waiters.add(executor.submit(() -> {
+                        session.removeBreakpoint(waiterMonitor, new GaussDBDebugBreakpointDescriptor(waiterId, 4));
+                        return null;
+                    }));
+                    awaitControllerWaiterCount(id);
+                }
+            } finally {
+                lock.unlock();
+            }
+            for (Future<?> waiter : waiters) {
+                waiter.get(5, TimeUnit.SECONDS);
+            }
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+        assertEquals(List.of(1, 2, 3), completionOrder);
+        assertEquals(0, controllerWaiterCount());
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void canceledFifoHeadIsRemovedAndNextWaiterContinues() throws Exception {
+        var lock = controllerLock();
+        var headCanceled = new AtomicBoolean();
+        DBRProgressMonitor headMonitor = mock(DBRProgressMonitor.class);
+        when(headMonitor.isCanceled()).thenAnswer(call -> headCanceled.get());
+        lock.lock();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> head = executor.submit(() -> {
+                session.removeBreakpoint(headMonitor, new GaussDBDebugBreakpointDescriptor(1, 4));
+                return null;
+            });
+            awaitControllerWaiterCount(1);
+            Future<?> follower = executor.submit(() -> {
+                session.removeBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(2, 4));
+                return null;
+            });
+            awaitControllerWaiterCount(2);
+            try {
+                headCanceled.set(true);
+                var failure = assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> head.get(2, TimeUnit.SECONDS)
+                );
+                assertInstanceOf(DBGException.class, failure.getCause());
+                awaitControllerWaiterCount(1);
+            } finally {
+                lock.unlock();
+            }
+            follower.get(5, TimeUnit.SECONDS);
+        } finally {
+            headCanceled.set(true);
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+        assertEquals(0, controllerWaiterCount());
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void timedOutFifoHeadIsRemovedAndNextWaiterContinues() throws Exception {
+        var lock = controllerLock();
+        Future<?> follower = null;
+        lock.lock();
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            try {
+                long headDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1500);
+                Future<?> head = executor.submit(() -> {
+                    try {
+                        session.acquireController(monitor, headDeadline);
+                        return null;
+                    } finally {
+                        // Keep a regression failure bounded if the deadline is accidentally
+                        // ignored and this task acquires the lock instead of timing out.
+                        if (lock.isHeldByCurrentThread()) {
+                            lock.unlock();
+                        }
+                    }
+                });
+                awaitControllerWaiterCount(1);
+                follower = executor.submit(() -> {
+                    session.removeBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(2, 4));
+                    return null;
+                });
+                awaitControllerWaiterCount(2);
+
+                var failure = assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> head.get(3, TimeUnit.SECONDS)
+                );
+                assertInstanceOf(DBGException.class, failure.getCause());
+                assertTrue(failure.getCause().getMessage().contains("Timed out waiting"));
+                awaitControllerWaiterCount(1);
+                assertFalse(follower.isDone(), "the next waiter must remain queued until the controller is released");
+            } finally {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
+            }
+            assertNotNull(follower);
+            follower.get(5, TimeUnit.SECONDS);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+        assertEquals(0, controllerWaiterCount());
+        verifyNoInteractions(connection);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"closing", "commandJob"})
+    void queuedBreakpointWaitersExitWhenSessionStopsBeingSuspended(String state) throws Exception {
+        var lock = controllerLock();
+        List<Future<?>> waiters = new ArrayList<>();
+        lock.lock();
+        try (var executor = Executors.newFixedThreadPool(3)) {
+            for (int id = 1; id <= 3; id++) {
+                int waiterId = id;
+                waiters.add(executor.submit(() -> {
+                    session.removeBreakpoint(monitor, new GaussDBDebugBreakpointDescriptor(waiterId, 4));
+                    return null;
+                }));
+                awaitControllerWaiterCount(id);
+            }
+            if (state.equals("closing")) {
+                field("closing", true);
+            } else {
+                field("commandJob", mock(org.eclipse.core.runtime.jobs.Job.class));
+            }
+            for (Future<?> waiter : waiters) {
+                var failure = assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> waiter.get(2, TimeUnit.SECONDS)
+                );
+                assertInstanceOf(DBGException.class, failure.getCause());
+            }
+            awaitControllerWaiterCount(0);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void nonBreakpointControllerOperationDoesNotBypassQueuedBreakpoint() throws Exception {
+        var monitorEntered = new CountDownLatch(1);
+        var releaseMonitor = new CountDownLatch(1);
+        DBRProgressMonitor gatedMonitor = mock(DBRProgressMonitor.class);
+        when(gatedMonitor.isCanceled()).thenAnswer(call -> {
+            monitorEntered.countDown();
+            assertTrue(releaseMonitor.await(5, TimeUnit.SECONDS));
+            return false;
+        });
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            Future<?> breakpoint = executor.submit(() -> {
+                session.removeBreakpoint(gatedMonitor, new GaussDBDebugBreakpointDescriptor(1, 4));
+                return null;
+            });
+            try {
+                assertTrue(monitorEntered.await(5, TimeUnit.SECONDS));
+                assertEquals(1, controllerWaiterCount());
+                assertThrows(DBGException.class, () -> session.getStack());
+                verifyNoInteractions(connection);
+            } finally {
+                releaseMonitor.countDown();
+            }
+            breakpoint.get(5, TimeUnit.SECONDS);
+        } finally {
+            releaseMonitor.countDown();
+        }
+        assertEquals(0, controllerWaiterCount());
+        verifyNoInteractions(connection);
+    }
+
+    private java.util.concurrent.locks.ReentrantLock controllerLock() throws Exception {
+        var lockField = GaussDBDebugSession.class.getDeclaredField("controllerLock");
+        lockField.setAccessible(true);
+        return (java.util.concurrent.locks.ReentrantLock) lockField.get(session);
+    }
+
+    private int controllerWaiterCount() throws Exception {
+        var monitorField = GaussDBDebugSession.class.getDeclaredField("controllerWaitMonitor");
+        monitorField.setAccessible(true);
+        Object queueMonitor = monitorField.get(session);
+        var waitersField = GaussDBDebugSession.class.getDeclaredField("controllerWaiters");
+        waitersField.setAccessible(true);
+        synchronized (queueMonitor) {
+            return ((java.util.Collection<?>) waitersField.get(session)).size();
+        }
+    }
+
+    private void awaitControllerWaiterCount(int expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (controllerWaiterCount() != expected && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertEquals(expected, controllerWaiterCount());
     }
 
     @Test
