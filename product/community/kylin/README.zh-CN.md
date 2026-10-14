@@ -1,6 +1,6 @@
 # GaussDB 适配版 DBeaver：麒麟 V10 服务器版
 
-本目录为交付构建说明；客户操作步骤见仓库根目录 `GAUSSDB_GUI_OPERATION_MANUAL_20260922.md` 和 `GaussDB_DBeaver_调试与Package操作手册_20261006.docx`。仅有候选目录不代表已完成发布。
+本目录为交付构建说明；客户操作步骤见仓库根目录 `GAUSSDB_GUI_OPERATION_MANUAL_20260922.md` 和 `GaussDB_DBeaver_调试与Package操作手册_20261014.docx`。仅有候选目录不代表已完成发布。
 
 ## 平台范围
 
@@ -42,7 +42,8 @@ M 兼容部署另提供 **GaussDB M (version-matched gsjdbc4)** 配置；按客�
 - 调试入口还检查实际 routine 语言、调试 API 能力/签名及权限。应按数据库版本配置最小必需调试权限，不要通过授予超级用户权限绕过检查。
 - 调试视图支持断点、单步、变量改值、变量名监视、调用栈导航。监视不支持任意 SQL/PL 表达式。快捷键 F7/F8/Shift+F7/F9/F10 需图形窗口有焦点；远程桌面应放行这些按键。
 - 正常调试完成选择 Commit 或 Rollback，并检查数据库结果；F10 用于终止。测试应使用隔离数据，避免业务过程在调试中产生不可回滚的外部副作用。
-- 包限定支持该语法及目录的集中式 ORA 实例。包右键菜单可选 ALL、Specification、Body 编译；错误列表可双击定位源码。编译是服务端校验/重编译，不会执行包内业务过程。
+- Package 基础能力要求 O/A/ORA 兼容库提供 `gs_package`，不再仅凭“集中式/分布式”标签判断。包右键菜单可选 ALL、Specification、Body 编译；编译是服务端校验/重编译，不会执行包内业务过程。
+- 目标库提供 `DBE_PLDEVELOPER.GS_ERRORS` 时，错误列表使用服务端结构化诊断并可按实际行、列精确定位。若没有该目录，但提供 `GS_SOURCE` 且原生 `ALTER PACKAGE ... COMPILE` 不受支持，客户端会重放服务器已保存的声明或主体源码并显示数据库直接错误；仅当错误标记能在原始源码中唯一可靠匹配时显示“近似”位置，否则行号显示 `-`。该降级路径不会静默设置 `enable_force_create_obj`、`plsql_show_all_error` 或其他私有会话参数，也不会把编辑器中尚未成功保存的错误文本冒充为服务器源码。
 - 批量删除会真实删除所选包；先核对确认框对象列表并自行备份定义。
 - 分支已有 `gsql/gs_dump/gs_restore` 原生工具映射与任务适配；工具可执行文件不随此客户端包提供，需配置匹配的 Linux GaussDB client home。本次双架构 Linux GUI 验收以原始七项为范围，未执行原生备份恢复任务，不把历史其他环境的工具验证当成麒麟工具二进制认证。
 

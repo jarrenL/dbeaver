@@ -53,13 +53,15 @@ cp "$native_source/build-environment.txt" "$native_source/elf-versions.txt" "$de
 cp "$native_source/SHA256SUMS" "$delivery_output/NATIVE-SHA256SUMS"
 cp "$repository_root/README.md" "$delivery_output/README.md"
 cp "$repository_root/GAUSSDB_GUI_OPERATION_MANUAL_20260922.md" "$delivery_output/GAUSSDB_GUI_OPERATION_MANUAL_20260922.md"
-manual_image_output="$delivery_output/docs/gaussdb/images"
+manual_image_output="$delivery_output/docs/gaussdb/images/manual"
 mkdir -p "$manual_image_output"
-for manual_image in language-config.png debug-source.png call-stack.png package-errors.png; do
-    cp "$repository_root/docs/gaussdb/images/$manual_image" "$manual_image_output/$manual_image"
+for manual_image in language-config.png debug-source.png debug-step-variables.png call-stack.png \
+    debug-transaction-choice.png package-compile-menu.png package-errors.png \
+    package-error-location.png package-delete-confirm.png; do
+    cp "$repository_root/docs/gaussdb/images/manual/$manual_image" "$manual_image_output/$manual_image"
 done
-cp "$repository_root/GaussDB_DBeaver_调试与Package操作手册_20261006.docx" \
-    "$delivery_output/GaussDB_DBeaver_调试与Package操作手册_20261006.docx"
+cp "$repository_root/GaussDB_DBeaver_调试与Package操作手册_20261014.docx" \
+    "$delivery_output/GaussDB_DBeaver_调试与Package操作手册_20261014.docx"
 cp "$script_directory/README.zh-CN.md" "$delivery_output/README-KYLIN.zh-CN.md"
 cp "$script_directory/THIRD-PARTY-SOURCES.md" "$delivery_output/THIRD-PARTY-SOURCES.md"
 printf '%s\n' "architecture=$delivery_arch" 'swt_source=v4973r12' 'launcher_source=R4_37' \

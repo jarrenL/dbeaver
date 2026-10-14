@@ -11,7 +11,7 @@
 - 本包未签名，SmartScreen/企业终端策略可能拦截。核对 Release 的 SHA256SUMS，由 IT 批准；不要关闭系统防护。
 - JDBC 和 GaussDB 原生备份工具不捆绑。由 DBA 提供匹配服务器版本的 JDBC，使用 GaussDB Native 或 GaussDB 对应驱动类和 URL 连接远端 CN/集中式入口。
 - 首次配置启用 Procedure debugger。M 模式不启用 PL 调试；包功能需要支持它的集中式 ORA。Watch 只支持变量名。
-- 包内 README 中的相对源码链接需在源码仓库浏览；调试与 Package 操作手册同时提供 Markdown 和 Word 版本。为兼容 Windows 安装器及企业文件系统，Word 文件在 Windows 包中命名为 `GaussDB_DBeaver_Debug_and_Package_Manual_20261006.docx`。
+- 包内 README 中的相对源码链接需在源码仓库浏览；调试与 Package 操作手册同时提供 Markdown 和 Word 版本。为兼容 Windows 安装器及企业文件系统，Word 文件在 Windows 包中命名为 `GaussDB_DBeaver_Debug_and_Package_Manual_20261014.docx`。
 
 ## Reproduction
 
