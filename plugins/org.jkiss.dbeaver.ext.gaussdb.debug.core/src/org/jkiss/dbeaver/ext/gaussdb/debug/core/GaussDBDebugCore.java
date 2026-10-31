@@ -128,7 +128,9 @@ public final class GaussDBDebugCore {
             }
         }
         if (routine == null) {
-            throw new DBException("Routine " + oid + " not found in database " + databaseName);
+            throw new DBException("Routine " + oid + " not found in database " + databaseName
+                + ". Refresh the database navigator and reselect the routine in Debug Configurations."
+                + " The routine may have been dropped or recreated, or the configuration may refer to another database.");
         }
         return routine;
     }

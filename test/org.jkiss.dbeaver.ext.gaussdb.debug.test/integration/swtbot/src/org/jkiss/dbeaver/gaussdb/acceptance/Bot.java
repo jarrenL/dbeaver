@@ -279,7 +279,8 @@ public final class Bot implements IStartup {
             });
             case "modes" -> inspectModes((TreeItem) widget, out);
             case "navigation-race" -> navigationRace((Shell) widget, args[2], out);
-            case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], out);
+            case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], false, out);
+            case "resolve-missing" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), "", true, out);
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
             case "grid-click" -> {
@@ -367,7 +368,8 @@ public final class Bot implements IStartup {
         }
     }
 
-    private void resolveFrame(TreeItem item, long oid, String expectedSchema, PrintWriter out) throws Exception {
+    private void resolveFrame(TreeItem item, long oid, String expectedSchema, boolean expectMissing, PrintWriter out)
+        throws Exception {
         Object[] data = new Object[1];
         display.syncExec(() -> data[0] = item.getData());
         Object routine = data[0].getClass().getMethod("getObject").invoke(data[0]);
@@ -383,8 +385,23 @@ public final class Bot implements IStartup {
         Object resolver = resolverType.getConstructors()[0].newInstance(container);
         Object monitor = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model")
             .loadClass("org.jkiss.dbeaver.model.runtime.VoidProgressMonitor").getConstructor().newInstance();
-        Object resolved = Arrays.stream(resolverType.getMethods()).filter(m -> m.getName().equals("resolveObject"))
-            .findFirst().orElseThrow().invoke(resolver, configuration, oid, monitor);
+        Object resolved;
+        try {
+            resolved = Arrays.stream(resolverType.getMethods()).filter(m -> m.getName().equals("resolveObject"))
+                .findFirst().orElseThrow().invoke(resolver, configuration, oid, monitor);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            String message = e.getCause().getMessage();
+            if (!expectMissing || message == null || !message.contains("Routine " + oid + " not found in database")
+                || !message.contains("Refresh the database navigator and reselect the routine")
+                || !configuration.equals(original)) {
+                throw e;
+            }
+            out.println("PASS missing routine OID=" + oid + "; actionable diagnostic; launch unchanged; no name fallback");
+            return;
+        }
+        if (expectMissing) {
+            throw new AssertionError("Missing OID unexpectedly resolved: " + oid);
+        }
         Object schema = resolved.getClass().getMethod("getSchema").invoke(resolved);
         String actualSchema = (String) schema.getClass().getMethod("getName").invoke(schema);
         long actualOid = ((Number) resolved.getClass().getMethod("getObjectId").invoke(resolved)).longValue();

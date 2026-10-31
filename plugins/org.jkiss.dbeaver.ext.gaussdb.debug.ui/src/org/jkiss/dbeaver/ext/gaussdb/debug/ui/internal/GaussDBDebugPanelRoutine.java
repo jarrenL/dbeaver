@@ -280,9 +280,9 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
             return;
         }
         boolean required = selectedRoutine != null && GaussDBDebugSessionSettings.requiresConsent(selectedRoutine);
-        GridData layoutData = (GridData) sessionSettingsGroup.getLayoutData();
-        layoutData.exclude = !required;
-        sessionSettingsGroup.setVisible(required);
+        // createTitledComposite returns the client; its titled parent owns the GridData.
+        Composite titledContainer = sessionSettingsGroup.getParent();
+        UIUtils.setControlVisible(titledContainer, required);
         sessionSettingsConsent.setSelection(false);
         if (required) {
             sessionSettingsDescription.setText(NLS.bind(
@@ -292,7 +292,7 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         } else {
             sessionSettingsDescription.setText("");
         }
-        sessionSettingsGroup.getParent().layout(true, true);
+        titledContainer.getParent().layout(true, true);
     }
 
     @Override

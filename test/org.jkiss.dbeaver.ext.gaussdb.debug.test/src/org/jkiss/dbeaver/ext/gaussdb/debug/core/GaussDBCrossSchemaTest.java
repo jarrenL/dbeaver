@@ -99,6 +99,9 @@ class GaussDBCrossSchemaTest {
         assertEquals("1", launch.get(GaussDBDebugConstants.ATTR_ROUTINE_OID));
         assertSame(sameName, resolver.resolveObject(launch, null, monitor));
         when(rows.next()).thenReturn(false);
-        assertThrows(org.jkiss.dbeaver.DBException.class, () -> resolver.resolveObject(launch, 3L, monitor));
+        var missing = assertThrows(org.jkiss.dbeaver.DBException.class, () -> resolver.resolveObject(launch, 3L, monitor));
+        assertTrue(missing.getMessage().contains("Routine 3 not found in database test"));
+        assertTrue(missing.getMessage().contains("reselect the routine in Debug Configurations"));
+        assertEquals("1", launch.get(GaussDBDebugConstants.ATTR_ROUTINE_OID));
     }
 }

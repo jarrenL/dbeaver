@@ -9,4 +9,5 @@ Bundle-Vendor: DBeaver Corp
 Fragment-Host: org.jkiss.dbeaver.ui.editors.data
 Require-Bundle: org.jkiss.dbeaver.test.platform,
  org.jkiss.dbeaver.model.jdbc,
- org.jkiss.dbeaver.ui.editors.hex
+ org.jkiss.dbeaver.ui.editors.hex,
+ org.jkiss.dbeaver.ext.gaussdb.debug.ui
