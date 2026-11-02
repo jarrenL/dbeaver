@@ -16,6 +16,8 @@
  */
 package org.jkiss.dbeaver.ui.editors.sql;
 
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.action.Action;
 import org.eclipse.jface.action.IContributionManager;
@@ -63,12 +65,15 @@ public abstract class SQLEditorNested<T extends DBSObject>
     implements IActiveWorkbenchPart, IRefreshablePart, DBCSourceHost, IDatabasePostSaveProcessor {
 
     private static final String SAVE_CONTEXT_COMPILE_PARAM = "object.compiled";
+    /** One-time marker hand-off for a source folder created after IDE.gotoMarker. */
+    public static final String ATTRIBUTE_PENDING_SOURCE_MARKER = "source.pendingMarker";
 
     private EditorPageControl pageControl;
     private ObjectCompilerLogViewer compileLog;
     private Control editorControl;
     private SashForm editorSash;
     private boolean activated;
+    private final PendingSourceMarkerNavigation pendingMarkerNavigation = new PendingSourceMarkerNavigation();
 
     public SQLEditorNested() {
         super();
@@ -148,6 +153,9 @@ public abstract class SQLEditorNested<T extends DBSObject>
                 }
             }
         });
+        if (isDocumentLoaded()) {
+            applyPendingMarkerAfterSourceLoad(getEditorInput(), true);
+        }
     }
 
     @Override
@@ -221,6 +229,47 @@ public abstract class SQLEditorNested<T extends DBSObject>
             return ((SQLObjectDocumentProvider) documentProvider).isSourceLoaded();
         }
         return true;
+    }
+
+    @Override
+    public void gotoMarker(IMarker marker) {
+        if (isDocumentLoaded()) {
+            pendingMarkerNavigation.clear();
+            super.gotoMarker(marker);
+        } else {
+            // IDE.gotoMarker is called immediately after opening an editor, before
+            // its asynchronous SQL source replaces the loading placeholder.
+            pendingMarkerNavigation.remember(getEditorInput(), marker);
+        }
+    }
+
+    void applyPendingMarkerAfterSourceLoad(@NotNull Object loadedInput, boolean successfulLoad) {
+        IMarker marker = pendingMarkerNavigation.complete(loadedInput,
+            !isDisposed() && getEditorInput() == loadedInput && isDocumentLoaded(), successfulLoad);
+        if (marker != null) {
+            // Position the existing nested editor only; never open or activate a page.
+            super.gotoMarker(marker);
+        }
+    }
+
+    @Override
+    protected void doSetInput(IEditorInput input) throws CoreException {
+        pendingMarkerNavigation.discardForOtherInput(input);
+        if (input instanceof IDatabaseEditorInput databaseInput
+            && databaseInput.getAttribute(ATTRIBUTE_PENDING_SOURCE_MARKER) instanceof IMarker marker) {
+            databaseInput.setAttribute(ATTRIBUTE_PENDING_SOURCE_MARKER, null);
+            pendingMarkerNavigation.remember(input, marker);
+        }
+        super.doSetInput(input);
+        if (getTextViewer() != null && isDocumentLoaded()) {
+            UIUtils.asyncExec(() -> applyPendingMarkerAfterSourceLoad(input, true));
+        }
+    }
+
+    @Override
+    public void dispose() {
+        pendingMarkerNavigation.clear();
+        super.dispose();
     }
 
     @Override

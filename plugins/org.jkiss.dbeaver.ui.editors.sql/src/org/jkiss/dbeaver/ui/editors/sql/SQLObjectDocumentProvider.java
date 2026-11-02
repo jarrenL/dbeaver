@@ -139,6 +139,10 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
                         sourceText = loadedSource[0];
                         editor.setInput(editor.getEditorInput());
                         editor.reloadSyntaxRules();
+                        if (editor instanceof SQLEditorNested<?> nested) {
+                            nested.applyPendingMarkerAfterSourceLoad(element,
+                                event.getResult() != null && event.getResult().isOK());
+                        }
                     });
                     super.done(event);
                 }

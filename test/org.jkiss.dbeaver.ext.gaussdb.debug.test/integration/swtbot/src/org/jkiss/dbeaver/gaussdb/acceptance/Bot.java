@@ -144,8 +144,48 @@ public final class Bot implements IStartup {
             });
             return;
         }
-        if (args[0].equals("source-position")) {
-            inspectSourcePosition(args.length > 1 ? Integer.parseInt(args[1]) : -1, out);
+        if (args[0].equals("source-position") || args[0].equals("source-caret")) {
+            inspectSourcePosition(args.length > 1 ? Integer.parseInt(args[1]) : -1,
+                args[0].equals("source-position"), out);
+            return;
+        }
+        if (args[0].equals("toggle-source-breakpoint")) {
+            Throwable[] failure = new Throwable[1];
+            display.syncExec(() -> {
+                try {
+                    var editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
+                    Class<?> textType = org.eclipse.core.runtime.Platform.getBundle("org.eclipse.ui.workbench.texteditor")
+                        .loadClass("org.eclipse.ui.texteditor.ITextEditor");
+                    Object nested = editor.getAdapter(textType);
+                    Object provider = textType.getMethod("getDocumentProvider").invoke(nested);
+                    var providerType = textType.getMethod("getDocumentProvider").getReturnType();
+                    Object input = textType.getMethod("getEditorInput").invoke(nested);
+                    var documentMethod = providerType.getMethod("getDocument", Object.class);
+                    Object document = documentMethod.invoke(provider, input);
+                    Class<?> documentType = documentMethod.getReturnType();
+                    int line = Integer.parseInt(args[1]);
+                    int offset = ((Number) documentType.getMethod("getLineOffset", int.class).invoke(document, line - 1)).intValue();
+                    Class<?> selectionType = org.eclipse.core.runtime.Platform.getBundle("org.eclipse.jface.text")
+                        .loadClass("org.eclipse.jface.text.TextSelection");
+                    var selection = (org.eclipse.jface.viewers.ISelection) selectionType
+                        .getConstructor(documentType, int.class, int.class).newInstance(document, offset, 0);
+                    var target = editor.getAdapter(org.eclipse.debug.ui.actions.IToggleBreakpointsTarget.class);
+                    if (target == null) throw new AssertionError("Source editor has no production breakpoint toggle target");
+                    target.toggleLineBreakpoints(editor, selection);
+                    out.println("PASS production breakpoint toggle at source line " + line);
+                } catch (Throwable e) { failure[0] = e; }
+            });
+            if (failure[0] != null) throw new AssertionError("Cannot toggle real source breakpoint", failure[0]);
+            return;
+        }
+        if (args[0].equals("breakpoint-snapshot")) {
+            var breakpoints = org.eclipse.debug.core.DebugPlugin.getDefault().getBreakpointManager()
+                .getBreakpoints(org.jkiss.dbeaver.debug.DBGConstants.MODEL_IDENTIFIER_DATABASE);
+            for (var breakpoint : breakpoints) {
+                var database = (org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint) breakpoint;
+                out.println("breakpoint " + database.getDisplayLabel() + " path=" + database.getNodePath());
+            }
+            out.println("breakpoint-count=" + breakpoints.length);
             return;
         }
         if (args[0].equals("source-request")) {
@@ -343,6 +383,15 @@ public final class Bot implements IStartup {
             display.asyncExec(() -> org.eclipse.debug.ui.DebugUITools.openLaunchConfigurationDialogOnGroup(
                 PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(),
                 (org.eclipse.jface.viewers.IStructuredSelection) null, "org.jkiss.dbeaver.debug.launchGroup"));
+            return;
+        }
+        if (args[0].equals("open-run-configurations") || args[0].equals("open-standard-debug-configurations")) {
+            String group = args[0].equals("open-run-configurations")
+                ? org.eclipse.debug.ui.IDebugUIConstants.ID_RUN_LAUNCH_GROUP
+                : org.eclipse.debug.ui.IDebugUIConstants.ID_DEBUG_LAUNCH_GROUP;
+            display.asyncExec(() -> org.eclipse.debug.ui.DebugUITools.openLaunchConfigurationDialogOnGroup(
+                PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(),
+                (org.eclipse.jface.viewers.IStructuredSelection) null, group));
             return;
         }
         if (args[0].equals("parameter-fixture")) {
@@ -597,12 +646,13 @@ public final class Bot implements IStartup {
     }
 
     /** Verifies the actual nested document selection and Eclipse instruction-pointer annotation. */
-    private void inspectSourcePosition(int requestedLine, PrintWriter out) {
+    private void inspectSourcePosition(int requestedLine, boolean requirePointer, PrintWriter out) {
         Throwable[] failure = new Throwable[1];
         display.syncExec(() -> {
             try {
                 var context = org.eclipse.debug.ui.DebugUITools.getDebugContext();
-                if (!(context instanceof org.eclipse.debug.core.model.IStackFrame frame)) {
+                var frame = context instanceof org.eclipse.debug.core.model.IStackFrame value ? value : null;
+                if (frame == null && (requirePointer || requestedLine <= 0)) {
                     throw new AssertionError("Select a paused frame before checking source position");
                 }
                 int expected = requestedLine > 0 ? requestedLine : frame.getLineNumber();
@@ -625,7 +675,7 @@ public final class Bot implements IStartup {
                 Object selection = selectionProvider.getSelection();
                 int caretOffset = ((Number) selection.getClass().getMethod("getOffset").invoke(selection)).intValue();
                 int caretLine = ((Number) lineAtOffset.invoke(document, caretOffset)).intValue() + 1;
-                out.println("source-position editor=" + editor.getTitle() + " frame-line=" + frame.getLineNumber()
+                out.println("source-position editor=" + editor.getTitle() + " frame-line=" + (frame == null ? "none" : frame.getLineNumber())
                     + " expected-line=" + expected + " caret-line=" + caretLine);
                 var annotationMethod = providerType.getMethod("getAnnotationModel", Object.class);
                 Object model = annotationMethod.invoke(provider, input);
@@ -651,11 +701,12 @@ public final class Bot implements IStartup {
                     pointers++;
                     pointerAtExpectedLine |= line == expected;
                 }
-                if (caretLine != expected || !pointerAtExpectedLine) {
+                if (caretLine != expected || requirePointer && !pointerAtExpectedLine) {
                     throw new AssertionError("Expected source caret and instruction pointer at line " + expected
                         + ", actual caret=" + caretLine + " pointer-count=" + pointers);
                 }
-                out.println("PASS source caret and execution annotation match selected frame");
+                out.println(requirePointer ? "PASS source caret and execution annotation match selected frame"
+                    : "PASS source caret matches requested breakpoint line");
             } catch (Throwable e) {
                 failure[0] = e;
             }

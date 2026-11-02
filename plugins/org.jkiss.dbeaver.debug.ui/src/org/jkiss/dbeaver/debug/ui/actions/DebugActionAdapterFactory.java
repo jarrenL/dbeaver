@@ -21,10 +21,14 @@ package org.jkiss.dbeaver.debug.ui.actions;
 import org.eclipse.core.runtime.IAdapterFactory;
 import org.eclipse.debug.ui.actions.ILaunchable;
 import org.eclipse.debug.ui.actions.IToggleBreakpointsTarget;
+import org.eclipse.ui.ide.IGotoMarker;
+import org.jkiss.dbeaver.ui.editors.entity.EntityEditor;
 
 public class DebugActionAdapterFactory implements IAdapterFactory {
 
-    private static final Class<?>[] CLASSES = new Class[] { ILaunchable.class, IToggleBreakpointsTarget.class };
+    private static final Class<?>[] CLASSES = new Class[] {
+        ILaunchable.class, IToggleBreakpointsTarget.class, IGotoMarker.class
+    };
 
     private static final ILaunchable LAUNCHABLE = new ILaunchable() {
     };
@@ -34,6 +38,9 @@ public class DebugActionAdapterFactory implements IAdapterFactory {
     @Override
     @SuppressWarnings("unchecked")
     public <T> T getAdapter(Object adaptableObject, Class<T> adapterType) {
+        if (adapterType == IGotoMarker.class && adaptableObject instanceof EntityEditor editor) {
+            return adapterType.cast(new DatabaseBreakpointGotoMarker(editor));
+        }
         if (adapterType == ILaunchable.class) {
             return (T) LAUNCHABLE;
         }

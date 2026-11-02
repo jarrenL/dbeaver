@@ -22,7 +22,7 @@
                 delegate="org.jkiss.dbeaver.debug.core.DatabaseLaunchDelegate"
                 delegateDescription="%launchConfigurationType.dbeaver.delegateDescription"
                 delegateName="%launchConfigurationType.dbeaver.delegateName"
-                modes="run,debug"
+                modes="debug"
                 name="%launchConfigurationType.dbeaver.name"
                 sourceLocatorId="org.jkiss.dbeaver.debug.sourceLocator"
                 sourcePathComputerId="org.jkiss.dbeaver.debug.sourcePathComputer">

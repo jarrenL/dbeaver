@@ -236,6 +236,20 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
         }
     }
 
+    /** Describes an entity editor without opening, activating, refreshing or connecting it. */
+    @NotNull
+    public static IDatabaseEditorInput createEntityEditorInput(
+        @NotNull DBNDatabaseNode node,
+        @Nullable String defaultPageId,
+        @Nullable String defaultFolderId,
+        @Nullable Map<String, Object> attributes
+    ) {
+        DatabaseEditorInput<?> input = node instanceof DBNDatabaseObject objectNode
+            ? new ObjectEditorInput(objectNode) : new DatabaseNodeEditorInput(node);
+        setInputAttributes(input, defaultPageId, defaultFolderId, attributes);
+        return input;
+    }
+
     public static IEditorPart findEntityEditor(IWorkbenchWindow workbenchWindow, DBNNode node) {
         if (node == null) {
             return null;

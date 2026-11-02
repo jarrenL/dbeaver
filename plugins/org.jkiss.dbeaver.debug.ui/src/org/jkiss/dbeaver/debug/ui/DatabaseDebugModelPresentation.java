@@ -164,7 +164,11 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
                 DBNNode node = navigatorModel.getNodeByPath(new VoidProgressMonitor(), nodePath);
                 if (node instanceof DBNDatabaseNode) {
                     DBNDatabaseNode databaseNode = (DBNDatabaseNode) node;
-                    return createEditorInput(databaseNode);
+                    DBGEditorAdvisor advisor = DebugUI.findEditorAdvisor(databaseNode.getDataSourceContainer());
+                    // Eclipse queries this while merely selecting a breakpoint.
+                    // Only the explicit Open action may open or activate its editor.
+                    return DatabaseBreakpointEditorInput.create(databaseNode,
+                        advisor == null ? null : advisor.getSourceFolderId(), breakpoint.getMarker());
                 }
             } catch (OperationCanceledException e) {
                 throw e;

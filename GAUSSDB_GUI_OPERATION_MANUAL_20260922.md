@@ -2,11 +2,11 @@
 
 更新日期：2026-11-02。适用于数据库开发、测试及运维人员。本文可直接在代码仓库在线阅读，无需下载 HTML 文件。
 
-适用版本：DBeaver 26.1.5 GaussDB 适配版（构建标识 `26.1.5.20261102r3`）。源码版本见发布页的构建清单；适用条件和验证范围见第 14 节。
+适用版本：DBeaver 26.1.5 GaussDB 适配版（构建标识 `26.1.5.20261102r4`）。源码版本见发布页的构建清单；适用条件和验证范围见第 14 节。
 
-华为云生态仓发布页（完整地址）：https://github.com/huaweicloud-samples/database-gaussdb-ecosystem/releases/tag/dbeaver-gaussdb-26.1.5-kylin-x86_64-20261102-r3
+华为云生态仓发布页（完整地址）：https://github.com/huaweicloud-samples/database-gaussdb-ecosystem/releases/tag/dbeaver-gaussdb-26.1.5-kylin-x86_64-20261102-r4
 
-jarrenL 发布页（完整地址）：https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-x86_64-beta-20261102-r3
+jarrenL 发布页（完整地址）：https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-x86_64-beta-20261102-r4
 
 **重要：PL/SQL 调试、包管理测 O/Oracle 兼容库；M 模式只测连接、对象浏览、SQL 和表数据操作。不要在 M 库找 PL/SQL 调试入口。** Package 基础能力要求服务端提供 `gs_package`。错误定位分为“服务端结构化精确诊断”和“已保存源码重放诊断”两级，是否可用由目标服务器实际能力决定；客户端不能使不支持 Package 的服务器突然支持 Package。
 
@@ -23,7 +23,7 @@ jarrenL 发布页（完整地址）：https://github.com/jarrenL/dbeaver/release
 3. 如提示重启，保存工作后重启。关闭窗口后后台可能仍运行十几秒，等进程退出再启动，避免工作区锁冲突。
 4. 左侧 **数据库导航器（Database Navigator）** 展开正确的 **GaussDB 连接 → 数据库（如显示）→ 模式/Schemas → 目标 schema → 存储过程/Procedures**。
 5. **双击一个具体存储过程**，打开对象编辑器，切到“源码/Source”页，并点击源码正文，让这个编辑器获得焦点。不要只选中“存储过程”文件夹，也不要只打开一张普通 SQL 脚本标签。
-6. 顶部 **数据库（Database）→ 数据库调试...**，或使用工具栏“数据库调试”图标旁的小三角，打开调试配置。图标主按钮可能运行上次的配置，要编辑配置请使用下拉菜单中的配置入口。
+6. 顶部 **数据库（Database）→ 数据库调试...**，或使用工具栏调试（小虫）图标旁的小三角 → **数据库调试配置...**，打开数据库调试配置。图标主按钮可能运行上次的配置；新建或编辑配置请使用上述入口。“运行配置（Run Configurations）”用于其他启动类型，不是数据库调试入口。
 7. 第一次在配置窗口中选择 **Database Debug/数据库调试** 类型，点击左上角“新建配置”图标。按第 5 节选择连接、GaussDB routine、Routine 和输入参数，再点击 **Debug/调试**。
 
 补充入口：导航树中右键具体过程，若出现 **Debug As/调试方式 → 数据库调试**，也可进入。不同菜单布局可能不显示该快捷入口，以“打开过程对象编辑器 → 数据库菜单”为主路径。
@@ -36,8 +36,8 @@ jarrenL 发布页（完整地址）：https://github.com/jarrenL/dbeaver/release
 
 DBeaver 安装在用户登录使用的麒麟图形桌面云里，连接远端 GaussDB 服务器；不要求安装到数据库服务器上。客户端不需要 Docker，也不需要 gdb。
 
-- 麒麟 x86_64：下载文件名含 `KylinV10-x86_64` 的 Linux tar.gz，解压，进入 `dbeaver` 目录，双击 `dbeaver`，或终端执行 `./dbeaver`。
-- 麒麟 ARM64/aarch64：下载文件名含 `KylinV10-aarch64` 的 Linux tar.gz，操作步骤与 x86_64 相同。
+- 麒麟 x86_64：本次发布的 Linux tar.gz 文件名含 `linux-x86_64`，解压，进入 `dbeaver` 目录，双击 `dbeaver`，或终端执行 `./dbeaver`。
+- 麒麟 ARM64/aarch64：请在对应 Release 中选择文件名含 `linux-aarch64` 的 Linux tar.gz；本次发布只提供 x86_64，ARM 安装包以实际 Release 资产为准，操作步骤与 x86_64 相同。
 - Windows x86_64：使用 setup.exe 或解压 ZIP，运行 `dbeaver.exe`。本版 Windows 包尚无实机 GUI 验收。
 - 安装包必须与 CPU 和操作系统匹配。`uname -m` 为 `aarch64` 时不能运行 Linux x86_64 包；Windows ARM64、macOS 和 LoongArch 安装包不在本次发布范围。
 - 包里自带 Java，不需要将系统 Java 替换掉；JDBC 驱动需客户或供应商提供。
@@ -380,6 +380,7 @@ END manual_pkg_second;
 | 现象 | 先检查什么 | 不要做什么 |
 | --- | --- | --- |
 | 顶部没有数据库调试 | Help → Show Product Configuration → Procedure debugger；打开具体过程对象源码并激活 | 不要把普通 SQL 脚本当作调试对象 |
+| 新建配置提示 No tab group defined | 关闭“运行配置”，改从“数据库 → 数据库调试”或小虫下拉“数据库调试配置”进入；核对当前构建并更新到本页版本 | 不要删除工作区；“运行配置”用于其他启动类型 |
 | 功能已开仍无入口 | 当前连接是否 GaussDB、是否 O 库、过程语言是否可调试；产品功能是否限制数据库开发权限 | 不要在 M 库强开 PL 调试 |
 | 配置无 GaussDB routine | 选中的数据源类型和四个 GaussDB 插件是否齐全 | 不要安装 PG 调试器代替 GaussDB 协议 |
 | 找不到 Procedure debugger 配置向导 | Ctrl+3 搜索 Show Product Configuration；核对“关于”中的当前构建，并在安装详情中检查 GaussDB 调试插件状态 | 不要把缺失菜单直接归因于服务端权限 |

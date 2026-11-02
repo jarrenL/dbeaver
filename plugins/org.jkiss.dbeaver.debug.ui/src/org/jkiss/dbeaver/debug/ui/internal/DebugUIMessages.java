@@ -50,6 +50,8 @@ public class DebugUIMessages extends NLS {
     public static String DebugTransaction_rollback;
     public static String DebugTransaction_unconfirmed;
     public static String DebugTransaction_failure_details;
+    public static String BreakpointSource_unsaved_title;
+    public static String BreakpointSource_unsaved_message;
 
     static {
         // initialize resource bundle

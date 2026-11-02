@@ -63,6 +63,7 @@
         </factory>
         <factory adaptableType="org.jkiss.dbeaver.ui.editors.entity.EntityEditor" class="org.jkiss.dbeaver.debug.ui.actions.DebugActionAdapterFactory">
             <adapter type="org.eclipse.debug.ui.actions.IToggleBreakpointsTarget"/>
+            <adapter type="org.eclipse.ui.ide.IGotoMarker"/>
         </factory>
         <factory adaptableType="org.jkiss.dbeaver.ui.editors.DatabaseNodeEditorInput" class="org.jkiss.dbeaver.debug.ui.actions.DebugActionAdapterFactory">
             <adapter type="org.eclipse.debug.ui.actions.ILaunchable"/>
