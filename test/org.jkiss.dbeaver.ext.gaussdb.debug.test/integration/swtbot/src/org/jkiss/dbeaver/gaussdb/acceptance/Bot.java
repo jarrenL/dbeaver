@@ -139,6 +139,101 @@ public final class Bot implements IStartup {
             });
             return;
         }
+        if (args[0].equals("breakpoint-fixture")) {
+            String connection = "synthetic-breakpoint-fixture-a";
+            String secondConnection = "synthetic-breakpoint-fixture-b";
+            var project = org.eclipse.core.resources.ResourcesPlugin.getWorkspace().getRoot()
+                .getProject("synthetic-breakpoint-fixture");
+            var manager = org.eclipse.debug.core.DebugPlugin.getDefault().getBreakpointManager();
+            if (args[1].equals("setup")) {
+                if (project.exists()) throw new IllegalStateException("Fixture already exists");
+                project.create(null);
+                project.open(null);
+                for (int index = 0; index < 3; index++) {
+                    var marker = project.createMarker(org.jkiss.dbeaver.debug.DBGConstants.BREAKPOINT_ID_DATABASE_LINE);
+                    var attributes = breakpointFixtureDescriptor(8201, 6, "synthetic_db").toMap();
+                    attributes.put(org.eclipse.core.resources.IMarker.LINE_NUMBER, 6);
+                    attributes.put(org.jkiss.dbeaver.debug.DBGConstants.BREAKPOINT_ATTRIBUTE_DATASOURCE_ID,
+                        index == 2 ? secondConnection : connection);
+                    attributes.put(org.jkiss.dbeaver.debug.DBGConstants.BREAKPOINT_ATTRIBUTE_NODE_PATH, "restored/path/" + index);
+                    attributes.put(org.jkiss.dbeaver.debug.DBGConstants.BREAKPOINT_ATTRIBUTE_OBJECT_NAME, "synthetic.same_name");
+                    attributes.put(org.eclipse.debug.core.model.IBreakpoint.ID, org.jkiss.dbeaver.debug.DBGConstants.MODEL_IDENTIFIER_DATABASE);
+                    attributes.put(org.eclipse.debug.core.model.IBreakpoint.ENABLED, index != 1);
+                    marker.setAttributes(attributes);
+                    var breakpoint = new org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint();
+                    var setter = org.eclipse.debug.core.model.Breakpoint.class.getDeclaredMethod(
+                        "setMarker", org.eclipse.core.resources.IMarker.class);
+                    setter.setAccessible(true);
+                    setter.invoke(breakpoint, marker);
+                    manager.addBreakpoint(breakpoint);
+                }
+            }
+            var all = manager.getBreakpoints(org.jkiss.dbeaver.debug.DBGConstants.MODEL_IDENTIFIER_DATABASE);
+            if (args[1].equals("clear-matches")) {
+                var matches = org.jkiss.dbeaver.debug.core.breakpoints.DatabaseBreakpoint.findMatchingBreakpoints(
+                    all, connection, "current/path", 6,
+                    breakpointFixtureDescriptor(8201, -1, "synthetic_db"));
+                if (matches.length != 2) throw new AssertionError("Expected two restored matching markers, got " + matches.length);
+                display.asyncExec(() -> {
+                    try {
+                        org.eclipse.debug.ui.DebugUITools.deleteBreakpoints(matches,
+                            PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(), null);
+                    } catch (org.eclipse.core.runtime.CoreException e) {
+                        throw new IllegalStateException(e);
+                    }
+                });
+                out.println("PASS selected both duplicate markers for the production UI delete action");
+            } else if (args[1].equals("cleanup")) {
+                for (var breakpoint : all) {
+                    if (breakpoint.getMarker() != null && project.equals(breakpoint.getMarker().getResource())) {
+                        manager.removeBreakpoint(breakpoint, true);
+                    }
+                }
+                if (project.exists()) project.delete(true, true, null);
+                out.println("PASS removed synthetic fixture only");
+                return;
+            }
+            if (!args[1].equals("clear-matches")) {
+                int count = 0;
+                for (var breakpoint : all) {
+                    if (breakpoint.getMarker() != null && project.equals(breakpoint.getMarker().getResource())) {
+                        String label = ((org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint) breakpoint).getDisplayLabel();
+                        if (!label.contains("synthetic-breakpoint-fixture-")) throw new AssertionError(label);
+                        out.println("marker " + label);
+                        count++;
+                    }
+                }
+                int expected = Integer.parseInt(args[2]);
+                if (count != expected) throw new AssertionError("Expected " + expected + " markers, got " + count);
+                out.println("PASS synthetic marker count=" + count);
+            }
+            return;
+        }
+        if (args[0].equals("debug-snapshot")) {
+            Object[] context = new Object[2];
+            display.syncExec(() -> {
+                context[0] = org.eclipse.debug.ui.DebugUITools.getDebugContext();
+                var editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
+                context[1] = editor == null ? "none" : editor.getClass().getName();
+            });
+            out.println("source-editor=" + context[1]);
+            if (String.valueOf(context[1]).contains("SourceNotFound")) throw new AssertionError("Source lookup failed");
+            if (!(context[0] instanceof org.eclipse.debug.core.model.IStackFrame frame)) {
+                throw new AssertionError("Select a paused stack frame first: " + context[0]);
+            }
+            out.println("frame=" + frame.getName());
+            for (var variable : frame.getVariables()) {
+                out.println("variable " + variable.getName() + "=" + variable.getValue().getValueString());
+            }
+            out.println("PASS selected frame source and variables available");
+            return;
+        }
+        if (args[0].equals("open-debug-configurations")) {
+            display.asyncExec(() -> org.eclipse.debug.ui.DebugUITools.openLaunchConfigurationDialogOnGroup(
+                PlatformUI.getWorkbench().getActiveWorkbenchWindow().getShell(),
+                (org.eclipse.jface.viewers.IStructuredSelection) null, "org.jkiss.dbeaver.debug.launchGroup"));
+            return;
+        }
         if (args[0].equals("parameter-fixture")) {
             display.syncExec(() -> {
                 try {
@@ -368,6 +463,14 @@ public final class Bot implements IStartup {
                     && m.getParameterCount() == 2).findFirst().orElseThrow().invoke(database, monitor, false);
             }
         }
+    }
+
+    private static org.jkiss.dbeaver.debug.DBGBreakpointDescriptor breakpointFixtureDescriptor(long oid, long line, String database)
+        throws Exception {
+        Class<?> type = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.ext.gaussdb.debug.core")
+            .loadClass("org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugBreakpointDescriptor");
+        return (org.jkiss.dbeaver.debug.DBGBreakpointDescriptor) type.getConstructor(long.class, long.class, String.class)
+            .newInstance(oid, line, database);
     }
 
     /** Synthetic catalog_NNN fixture: 40 procedures, 20 functions and two four-member packages per schema. */

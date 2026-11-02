@@ -34,8 +34,6 @@ import org.jkiss.dbeaver.model.DBIcon;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.navigator.*;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
-import org.jkiss.dbeaver.model.struct.DBSInstance;
-import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameter;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
@@ -169,8 +167,8 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         DBNNode selectedNode = DBWorkbench.getPlatformUI().selectObject(
             shell, GaussDBDebugMessages.routine_select, dataSourceNode,
             selectedRoutine == null ? null : navigator.getNodeByObject(selectedRoutine),
-            new Class[]{DBSInstance.class, DBSObjectContainer.class, GaussDBProcedure.class},
-            new Class[]{GaussDBProcedure.class}, null);
+            GaussDBDebugCore.getRoutineBrowserTypes(),
+            new Class[]{GaussDBProcedure.class}, new Class[]{GaussDBProcedure.class});
         if (selectedNode instanceof DBNDatabaseNode databaseNode && databaseNode.getObject() instanceof GaussDBProcedure routine) {
             try {
                 String eligibilityError = GaussDBDebugCore.getRoutineEligibilityError(new VoidProgressMonitor(), routine);

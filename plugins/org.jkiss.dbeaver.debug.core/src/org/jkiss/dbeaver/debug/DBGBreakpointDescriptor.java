@@ -25,4 +25,9 @@ public interface DBGBreakpointDescriptor {
 
     Map<String, Object> toMap();
 
+    /** Providers may recognize stable object identities across navigator URI changes. */
+    default boolean matchesObject(String nodePath, String savedNodePath, Map<String, Object> attributes) {
+        return nodePath.equals(savedNodePath);
+    }
+
 }

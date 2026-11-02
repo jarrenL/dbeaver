@@ -56,6 +56,17 @@ public class GaussDBDebugBreakpointDescriptor implements DBGBreakpointDescriptor
     }
 
     @Override
+    public boolean matchesObject(String nodePath, String savedNodePath, Map<String, Object> attributes) {
+        Object savedDatabase = attributes.get(GaussDBDebugConstants.ATTR_DATABASE_NAME);
+        if (databaseName != null && savedDatabase != null && !databaseName.equals(savedDatabase)) {
+            return false;
+        }
+        return nodePath.equals(savedNodePath) || routineOid > 0 && databaseName != null && !databaseName.isEmpty()
+            && routineOid == CommonUtils.toLong(attributes.get(GaussDBDebugConstants.ATTR_ROUTINE_OID))
+            && databaseName.equals(savedDatabase);
+    }
+
+    @Override
     public Map<String, Object> toMap() {
         Map<String, Object> result = new HashMap<>();
         result.put(GaussDBDebugConstants.ATTR_ROUTINE_OID, String.valueOf(routineOid));

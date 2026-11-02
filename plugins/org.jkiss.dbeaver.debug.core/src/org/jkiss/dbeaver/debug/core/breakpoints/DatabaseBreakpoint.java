@@ -21,6 +21,10 @@ package org.jkiss.dbeaver.debug.core.breakpoints;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.model.Breakpoint;
+import org.eclipse.debug.core.model.IBreakpoint;
+import org.eclipse.debug.core.model.ILineBreakpoint;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.debug.DBGBreakpointDescriptor;
 import org.jkiss.dbeaver.debug.DBGConstants;
 import org.jkiss.dbeaver.model.DBPEvaluationContext;
@@ -29,8 +33,33 @@ import org.jkiss.dbeaver.model.navigator.DBNNode;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class DatabaseBreakpoint extends Breakpoint implements IDatabaseBreakpoint {
+
+    /** Find every marker for a toggled location, including restored duplicate markers. */
+    @NotNull
+    public static IBreakpoint[] findMatchingBreakpoints(
+        @NotNull IBreakpoint[] breakpoints,
+        @NotNull String datasourceId,
+        @NotNull String nodePath,
+        int lineNumber,
+        @Nullable DBGBreakpointDescriptor descriptor
+    ) throws CoreException {
+        List<IBreakpoint> matches = new ArrayList<>();
+        for (IBreakpoint breakpoint : breakpoints) {
+            if (breakpoint instanceof IDatabaseBreakpoint databaseBreakpoint && breakpoint instanceof ILineBreakpoint line
+                && datasourceId.equals(databaseBreakpoint.getDatasourceId()) && line.getLineNumber() == lineNumber
+                && (descriptor == null ? nodePath.equals(databaseBreakpoint.getNodePath())
+                    : descriptor.matchesObject(nodePath, databaseBreakpoint.getNodePath(),
+                        breakpoint.getMarker() != null && breakpoint.getMarker().exists()
+                            ? breakpoint.getMarker().getAttributes() : Map.of()))) {
+                matches.add(breakpoint);
+            }
+        }
+        return matches.toArray(IBreakpoint[]::new);
+    }
 
     @Override
     public String getModelIdentifier() {

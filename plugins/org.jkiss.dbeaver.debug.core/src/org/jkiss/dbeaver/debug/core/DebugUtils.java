@@ -158,6 +158,10 @@ public class DebugUtils {
         if (object == null) {
             return null;
         }
+        DBGResolver resolver = GeneralUtils.adapt(controller.getDataSourceContainer(), DBGResolver.class);
+        if (resolver != null && !monitor.isCanceled()) {
+            resolver.prepareSourceNavigation(object, navigatorModel, monitor);
+        }
         DBNDatabaseNode node = navigatorModel.getNodeByObject(monitor, object, false);
         if (node == null && object.getParentObject() != null && !monitor.isCanceled()) {
             // A resolver can discover a newly created routine while the navigator still has
@@ -169,6 +173,9 @@ public class DebugUtils {
                 parent.refreshNode(monitor, controller);
                 object = findDatabaseObject(controller, identifier, monitor);
                 if (object != null) {
+                    if (resolver != null && !monitor.isCanceled()) {
+                        resolver.prepareSourceNavigation(object, navigatorModel, monitor);
+                    }
                     node = navigatorModel.getNodeByObject(monitor, object, false);
                 }
             }

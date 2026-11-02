@@ -17,6 +17,7 @@ import org.eclipse.debug.core.model.IProcess;
 import org.jkiss.dbeaver.debug.DBGConstants;
 import org.jkiss.dbeaver.debug.DBGSession;
 import org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint;
+import org.jkiss.dbeaver.debug.core.breakpoints.DatabaseBreakpoint;
 import org.jkiss.dbeaver.debug.core.model.DatabaseDebugTarget;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugBreakpointDescriptor;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.internal.GaussDBDebugController;
@@ -99,6 +100,46 @@ class DatabaseBreakpointPersistenceTest {
             if (project.exists()) {
                 project.delete(true, true, null);
             }
+        }
+    }
+
+    @Test
+    void togglingRestoredDuplicatesRemovesAllTheirMarkersButPreservesOtherConnections() throws Exception {
+        String connection = "breakpoint-duplicates-" + UUID.randomUUID();
+        IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(connection);
+        IBreakpointManager manager = DebugPlugin.getDefault().getBreakpointManager();
+        var created = new java.util.ArrayList<WorkspaceBreakpoint>();
+        try {
+            project.create(null);
+            project.open(null);
+            for (int index = 0; index < 3; index++) {
+                IMarker marker = project.createMarker(DBGConstants.BREAKPOINT_ID_DATABASE_LINE);
+                var attributes = new GaussDBDebugBreakpointDescriptor(8201, 7, "review_db").toMap();
+                attributes.put(IMarker.LINE_NUMBER, 7);
+                attributes.put(DBGConstants.BREAKPOINT_ATTRIBUTE_DATASOURCE_ID, index == 2 ? "another-connection" : connection);
+                attributes.put(DBGConstants.BREAKPOINT_ATTRIBUTE_NODE_PATH, "restored/path/" + index);
+                attributes.put(IBreakpoint.ID, DBGConstants.MODEL_IDENTIFIER_DATABASE);
+                attributes.put(IBreakpoint.ENABLED, index != 1);
+                marker.setAttributes(attributes);
+                var breakpoint = new WorkspaceBreakpoint();
+                breakpoint.assign(marker);
+                manager.addBreakpoint(breakpoint);
+                created.add(breakpoint);
+            }
+            IBreakpoint[] matches = DatabaseBreakpoint.findMatchingBreakpoints(
+                manager.getBreakpoints(DBGConstants.MODEL_IDENTIFIER_DATABASE), connection, "current/path", 7,
+                new GaussDBDebugBreakpointDescriptor(8201, -1, "review_db"));
+            assertEquals(2, matches.length);
+            manager.removeBreakpoints(matches, true);
+            assertFalse(manager.isRegistered(created.get(0)));
+            assertFalse(manager.isRegistered(created.get(1)));
+            assertTrue(manager.isRegistered(created.get(2)));
+            assertEquals(1, project.findMarkers(DBGConstants.BREAKPOINT_ID_DATABASE_LINE, false, 0).length);
+        } finally {
+            for (var breakpoint : created) {
+                if (manager.isRegistered(breakpoint)) manager.removeBreakpoint(breakpoint, true);
+            }
+            if (project.exists()) project.delete(true, true, null);
         }
     }
 

@@ -22,7 +22,6 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.model.IBreakpoint;
-import org.eclipse.debug.core.model.ILineBreakpoint;
 import org.eclipse.debug.ui.DebugUITools;
 import org.eclipse.debug.ui.actions.IToggleBreakpointsTargetExtension2;
 import org.eclipse.jface.text.ITextSelection;
@@ -33,7 +32,7 @@ import org.eclipse.ui.IWorkbenchPart;
 import org.jkiss.dbeaver.debug.DBGBreakpointDescriptor;
 import org.jkiss.dbeaver.debug.DBGConstants;
 import org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint;
-import org.jkiss.dbeaver.debug.core.breakpoints.IDatabaseBreakpoint;
+import org.jkiss.dbeaver.debug.core.breakpoints.DatabaseBreakpoint;
 import org.jkiss.dbeaver.debug.ui.DebugUI;
 import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -77,20 +76,16 @@ public class ToggleProcedureBreakpointTarget implements IToggleBreakpointsTarget
         int lineNumber = textSelection.getStartLine();
         IBreakpoint[] breakpoints = DebugPlugin.getDefault().getBreakpointManager()
                 .getBreakpoints(DBGConstants.MODEL_IDENTIFIER_DATABASE);
-        for (IBreakpoint breakpoint : breakpoints) {
-            if (breakpoint instanceof IDatabaseBreakpoint) {
-                IDatabaseBreakpoint databaseBreakpoint = (IDatabaseBreakpoint) breakpoint;
-                if (nodeItemPath.equals(databaseBreakpoint.getNodePath())) {
-                    if (((ILineBreakpoint) breakpoint).getLineNumber() == (lineNumber + 1)) {
-                        DebugUITools.deleteBreakpoints(new IBreakpoint[]{breakpoint}, part.getSite().getShell(), null);
-                        return;
-                    }
-                }
-            }
-        }
         int charstart = -1, charend = -1;
 
         DBGBreakpointDescriptor breakpointDescriptor = GeneralUtils.adapt(databaseObject, DBGBreakpointDescriptor.class);
+        IBreakpoint[] matches = DatabaseBreakpoint.findMatchingBreakpoints(
+            breakpoints, databaseObject.getDataSource().getContainer().getId(), nodeItemPath, lineNumber + 1,
+            breakpointDescriptor);
+        if (matches.length > 0) {
+            DebugUITools.deleteBreakpoints(matches, part.getSite().getShell(), null);
+            return;
+        }
         if (breakpointDescriptor == null) {
             throw new CoreException(GeneralUtils.makeErrorStatus(
                 "Object '" + DBUtils.getObjectFullName(databaseObject, DBPEvaluationContext.UI) + "' doesn't support breakpoints"));

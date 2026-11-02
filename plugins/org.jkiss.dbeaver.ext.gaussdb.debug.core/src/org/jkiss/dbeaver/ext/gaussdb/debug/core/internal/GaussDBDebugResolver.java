@@ -10,6 +10,9 @@ import org.jkiss.dbeaver.debug.DBGResolver;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugConstants;
 import org.jkiss.dbeaver.ext.gaussdb.debug.core.GaussDBDebugCore;
 import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBProcedure;
+import org.jkiss.dbeaver.ext.gaussdb.model.GaussDBSchema;
+import org.jkiss.dbeaver.model.navigator.DBNModel;
+import org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
@@ -32,6 +35,32 @@ public class GaussDBDebugResolver implements DBGResolver {
             resolved.put(GaussDBDebugConstants.ATTR_ROUTINE_OID, String.valueOf(identifier));
         }
         return GaussDBDebugCore.resolveRoutine(monitor, container, resolved);
+    }
+
+    @Override
+    public void prepareSourceNavigation(DBSObject object, DBNModel navigator, DBRProgressMonitor monitor) throws DBException {
+        if (!(object instanceof GaussDBProcedure routine) || routine.getPropackageid() == 0 || monitor.isCanceled()) {
+            return;
+        }
+        // A Package member's model parent is its schema, but its navigator parent is
+        // the Package. Loading only the schema's standalone routines cannot find it.
+        var owner = (GaussDBSchema) routine.getSchema();
+        var gaussPackage = owner.getPackages(monitor).stream()
+            .filter(candidate -> candidate.getObjectId() == routine.getPropackageid()).findFirst()
+            .orElseThrow(() -> new DBException("Package " + routine.getPropackageid() + " for debug source is unavailable"));
+        var packageNode = navigator.getNodeByObject(monitor, gaussPackage, false);
+        if (packageNode == null) {
+            return;
+        }
+        for (var child : packageNode.getChildren(monitor)) {
+            if (monitor.isCanceled()) {
+                return;
+            }
+            if (child instanceof DBNDatabaseFolder folder && folder.getChildrenClass() != null
+                && folder.getChildrenClass().isAssignableFrom(routine.getClass())) {
+                folder.getChildren(monitor);
+            }
+        }
     }
 
     @Override

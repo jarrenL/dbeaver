@@ -20,6 +20,7 @@ package org.jkiss.dbeaver.debug;
 
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.navigator.DBNModel;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 
 import java.util.Map;
@@ -30,5 +31,10 @@ public interface DBGResolver {
             throws DBException;
 
     Map<String, Object> resolveContext(DBSObject databaseObject);
+
+    /** Load provider-specific intermediate navigator nodes before resolving a source object. */
+    default void prepareSourceNavigation(DBSObject object, DBNModel navigator, DBRProgressMonitor monitor) throws DBException {
+        // Most objects use their normal model parent path.
+    }
 
 }

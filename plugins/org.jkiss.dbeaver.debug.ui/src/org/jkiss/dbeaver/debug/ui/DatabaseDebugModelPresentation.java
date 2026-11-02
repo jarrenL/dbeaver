@@ -110,9 +110,9 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
             }
             if (element instanceof DatabaseLineBreakpoint) {
                 DatabaseLineBreakpoint breakpoint = (DatabaseLineBreakpoint) element;
-                int lineNumber = breakpoint.getLineNumber();
-                Object[] bindings = new Object[] { breakpoint.getObjectName(), lineNumber };
-                return NLS.bind("{0} - [line:{1}]", bindings);
+                // The same schema/routine/line can exist on several connections. Include
+                // the persisted identity even when a connection has been removed or is offline.
+                return breakpoint.getDisplayLabel();
             }
         } catch (CoreException e) {
             return "<not responding>";

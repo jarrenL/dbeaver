@@ -14,6 +14,8 @@ import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSInstance;
+import org.jkiss.dbeaver.model.struct.DBSObjectContainer;
 import org.jkiss.utils.CommonUtils;
 
 import java.util.Locale;
@@ -25,6 +27,11 @@ public final class GaussDBDebugCore {
     private static final Set<String> DEBUGGABLE_LANGUAGES = Set.of("plpgsql", "plsql"); //$NON-NLS-1$ //$NON-NLS-2$
 
     private GaussDBDebugCore() {
+    }
+
+    /** Include Package as an intermediate node: it is not a DBSObjectContainer. */
+    public static Class<?>[] getRoutineBrowserTypes() {
+        return new Class<?>[]{DBSInstance.class, DBSObjectContainer.class, GaussDBPackage.class, GaussDBProcedure.class};
     }
 
     public static void saveRoutine(GaussDBProcedure routine, Map<String, Object> configuration) {

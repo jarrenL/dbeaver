@@ -73,6 +73,12 @@ public class DatabaseLineBreakpoint extends DatabaseBreakpoint implements IDatab
         return -1;
     }
 
+    public String getDisplayLabel() throws CoreException {
+        String label = getObjectName() + " - [line:" + getLineNumber() + "]";
+        String datasourceId = getDatasourceId();
+        return datasourceId == null || datasourceId.isEmpty() ? label : "[" + datasourceId + "] " + label;
+    }
+
     @Override
     public int getCharStart() throws CoreException {
         IMarker m = getMarker();
