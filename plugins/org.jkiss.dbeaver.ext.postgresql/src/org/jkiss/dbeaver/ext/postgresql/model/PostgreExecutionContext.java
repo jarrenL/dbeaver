@@ -159,13 +159,17 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
         return true;
     }
 
+    protected String getContextDefaultsQuery() {
+        return "SELECT current_schema(),session_user";
+    }
+
     @Override
     public boolean refreshDefaults(DBRProgressMonitor monitor, boolean useBootstrapSettings) throws DBException {
         this.activeSchemaId = 0;
 
         // Check default active schema
         try (JDBCSession session = openSession(monitor, DBCExecutionPurpose.META, "Read context defaults")) {
-            try (JDBCPreparedStatement stat = session.prepareStatement("SELECT current_schema(),session_user")) {
+            try (JDBCPreparedStatement stat = session.prepareStatement(getContextDefaultsQuery())) {
                 try (JDBCResultSet rs = stat.executeQuery()) {
                     if (rs.nextRow()) {
                         String activeSchemaName = JDBCUtils.safeGetString(rs, 1);

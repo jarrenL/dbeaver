@@ -30,6 +30,7 @@
             <drivers managable="true">
                 <driver
                         id="gaussdb-jdbc"
+                        threadSafe="false"
                         label="GaussDB"
                         icon="icons/gaussdb_icon.png"
                         iconBig="icons/gaussdb_icon_big.png"
@@ -47,6 +48,7 @@
                 </driver>
                 <driver
                         id="gaussdb-jdbc-m"
+                        threadSafe="false"
                         label="%driver.gaussdb.m.label"
                         icon="icons/gaussdb_icon.png"
                         iconBig="icons/gaussdb_icon_big.png"
@@ -71,6 +73,7 @@
                 </driver>
                 <driver
                         id="gaussdb-jdbc-native"
+                        threadSafe="false"
                         label="%driver.gaussdb.native.label"
                         icon="icons/gaussdb_icon.png"
                         iconBig="icons/gaussdb_icon_big.png"

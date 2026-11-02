@@ -281,6 +281,8 @@ public final class Bot implements IStartup {
             case "navigation-race" -> navigationRace((Shell) widget, args[2], out);
             case "resolve-frame" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), args[3], false, out);
             case "resolve-missing" -> resolveFrame((TreeItem) widget, Long.parseLong(args[2]), "", true, out);
+            case "metadata-load" -> metadataLoad((TreeItem) widget, args, out);
+            case "metadata-many-schemas" -> metadataManySchemas((TreeItem) widget, args, out);
             case "line" -> new SWTBotStyledText((StyledText) widget).navigateTo(Integer.parseInt(args[2]), 0);
             case "cell" -> new SWTBotTable((Table) widget).doubleClick(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
             case "grid-click" -> {
@@ -365,6 +367,159 @@ public final class Bot implements IStartup {
                 Arrays.stream(type.getMethods()).filter(m -> m.getName().equals("shutdown")
                     && m.getParameterCount() == 2).findFirst().orElseThrow().invoke(database, monitor, false);
             }
+        }
+    }
+
+    /** Synthetic catalog_NNN fixture: 40 procedures, 20 functions and two four-member packages per schema. */
+    private void metadataManySchemas(TreeItem item, String[] args, PrintWriter out) throws Exception {
+        Object[] node = new Object[1];
+        display.syncExec(() -> node[0] = item.getData());
+        Object source = node[0].getClass().getMethod("getDataSource").invoke(node[0]);
+        Object container = source.getClass().getMethod("getContainer").invoke(source);
+        Object driver = container.getClass().getMethod("getDriver").invoke(container);
+        out.println("driverThreadSafe=" + driver.getClass().getMethod("isThreadSafeDriver").invoke(driver));
+        Object database = source.getClass().getMethod("getDatabase", String.class).invoke(source, args[2]);
+        var model = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model");
+        Class<?> monitorType = model.loadClass("org.jkiss.dbeaver.model.runtime.DBRProgressMonitor");
+        Class<?> voidMonitor = model.loadClass("org.jkiss.dbeaver.model.runtime.VoidProgressMonitor");
+        int count = Integer.parseInt(args[4]);
+        int repeats = Integer.parseInt(args[5]);
+        java.util.List<Object> schemas = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Object schema = database.getClass().getMethod("getSchema", monitorType, String.class).invoke(
+                database, voidMonitor.getConstructor().newInstance(), args[3] + String.format("%03d", i));
+            if (schema == null) throw new AssertionError("Missing fixture schema " + i);
+            schemas.add(schema);
+            if (args.length > 7 && args[7].equals("refresh")) {
+                for (String method : new String[]{"getGaussDBProceduresCache", "getGaussDBFunctionsCache"}) {
+                    Object cache = schema.getClass().getMethod(method).invoke(schema);
+                    cache.getClass().getMethod("clearCache").invoke(cache);
+                }
+                Object packages = schema.getClass().getField("packageCache").get(schema);
+                packages.getClass().getMethod("clearCache").invoke(packages);
+            }
+        }
+        var gate = new java.util.concurrent.CountDownLatch(1);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(12, runnable -> {
+            Thread thread = new Thread(runnable, "GaussDB multi-schema metadata acceptance");
+            thread.setDaemon(true);
+            return thread;
+        });
+        java.util.List<java.util.concurrent.Future<Long>> jobs = new ArrayList<>();
+        long started = System.nanoTime();
+        try {
+            for (Object schema : schemas) {
+                for (int repetition = 0; repetition < repeats; repetition++) {
+                    jobs.add(pool.submit(() -> {
+                        gate.await();
+                        long begin = System.nanoTime();
+                        Object progress = voidMonitor.getConstructor().newInstance();
+                        for (String method : new String[]{"getGaussDBProcedures", "getGaussDBFunctions"}) {
+                            int expected = method.equals("getGaussDBProcedures") ? 40 : 20;
+                            if (((Collection<?>) schema.getClass().getMethod(method, monitorType)
+                                .invoke(schema, progress)).size() != expected) throw new AssertionError(method + " count");
+                        }
+                        var packages = (Collection<?>) schema.getClass().getMethod("getPackages", monitorType)
+                            .invoke(schema, progress);
+                        if (packages.size() != 2) throw new AssertionError("Package count");
+                        for (Object value : packages) {
+                            if (((Collection<?>) value.getClass().getMethod("getPackageProcedures", monitorType)
+                                .invoke(value, progress)).size() != 4) throw new AssertionError("Package member count");
+                        }
+                        return (System.nanoTime() - begin) / 1_000_000;
+                    }));
+                }
+            }
+            gate.countDown();
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(Long.parseLong(args[6]));
+            long longest = 0;
+            for (var job : jobs) {
+                longest = Math.max(longest, job.get(Math.max(1, deadline - System.nanoTime()),
+                    java.util.concurrent.TimeUnit.NANOSECONDS));
+            }
+            out.println("PASS metadata schemas=" + count + " tasks=" + jobs.size() + " workers=12 longestTaskMs="
+                + longest + " elapsedMs=" + (System.nanoTime() - started) / 1_000_000);
+        } finally {
+            for (var job : jobs) job.cancel(true);
+            pool.shutdownNow();
+        }
+    }
+
+    /** Concurrent real model loads, including package members and cross-schema parameter types. */
+    private void metadataLoad(TreeItem item, String[] args, PrintWriter out) throws Exception {
+        Object[] node = new Object[1];
+        display.syncExec(() -> node[0] = item.getData());
+        Object source = node[0].getClass().getMethod("getDataSource").invoke(node[0]);
+        Object database = source.getClass().getMethod("getDatabase", String.class).invoke(source, args[2]);
+        var model = org.eclipse.core.runtime.Platform.getBundle("org.jkiss.dbeaver.model");
+        Class<?> monitorType = model.loadClass("org.jkiss.dbeaver.model.runtime.DBRProgressMonitor");
+        Class<?> voidMonitor = model.loadClass("org.jkiss.dbeaver.model.runtime.VoidProgressMonitor");
+        Object monitor = voidMonitor.getConstructor().newInstance();
+        Object schema = database.getClass().getMethod("getSchema", monitorType, String.class)
+            .invoke(database, monitor, args[3]);
+        Object lookup = database.getClass().getMethod("getSchema", monitorType, String.class)
+            .invoke(database, monitor, "lookup");
+        int procedures = Integer.parseInt(args[4]);
+        int functions = Integer.parseInt(args[5]);
+        int packages = Integer.parseInt(args[6]);
+        int members = Integer.parseInt(args[7]);
+        var gate = new java.util.concurrent.CountDownLatch(1);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(6, runnable -> {
+            Thread thread = new Thread(runnable, "GaussDB metadata acceptance");
+            thread.setDaemon(true);
+            return thread;
+        });
+        java.util.List<java.util.concurrent.Future<String>> jobs = new ArrayList<>();
+        long started = System.nanoTime();
+        try {
+            for (int task = 0; task < 6; task++) {
+                final int operation = task;
+                jobs.add(pool.submit(() -> {
+                    gate.await();
+                    Object progress = voidMonitor.getConstructor().newInstance();
+                    long begin = System.nanoTime();
+                    if (operation == 0 || operation == 4 || operation == 1
+                        || (operation == 3 && args.length > 9 && args[9].equals("routine-only"))) {
+                        boolean isFunction = operation == 1;
+                        var values = (Collection<?>) schema.getClass().getMethod(
+                            isFunction ? "getGaussDBFunctions" : "getGaussDBProcedures", monitorType)
+                            .invoke(schema, progress);
+                        if (values.size() != (isFunction ? functions : procedures)) {
+                            throw new AssertionError("Wrong routine count: " + values.size());
+                        }
+                    } else if (operation == 2 || operation == 5) {
+                        var values = (Collection<?>) schema.getClass().getMethod("getPackages", monitorType)
+                            .invoke(schema, progress);
+                        if (values.size() != packages) throw new AssertionError("Wrong package count: " + values.size());
+                        for (Object value : values) {
+                            var children = (Collection<?>) value.getClass().getMethod(
+                                operation == 2 ? "getPackageProcedures" : "getPackageFunctions", monitorType)
+                                .invoke(value, progress);
+                            if (children.size() != (operation == 2 ? members : 0)) {
+                                throw new AssertionError("Wrong member count: " + children.size());
+                            }
+                        }
+                    } else {
+                        Object cache = lookup.getClass().getMethod("getDataTypeCache").invoke(lookup);
+                        var method = Arrays.stream(cache.getClass().getMethods())
+                            .filter(m -> m.getName().equals("getAllObjects") && m.getParameterCount() == 2)
+                            .findFirst().orElseThrow();
+                        if (((Collection<?>) method.invoke(cache, progress, lookup)).size() < 400) {
+                            throw new AssertionError("Cross-schema types were not loaded");
+                        }
+                    }
+                    return "PASS metadata task=" + operation + " elapsedMs=" + (System.nanoTime() - begin) / 1_000_000;
+                }));
+            }
+            gate.countDown();
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(Long.parseLong(args[8]));
+            for (var job : jobs) {
+                out.println(job.get(Math.max(1, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS));
+            }
+            out.println("PASS metadata concurrent loads complete elapsedMs=" + (System.nanoTime() - started) / 1_000_000);
+        } finally {
+            for (var job : jobs) job.cancel(true);
+            pool.shutdownNow();
         }
     }
 

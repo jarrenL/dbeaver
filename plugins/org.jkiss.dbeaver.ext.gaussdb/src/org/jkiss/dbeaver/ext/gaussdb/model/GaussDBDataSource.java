@@ -28,6 +28,7 @@ import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
+import org.jkiss.dbeaver.model.impl.jdbc.JDBCRemoteInstance;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.utils.CommonUtils;
 
@@ -50,6 +51,11 @@ public class GaussDBDataSource extends PostgreDataSource {
     public GaussDBDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container) throws DBException {
         super(monitor, container, new GaussDBDialect());
         ((GaussDBDialect) getSQLDialect()).setDataSource(this);
+    }
+
+    @Override
+    protected GaussDBExecutionContext createExecutionContext(JDBCRemoteInstance instance, String type) {
+        return new GaussDBExecutionContext((GaussDBDatabase) instance, type);
     }
 
     @Override
