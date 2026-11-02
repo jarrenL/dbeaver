@@ -97,10 +97,34 @@ public final class GaussDBDebugCore {
         DBPDataSourceContainer container,
         Map<String, Object> configuration
     ) throws DBException {
-        if (!container.isConnected()) {
-            container.connect(monitor, true, true);
+        if (monitor.isCanceled()) {
+            throw new DBException("GaussDB debug launch was canceled");
         }
-        GaussDBDataSource dataSource = (GaussDBDataSource) container.getDataSource();
+        if (container.isConnecting()) {
+            throw connectionNotReady(container);
+        }
+        if (!container.isConnected()) {
+            // Another job may start or finish connecting between the state check
+            // and connect(). A false result does not provide an initialized source.
+            boolean connected = container.connect(monitor, true, true);
+            if (!connected && !container.isConnected()) {
+                throw connectionNotReady(container);
+            }
+        }
+        if (monitor.isCanceled()) {
+            throw new DBException("GaussDB debug launch was canceled");
+        }
+        if (container.isConnecting()) {
+            throw connectionNotReady(container);
+        }
+        var connectedSource = container.getDataSource();
+        if (connectedSource == null) {
+            throw connectionNotReady(container);
+        }
+        if (!(connectedSource instanceof GaussDBDataSource dataSource)) {
+            throw new DBException("Connection '" + container.getName()
+                + "' is not a GaussDB data source. Select a GaussDB connection in Debug Configurations.");
+        }
         String databaseName = (String) configuration.get(GaussDBDebugConstants.ATTR_DATABASE_NAME);
         String schemaName = (String) configuration.get(GaussDBDebugConstants.ATTR_SCHEMA_NAME);
         long oid = CommonUtils.toLong(configuration.get(GaussDBDebugConstants.ATTR_ROUTINE_OID));
@@ -140,6 +164,12 @@ public final class GaussDBDebugCore {
                 + " The routine may have been dropped or recreated, or the configuration may refer to another database.");
         }
         return routine;
+    }
+
+    private static DBException connectionNotReady(DBPDataSourceContainer container) {
+        return new DBException("The GaussDB connection '" + container.getName()
+            + "' is not ready; connection initialization may still be in progress. "
+            + "Wait for the connection to complete and retry debugging.");
     }
 
     private static GaussDBProcedure findRoutine(DBRProgressMonitor monitor, GaussDBSchema schema, long oid)

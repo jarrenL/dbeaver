@@ -24,6 +24,8 @@ import org.eclipse.core.resources.IWorkspaceRunnable;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.model.IBreakpoint;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.debug.DBGBreakpointDescriptor;
 import org.jkiss.dbeaver.debug.DBGConstants;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
@@ -73,10 +75,38 @@ public class DatabaseLineBreakpoint extends DatabaseBreakpoint implements IDatab
         return -1;
     }
 
+    @NotNull
     public String getDisplayLabel() throws CoreException {
         String label = getObjectName() + " - [line:" + getLineNumber() + "]";
+        return addConnectionContext(label);
+    }
+
+    @Nullable
+    @Override
+    public String getBreakpointLabel() {
+        // Eclipse prefers a persisted custom label over the debug model presentation.
+        // Decorate that path as well, without rewriting the user's saved label.
+        String customLabel = super.getBreakpointLabel();
+        if (customLabel == null) {
+            return null;
+        }
+        try {
+            return addConnectionContext(customLabel);
+        } catch (CoreException e) {
+            return addPrefix(customLabel, "[connection: ?] ");
+        }
+    }
+
+    @NotNull
+    private String addConnectionContext(@NotNull String label) throws CoreException {
         String datasourceId = getDatasourceId();
-        return datasourceId == null || datasourceId.isEmpty() ? label : "[" + datasourceId + "] " + label;
+        String prefix = datasourceId == null || datasourceId.isEmpty() ? "[connection: ?] " : "[" + datasourceId + "] ";
+        return addPrefix(label, prefix);
+    }
+
+    @NotNull
+    private static String addPrefix(@NotNull String label, @NotNull String prefix) {
+        return label.startsWith(prefix) ? label : prefix + label;
     }
 
     @Override

@@ -18,6 +18,7 @@ package org.jkiss.dbeaver.debug.core;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.debug.core.ILaunch;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.model.LaunchConfigurationDelegate;
@@ -27,11 +28,14 @@ import org.jkiss.dbeaver.debug.DBGConstants;
 import org.jkiss.dbeaver.debug.DBGController;
 import org.jkiss.dbeaver.debug.DBGControllerFactory;
 import org.jkiss.dbeaver.debug.DBGException;
+import org.jkiss.dbeaver.debug.DBGLaunchGuard;
 import org.jkiss.dbeaver.debug.core.model.DatabaseDebugTarget;
 import org.jkiss.dbeaver.debug.core.model.DatabaseProcess;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.runtime.DefaultProgressMonitor;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 
+import java.util.HashMap;
 import java.util.Map;
 
 public class DatabaseLaunchDelegate extends LaunchConfigurationDelegate {
@@ -43,16 +47,40 @@ public class DatabaseLaunchDelegate extends LaunchConfigurationDelegate {
         ILaunch launch,
         IProgressMonitor monitor
     ) throws CoreException {
-        DBPDataSourceContainer datasourceDescriptor = DebugUtils.getDataSourceContainer(configuration);
-        DBGController controller = createController(datasourceDescriptor, configuration.getAttributes());
+        IProgressMonitor launchMonitor = monitor == null ? new NullProgressMonitor() : monitor;
+        if (launchMonitor.isCanceled()) {
+            return;
+        }
+        DBPDataSourceContainer datasourceDescriptor = getDataSourceContainer(configuration);
+        Map<String, Object> attributes = new HashMap<>(configuration.getAttributes());
+        DBGLaunchGuard guard = GeneralUtils.adapt(datasourceDescriptor, DBGLaunchGuard.class);
+        if (launchMonitor.isCanceled()) {
+            return;
+        }
+        try {
+            if (guard != null && !guard.prepareLaunch(datasourceDescriptor, attributes, new DefaultProgressMonitor(launchMonitor))) {
+                return;
+            }
+        } catch (DBGException e) {
+            throw new CoreException(GeneralUtils.makeExceptionStatus(e));
+        }
+        if (launchMonitor.isCanceled()) {
+            return;
+        }
+        DBGController controller = createController(datasourceDescriptor, attributes);
         if (controller == null) {
             throw new CoreException(DebugUtils.newErrorStatus(
                 "Unable to find debug controller for datasource " + datasourceDescriptor.getId()));
         }
         DatabaseProcess process = createProcess(launch, configuration.getName());
         DatabaseDebugTarget target = createDebugTarget(launch, controller, process);
-        target.connect(monitor);
+        target.connect(launchMonitor);
         launch.addDebugTarget(target);
+    }
+
+    @NotNull
+    protected DBPDataSourceContainer getDataSourceContainer(@NotNull ILaunchConfiguration configuration) throws CoreException {
+        return DebugUtils.getDataSourceContainer(configuration);
     }
 
     protected DBGController createController(

@@ -180,7 +180,7 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
                         refreshablePart.refreshPart(selectedNode, true);
                     }
                 }
-                if (workbenchWindow.getActivePage().getActiveEditor() != editor || activate) {
+                if (activate) {
                     workbenchWindow.getActivePage().activate(editor);
                 }
                 return editor;
@@ -206,7 +206,7 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
                         setInputAttributes(objectInput, defaultPageId, defaultFolderId, attributes);
                         return workbenchWindow.getActivePage().openEditor(
                             objectInput,
-                            objectNode.getMeta().getEditorId());
+                            objectNode.getMeta().getEditorId(), activate);
                     } else {
                         DatabaseNodeEditorInput editorInput = new DatabaseNodeEditorInput(dnNode);
                         if (DBWorkbench.getPlatform().getPreferenceStore().getBoolean(NavigatorPreferences.NAVIGATOR_REFRESH_EDITORS_ON_OPEN)) {
@@ -215,7 +215,7 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
                         setInputAttributes(editorInput, defaultPageId, defaultFolderId, attributes);
                         return workbenchWindow.getActivePage().openEditor(
                             editorInput,
-                            EntityEditor.class.getName());
+                            EntityEditor.class.getName(), activate);
                     }
                 } else {
                     DBWorkbench.getPlatformUI().showError("No object", "Node has no associated database object");
@@ -225,7 +225,7 @@ public class NavigatorHandlerObjectOpen extends NavigatorHandlerObjectBase imple
                 NodeEditorInput folderInput = new NodeEditorInput(selectedNode);
                 return workbenchWindow.getActivePage().openEditor(
                     folderInput,
-                    FolderEditor.class.getName());
+                    FolderEditor.class.getName(), activate);
             }
         } catch (Exception ex) {
             DBWorkbench.getPlatformUI()

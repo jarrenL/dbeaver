@@ -39,6 +39,19 @@ public final class GaussDBDebugSessionSettings {
         return token;
     }
 
+    /**
+     * Atomically reserve a configuration-page acknowledgement for one launch. Replace it
+     * only in the launch-local attributes, so concurrent/repeated launches cannot reuse it.
+     */
+    public static boolean claimConsentToken(@NotNull Map<String, Object> launchAttributes) {
+        if (!consumeIssuedToken(launchAttributes)) {
+            launchAttributes.remove(GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN);
+            return false;
+        }
+        launchAttributes.put(GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN, issueConsentToken());
+        return true;
+    }
+
     public static void requireAndConsumeConsent(
         @NotNull GaussDBProcedure routine,
         @NotNull Map<String, Object> configuration
@@ -46,14 +59,18 @@ public final class GaussDBDebugSessionSettings {
         if (!requiresConsent(routine)) {
             return;
         }
-        Object rawToken = configuration.get(GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN);
-        Instant issued = rawToken instanceof String token ? TOKENS.remove(token) : null;
-        if (issued == null || issued.plus(TOKEN_LIFETIME).isBefore(Instant.now())) {
+        if (!consumeIssuedToken(configuration)) {
             throw new DBGException(
                 "Package member debugging requires an explicit acknowledgement for its session setting. " +
                 "Open the debug configuration, review SET LOCAL search_path, and confirm it for this launch."
             );
         }
+    }
+
+    private static boolean consumeIssuedToken(Map<String, Object> configuration) {
+        Object rawToken = configuration.get(GaussDBDebugConstants.ATTR_SESSION_SETTINGS_CONSENT_TOKEN);
+        Instant issued = rawToken instanceof String token ? TOKENS.remove(token) : null;
+        return issued != null && !issued.plus(TOKEN_LIFETIME).isBefore(Instant.now());
     }
 
     private static void purgeExpiredTokens() {

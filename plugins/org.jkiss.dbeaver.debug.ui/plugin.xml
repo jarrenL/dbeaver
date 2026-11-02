@@ -58,6 +58,9 @@
     </extension>
 
     <extension point="org.eclipse.core.runtime.adapters">
+        <factory adaptableType="org.jkiss.dbeaver.debug.core.model.DatabaseStackFrame" class="org.jkiss.dbeaver.debug.ui.DatabaseSourceDisplayAdapterFactory">
+            <adapter type="org.eclipse.debug.ui.sourcelookup.ISourceDisplay"/>
+        </factory>
         <factory adaptableType="org.jkiss.dbeaver.ui.editors.entity.EntityEditor" class="org.jkiss.dbeaver.debug.ui.actions.DebugActionAdapterFactory">
             <adapter type="org.eclipse.debug.ui.actions.IToggleBreakpointsTarget"/>
         </factory>

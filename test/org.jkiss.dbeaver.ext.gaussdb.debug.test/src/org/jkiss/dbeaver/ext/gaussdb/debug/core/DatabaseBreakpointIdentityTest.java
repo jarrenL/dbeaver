@@ -113,9 +113,9 @@ class DatabaseBreakpointIdentityTest {
     }
 
     @Test
-    void labelWithoutSavedConnectionRetainsLegacyText() throws Exception {
+    void labelWithoutSavedConnectionExplicitlyMarksUnboundMarker() throws Exception {
         var old = marker(null, "path", "odb", 42, 6);
-        assertEquals("public.same_name - [line:6]", old.getDisplayLabel());
+        assertEquals("[connection: ?] public.same_name - [line:6]", old.getDisplayLabel());
     }
 
     private static IBreakpoint[] find(IBreakpoint[] stored, String connection, String path, String database, long oid, int line)

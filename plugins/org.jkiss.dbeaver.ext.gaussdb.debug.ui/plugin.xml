@@ -26,6 +26,7 @@
         <factory adaptableType="org.jkiss.dbeaver.model.DBPDataSourceContainer"
                  class="org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal.GaussDBDebugUIAdapterFactory">
             <adapter type="org.jkiss.dbeaver.debug.ui.DBGEditorAdvisor"/>
+            <adapter type="org.jkiss.dbeaver.debug.DBGLaunchGuard"/>
         </factory>
         <factory adaptableType="org.jkiss.dbeaver.ui.editors.entity.EntityEditor"
                  class="org.jkiss.dbeaver.ext.gaussdb.debug.ui.internal.GaussDBDebugObjectAdapterFactory">

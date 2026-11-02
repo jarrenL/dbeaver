@@ -20,6 +20,7 @@ package org.jkiss.dbeaver.debug.ui;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.model.IValue;
 import org.eclipse.debug.core.model.IDebugElement;
@@ -33,6 +34,8 @@ import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorInput;
 import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.model.WorkbenchLabelProvider;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.debug.core.DebugUtils;
@@ -53,6 +56,8 @@ import org.jkiss.dbeaver.ui.navigator.actions.NavigatorHandlerObjectOpen;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 
 public class DatabaseDebugModelPresentation extends LabelProvider implements IDebugModelPresentationExtension {
 
@@ -61,6 +66,8 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
     private final Map<String, Object> attributes = new HashMap<>();
 
     private final ILabelProvider labelProvider;
+
+    private final AtomicLong sourceRequest = new AtomicLong();
 
     public DatabaseDebugModelPresentation() {
         this(WorkbenchLabelProvider.getDecoratingWorkbenchLabelProvider());
@@ -122,6 +129,7 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
 
     @Override
     public void dispose() {
+        sourceRequest.incrementAndGet();
         attributes.clear();
         super.dispose();
     }
@@ -141,6 +149,9 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
 
     @Override
     public IEditorInput getEditorInput(Object element) {
+        if (!DebugSourceDisplayState.currentLookup().getAsBoolean()) {
+            throw new OperationCanceledException();
+        }
         if (element instanceof DBNDatabaseNode) {
             DBNDatabaseNode databaseNode = (DBNDatabaseNode) element;
             return createEditorInput(databaseNode);
@@ -155,6 +166,8 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
                     DBNDatabaseNode databaseNode = (DBNDatabaseNode) node;
                     return createEditorInput(databaseNode);
                 }
+            } catch (OperationCanceledException e) {
+                throw e;
             } catch (Exception e) {
                 String message = NLS.bind("Unable to resolve editor input for breakpoint {0}", breakpoint);
                 log.error(message, e);
@@ -166,14 +179,28 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
     }
 
     protected IEditorInput createEditorInput(DBNDatabaseNode dbnNode) {
+        BooleanSupplier lookupCurrent = DebugSourceDisplayState.currentLookup();
+        if (!lookupCurrent.getAsBoolean()) {
+            throw new OperationCanceledException();
+        }
+        long requestId = sourceRequest.incrementAndGet();
         DBGEditorAdvisor editorAdvisor = DebugUI.findEditorAdvisor(dbnNode.getDataSourceContainer());
         String sourceFolderId = editorAdvisor == null ? null : editorAdvisor.getSourceFolderId();
         Map<String, Object> editorAttrs = new HashMap<>();
         editorAttrs.put(DBPScriptObject.OPTION_DEBUGGER_SOURCE, true);
 
-        IEditorPart editorPart = new UITask<IEditorPart>() {
+        DebugSourceEditorRequest request = new UITask<DebugSourceEditorRequest>() {
             @Override
-            protected IEditorPart runTask() {
+            protected DebugSourceEditorRequest runTask() {
+                if (sourceRequest.get() != requestId || !lookupCurrent.getAsBoolean()) {
+                    return null;
+                }
+                var window = UIUtils.getActiveWorkbenchWindow();
+                if (window == null || window.getActivePage() == null) {
+                    return null;
+                }
+                IWorkbenchPage page = window.getActivePage();
+                IWorkbenchPart activePart = page.getActivePart();
                 // Reusing the same source editor in a later launch must reload its
                 // document even when OPTION_DEBUGGER_SOURCE is already true.
                 // Keep the token stable while stepping within one launch.
@@ -183,39 +210,70 @@ public class DatabaseDebugModelPresentation extends LabelProvider implements IDe
                 if (debugElement != null && debugElement.getLaunch() != null) {
                     editorAttrs.put("debugger.source.launch", debugElement.getLaunch()); //$NON-NLS-1$
                 }
-                return NavigatorHandlerObjectOpen.openEntityEditor(dbnNode, null, sourceFolderId, editorAttrs, UIUtils.getActiveWorkbenchWindow(), false);
+                IEditorPart editor = NavigatorHandlerObjectOpen.openEntityEditor(
+                    dbnNode, null, sourceFolderId, editorAttrs, window, false);
+                return editor == null ? null : new DebugSourceEditorRequest(sourceRequest, requestId, page, activePart, editor);
             }
         }.execute();
+
+        if (request == null) {
+            throw new OperationCanceledException();
+        }
 
         // Eclipse positions the instruction pointer immediately after this method
         // returns. On first open the nested editor still contains a loading
         // placeholder, so that position is otherwise lost when source arrives.
         // Source lookup runs off the UI thread; never wait on the display thread.
-        if (editorPart != null && Display.getCurrent() == null) {
-            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
-            while (System.nanoTime() < deadline) {
-                Boolean loaded = new UITask<Boolean>() {
-                    @Override
-                    protected Boolean runTask() {
-                        SQLEditorNested<?> sourceEditor = editorPart.getAdapter(SQLEditorNested.class);
-                        // Restored editors initially expose a lazy input and no
-                        // nested source editor. Returning that input makes Eclipse
-                        // open a second editor before restoration has completed.
-                        return sourceEditor != null && sourceEditor.isDocumentLoaded();
+        try {
+            if (Display.getCurrent() == null) {
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(30);
+                while (System.nanoTime() < deadline) {
+                    Boolean loaded = new UITask<Boolean>() {
+                        @Override
+                        protected Boolean runTask() {
+                            if (!request.isCurrent() || !lookupCurrent.getAsBoolean()) {
+                                return null;
+                            }
+                            SQLEditorNested<?> sourceEditor = request.editor.getAdapter(SQLEditorNested.class);
+                            // Restored editors initially expose a lazy input and no
+                            // nested source editor. Returning that input makes Eclipse
+                            // open a second editor before restoration has completed.
+                            return sourceEditor != null && sourceEditor.isDocumentLoaded();
+                        }
+                    }.execute();
+                    if (loaded == null) {
+                        throw new OperationCanceledException();
                     }
-                }.execute();
-                if (!Boolean.FALSE.equals(loaded)) {
-                    break;
-                }
-                try {
-                    Thread.sleep(50);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return null;
+                    if (loaded) {
+                        break;
+                    }
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new OperationCanceledException();
+                    }
                 }
             }
+            IEditorInput resolvedInput = new UITask<IEditorInput>() {
+                @Override
+                protected IEditorInput runTask() {
+                    return request.isCurrent() && lookupCurrent.getAsBoolean() ? request.editor.getEditorInput() : null;
+                }
+            }.execute();
+            if (resolvedInput == null) {
+                throw new OperationCanceledException();
+            }
+            return resolvedInput;
+        } finally {
+            new UITask<Void>() {
+                @Override
+                protected Void runTask() {
+                    request.page.removePartListener(request);
+                    return null;
+                }
+            }.execute();
         }
-        return editorPart == null ? null : editorPart.getEditorInput();
     }
 
     @Override

@@ -23,6 +23,14 @@ public final class Bot implements IStartup {
     private final Map<Integer, Widget> widgets = new LinkedHashMap<>();
     private Display display;
     private Path queue;
+    private final Map<String, java.util.concurrent.CompletableFuture<String>> sourceRequests =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ExecutorService sourceWorkers = java.util.concurrent.Executors.newCachedThreadPool(runnable -> {
+        Thread worker = new Thread(runnable, "GaussDB source navigation acceptance");
+        worker.setDaemon(true);
+        return worker;
+    });
+    private org.jkiss.dbeaver.debug.ui.DatabaseDebugModelPresentation sourcePresentation;
 
     @Override
     public void earlyStartup() {
@@ -77,6 +85,101 @@ public final class Bot implements IStartup {
     }
 
     private void execute(String[] args, PrintWriter out) throws Exception {
+        if (args[0].equals("launch-saved")) {
+            var manager = org.eclipse.debug.core.DebugPlugin.getDefault().getLaunchManager();
+            var configurations = Arrays.stream(manager.getLaunchConfigurations())
+                .filter(configuration -> configuration.getName().equals(args[1])).toList();
+            if (configurations.size() != 1) {
+                throw new IllegalArgumentException("Expected one saved launch named " + args[1] + ", got " + configurations.size());
+            }
+            var configuration = configurations.get(0);
+            display.asyncExec(() -> org.eclipse.debug.ui.DebugUITools.launch(configuration, "debug", false));
+            out.println("SCHEDULED saved launch=" + configuration.getName());
+            return;
+        }
+        if (args[0].equals("launch-state")) {
+            var launches = org.eclipse.debug.core.DebugPlugin.getDefault().getLaunchManager().getLaunches();
+            int targets = 0;
+            int processes = 0;
+            for (var launch : launches) {
+                String name = launch.getLaunchConfiguration() == null ? "none" : launch.getLaunchConfiguration().getName();
+                out.println("launch name=" + name + " terminated=" + launch.isTerminated());
+                for (var target : launch.getDebugTargets()) {
+                    out.println("target name=" + target.getName() + " terminated=" + target.isTerminated()
+                        + " suspended=" + target.isSuspended());
+                    if (!target.isTerminated()) targets++;
+                }
+                for (var process : launch.getProcesses()) {
+                    out.println("process label=" + process.getLabel() + " terminated=" + process.isTerminated());
+                    if (!process.isTerminated()) processes++;
+                }
+            }
+            out.println("live-targets=" + targets + " live-processes=" + processes);
+            return;
+        }
+        if (args[0].equals("editor-state")) {
+            display.syncExec(() -> {
+                var page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
+                if (args.length > 1 && args[1].equals("close-active")) {
+                    var editor = page.getActiveEditor();
+                    out.println("closed-active=" + (editor != null && page.closeEditor(editor, false)));
+                } else if (args.length > 1 && args[1].equals("close-all")) {
+                    out.println("closed-all=" + page.closeAllEditors(false));
+                } else if (args.length > 1 && args[1].equals("breakpoints")) {
+                    try {
+                        page.showView("org.eclipse.debug.ui.BreakpointView");
+                    } catch (org.eclipse.ui.PartInitException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
+                var active = page.getActivePart();
+                out.println("activePart=" + (active == null ? "none" : active.getSite().getId() + "/" + active.getTitle()));
+                var activeEditor = page.getActiveEditor();
+                out.println("activeEditor=" + (activeEditor == null ? "none" : activeEditor.getClass().getName() + "/" + activeEditor.getTitle()));
+                for (var reference : page.getEditorReferences()) {
+                    out.println("editor id=" + reference.getId() + " name=" + reference.getName()
+                        + " restored=" + (reference.getEditor(false) != null));
+                }
+                out.println("editor-count=" + page.getEditorReferences().length);
+            });
+            return;
+        }
+        if (args[0].equals("source-position")) {
+            inspectSourcePosition(args.length > 1 ? Integer.parseInt(args[1]) : -1, out);
+            return;
+        }
+        if (args[0].equals("source-request")) {
+            startSourceRequest(args, out);
+            return;
+        }
+        if (args[0].equals("source-status")) {
+            var request = sourceRequests.get(args[1]);
+            if (request == null) throw new IllegalArgumentException("No source request " + args[1]);
+            out.println("source-request=" + args[1] + " done=" + request.isDone());
+            if (request.isDone()) {
+                try {
+                    out.println("source-result=" + request.join());
+                } catch (java.util.concurrent.CompletionException e) {
+                    Throwable cause = e;
+                    while (cause.getCause() != null) cause = cause.getCause();
+                    out.println("source-error=" + cause.getClass().getName() + ": " + cause.getMessage());
+                }
+            }
+            return;
+        }
+        if (args[0].equals("display-frame")) {
+            display.asyncExec(() -> {
+                var context = org.eclipse.debug.ui.DebugUITools.getDebugContext();
+                if (!(context instanceof org.eclipse.debug.core.model.IStackFrame frame)) {
+                    throw new IllegalStateException("Select a paused frame first");
+                }
+                var sourceDisplay = frame.getAdapter(org.eclipse.debug.ui.sourcelookup.ISourceDisplay.class);
+                if (sourceDisplay == null) throw new IllegalStateException("Paused frame has no Eclipse source display adapter");
+                sourceDisplay.displaySource(frame, PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage(), false);
+            });
+            out.println("SCHEDULED full Eclipse source display for selected frame");
+            return;
+        }
         if (args[0].equals("diagnostics")) {
             display.syncExec(() -> {
                 try {
@@ -165,6 +268,7 @@ public final class Bot implements IStartup {
                         "setMarker", org.eclipse.core.resources.IMarker.class);
                     setter.setAccessible(true);
                     setter.invoke(breakpoint, marker);
+                    breakpoint.setBreakpointLabel("synthetic.same_name - [line:6]");
                     manager.addBreakpoint(breakpoint);
                 }
             }
@@ -197,8 +301,10 @@ public final class Bot implements IStartup {
                 int count = 0;
                 for (var breakpoint : all) {
                     if (breakpoint.getMarker() != null && project.equals(breakpoint.getMarker().getResource())) {
-                        String label = ((org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint) breakpoint).getDisplayLabel();
+                        // Eclipse's BreakpointLabelProvider prefers this persisted-label path.
+                        String label = ((org.jkiss.dbeaver.debug.core.breakpoints.DatabaseLineBreakpoint) breakpoint).getBreakpointLabel();
                         if (!label.contains("synthetic-breakpoint-fixture-")) throw new AssertionError(label);
+                        if (!label.endsWith("synthetic.same_name - [line:6]")) throw new AssertionError(label);
                         out.println("marker " + label);
                         count++;
                     }
@@ -222,6 +328,11 @@ public final class Bot implements IStartup {
                 throw new AssertionError("Select a paused stack frame first: " + context[0]);
             }
             out.println("frame=" + frame.getName());
+            var sourceDisplay = frame.getAdapter(org.eclipse.debug.ui.sourcelookup.ISourceDisplay.class);
+            out.println("source-adapter=" + (sourceDisplay == null ? "none" : sourceDisplay.getClass().getName()));
+            if (sourceDisplay == null || !sourceDisplay.getClass().getName().equals("org.jkiss.dbeaver.debug.ui.DatabaseSourceDisplay")) {
+                throw new AssertionError("Database frame did not resolve its guarded source-display adapter");
+            }
             for (var variable : frame.getVariables()) {
                 out.println("variable " + variable.getName() + "=" + variable.getValue().getValueString());
             }
@@ -290,6 +401,37 @@ public final class Bot implements IStartup {
         int[] style = new int[1];
         display.syncExec(() -> style[0] = widget.getStyle());
         switch (args[0]) {
+            case "maximize" -> display.syncExec(() -> ((Shell) widget).setMaximized(true));
+            case "physical-click" -> {
+                display.syncExec(() -> {
+                    org.eclipse.swt.graphics.Point location;
+                    if (widget instanceof CTabItem item) {
+                        var bounds = item.getBounds();
+                        location = item.getParent().toDisplay(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+                    } else if (widget instanceof TreeItem item) {
+                        var bounds = item.getBounds();
+                        location = item.getParent().toDisplay(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+                    } else if (widget instanceof Control control) {
+                        var size = control.getSize();
+                        location = control.toDisplay(size.x / 2, size.y / 2);
+                    } else {
+                        throw new IllegalArgumentException("No screen bounds for " + widget.getClass().getName());
+                    }
+                    Event move = new Event();
+                    move.type = SWT.MouseMove;
+                    move.x = location.x;
+                    move.y = location.y;
+                    if (!display.post(move)) throw new IllegalStateException("Cannot post native pointer movement");
+                    for (int type : new int[] {SWT.MouseDown, SWT.MouseUp}) {
+                        Event event = new Event();
+                        event.type = type;
+                        event.button = 1;
+                        event.count = 1;
+                        if (!display.post(event)) throw new IllegalStateException("Cannot post native pointer input");
+                    }
+                });
+                Thread.sleep(150);
+            }
             case "click" -> {
                 if (widget instanceof Button w) {
                     if ((style[0] & SWT.CHECK) != 0) new SWTBotCheckBox(w).click();
@@ -400,6 +542,125 @@ public final class Bot implements IStartup {
             default -> throw new IllegalArgumentException(args[0]);
         }
         out.println("ACTION " + args[0] + " " + args[1]);
+    }
+
+    /** Starts the production presentation lookup without blocking this command queue. */
+    private void startSourceRequest(String[] args, PrintWriter out) {
+        if (sourceRequests.containsKey(args[1])) throw new IllegalArgumentException("Duplicate source request " + args[1]);
+        Object[] selected = new Object[1];
+        Throwable[] error = new Throwable[1];
+        display.syncExec(() -> {
+            try {
+                if (sourcePresentation == null) {
+                    sourcePresentation = new org.jkiss.dbeaver.debug.ui.DatabaseDebugModelPresentation();
+                }
+                if (args[2].equals("node")) {
+                    Widget widget = widgets.get(Integer.parseInt(args[3]));
+                    if (!(widget instanceof TreeItem item) || item.isDisposed()) {
+                        throw new IllegalArgumentException("Take a fresh dump and select a real routine tree item");
+                    }
+                    selected[0] = item.getData();
+                } else if (args[2].equals("frame")) {
+                    selected[0] = org.eclipse.debug.ui.DebugUITools.getDebugContext();
+                    if (!(selected[0] instanceof org.eclipse.debug.core.model.IStackFrame)) {
+                        throw new IllegalArgumentException("Select a paused frame first");
+                    }
+                } else if (args[2].equals("breakpoint")) {
+                    var breakpoints = org.eclipse.debug.core.DebugPlugin.getDefault().getBreakpointManager()
+                        .getBreakpoints(org.jkiss.dbeaver.debug.DBGConstants.MODEL_IDENTIFIER_DATABASE);
+                    int index = Integer.parseInt(args[3]);
+                    if (index < 0 || index >= breakpoints.length) throw new IllegalArgumentException("Breakpoint index " + index);
+                    selected[0] = breakpoints[index];
+                } else {
+                    throw new IllegalArgumentException("Expected node, frame or breakpoint source");
+                }
+            } catch (Throwable e) {
+                error[0] = e;
+            }
+        });
+        if (error[0] != null) throw new IllegalStateException("Cannot start source request", error[0]);
+        var request = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                Object source = selected[0];
+                if (source instanceof org.eclipse.debug.core.model.IStackFrame frame) {
+                    source = frame.getLaunch().getSourceLocator().getSourceElement(frame);
+                }
+                var input = sourcePresentation.getEditorInput(source);
+                if (input == null) throw new AssertionError("Production source lookup returned no input");
+                return input.getClass().getName() + "/" + input.getName();
+            } catch (Throwable e) {
+                throw new java.util.concurrent.CompletionException(e);
+            }
+        }, sourceWorkers);
+        sourceRequests.put(args[1], request);
+        out.println("SCHEDULED production source request=" + args[1] + " kind=" + args[2]);
+    }
+
+    /** Verifies the actual nested document selection and Eclipse instruction-pointer annotation. */
+    private void inspectSourcePosition(int requestedLine, PrintWriter out) {
+        Throwable[] failure = new Throwable[1];
+        display.syncExec(() -> {
+            try {
+                var context = org.eclipse.debug.ui.DebugUITools.getDebugContext();
+                if (!(context instanceof org.eclipse.debug.core.model.IStackFrame frame)) {
+                    throw new AssertionError("Select a paused frame before checking source position");
+                }
+                int expected = requestedLine > 0 ? requestedLine : frame.getLineNumber();
+                var editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
+                if (editor == null) throw new AssertionError("No source editor");
+                Class<?> textType = org.eclipse.core.runtime.Platform.getBundle("org.eclipse.ui.workbench.texteditor")
+                    .loadClass("org.eclipse.ui.texteditor.ITextEditor");
+                Object nested = editor.getAdapter(textType);
+                if (nested == null) throw new AssertionError("Active editor has no nested text editor");
+                Object provider = textType.getMethod("getDocumentProvider").invoke(nested);
+                var providerType = textType.getMethod("getDocumentProvider").getReturnType();
+                var input = (org.eclipse.ui.IEditorInput) textType.getMethod("getEditorInput").invoke(nested);
+                var documentMethod = providerType.getMethod("getDocument", Object.class);
+                Object document = documentMethod.invoke(provider, input);
+                if (document == null) throw new AssertionError("No loaded source document");
+                Class<?> documentType = documentMethod.getReturnType();
+                var lineAtOffset = documentType.getMethod("getLineOfOffset", int.class);
+                var selectionProvider = (org.eclipse.jface.viewers.ISelectionProvider)
+                    textType.getMethod("getSelectionProvider").invoke(nested);
+                Object selection = selectionProvider.getSelection();
+                int caretOffset = ((Number) selection.getClass().getMethod("getOffset").invoke(selection)).intValue();
+                int caretLine = ((Number) lineAtOffset.invoke(document, caretOffset)).intValue() + 1;
+                out.println("source-position editor=" + editor.getTitle() + " frame-line=" + frame.getLineNumber()
+                    + " expected-line=" + expected + " caret-line=" + caretLine);
+                var annotationMethod = providerType.getMethod("getAnnotationModel", Object.class);
+                Object model = annotationMethod.invoke(provider, input);
+                if (model == null) throw new AssertionError("Source has no annotation model");
+                Class<?> modelType = annotationMethod.getReturnType();
+                Iterator<?> annotations = (Iterator<?>) modelType.getMethod("getAnnotationIterator").invoke(model);
+                var positionMethod = Arrays.stream(modelType.getMethods())
+                    .filter(method -> method.getName().equals("getPosition") && method.getParameterCount() == 1)
+                    .findFirst().orElseThrow();
+                var annotationTypeMethod = positionMethod.getParameterTypes()[0].getMethod("getType");
+                boolean pointerAtExpectedLine = false;
+                int pointers = 0;
+                while (annotations.hasNext()) {
+                    Object annotation = annotations.next();
+                    String type = String.valueOf(annotationTypeMethod.invoke(annotation));
+                    if (!type.equals(org.eclipse.debug.ui.IDebugUIConstants.ANNOTATION_TYPE_INSTRUCTION_POINTER_CURRENT)
+                        && !type.equals(org.eclipse.debug.ui.IDebugUIConstants.ANNOTATION_TYPE_INSTRUCTION_POINTER_SECONDARY)) continue;
+                    Object position = positionMethod.invoke(model, annotation);
+                    if (position == null) continue;
+                    int offset = ((Number) position.getClass().getMethod("getOffset").invoke(position)).intValue();
+                    int line = ((Number) lineAtOffset.invoke(document, offset)).intValue() + 1;
+                    out.println("instruction-pointer type=" + type + " line=" + line);
+                    pointers++;
+                    pointerAtExpectedLine |= line == expected;
+                }
+                if (caretLine != expected || !pointerAtExpectedLine) {
+                    throw new AssertionError("Expected source caret and instruction pointer at line " + expected
+                        + ", actual caret=" + caretLine + " pointer-count=" + pointers);
+                }
+                out.println("PASS source caret and execution annotation match selected frame");
+            } catch (Throwable e) {
+                failure[0] = e;
+            }
+        });
+        if (failure[0] != null) throw new AssertionError("Source-position verification failed", failure[0]);
     }
 
     private void inspectModel(TreeItem item, PrintWriter out) throws Exception {

@@ -25,6 +25,7 @@ public final class GaussDBDebugMessages extends NLS {
     public static String session_settings_description;
     public static String session_settings_consent;
     public static String session_settings_required;
+    public static String session_settings_launch_confirmation;
 
     static {
         initializeMessages(GaussDBDebugMessages.class.getName(), GaussDBDebugMessages.class);

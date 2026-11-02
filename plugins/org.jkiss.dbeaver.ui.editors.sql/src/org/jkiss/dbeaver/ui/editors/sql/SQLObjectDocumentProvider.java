@@ -44,10 +44,13 @@ import org.jkiss.dbeaver.ui.editors.text.DatabaseMarkerAnnotationModel;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider {
 
     private String sourceText;
     private boolean sourceLoaded;
+    private final AtomicLong sourceRevision = new AtomicLong();
 
     private final SQLEditorBase editor;
 
@@ -64,6 +67,7 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
     }
 
     public void setSourceText(String sourceText) {
+        sourceRevision.incrementAndGet();
         this.sourceText = sourceText;
     }
 
@@ -85,12 +89,14 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
         }
         boolean loadingSource = sourceText == null;
         if (loadingSource) {
+            long revision = sourceRevision.get();
             DBPDataSource dataSource = editor.getDataSource();
             if (dataSource != null) {
                 sourceText = SQLUtils.generateCommentLine(editor.getDataSource(), "Loading '" + editor.getEditorInput().getName() + "' source...");
                 document.set(sourceText);
             }
 
+            String[] loadedSource = new String[1];
             AbstractJob job = new AbstractJob("Load SQL source") {
                 {
                     setUser(true);
@@ -103,18 +109,18 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
                     try {
                         if (dataSource != null) {
                             DBExecUtils.tryExecuteRecover(monitor, dataSource, param -> {
-                                sourceText = loadSourceText(monitor);
-                                if (sourceText == null) {
-                                    sourceText = SQLUtils.generateCommentLine(dataSource, "Empty source");
+                                loadedSource[0] = loadSourceText(monitor);
+                                if (loadedSource[0] == null) {
+                                    loadedSource[0] = SQLUtils.generateCommentLine(dataSource, "Empty source");
                                 }
                             });
                         } else {
-                            sourceText = loadSourceText(monitor);
+                            loadedSource[0] = loadSourceText(monitor);
                         }
                         return Status.OK_STATUS;
                     } catch (Exception e) {
                         SQLEditorBase.log.error(e);
-                        sourceText = "/* ERROR WHILE READING SOURCE:\n\n" + e.getMessage() + "\n*/";
+                        loadedSource[0] = "/* ERROR WHILE READING SOURCE:\n\n" + e.getMessage() + "\n*/";
                         return Status.CANCEL_STATUS;
                     } finally {
                         monitor.done();
@@ -125,6 +131,12 @@ public abstract class SQLObjectDocumentProvider extends BaseTextDocumentProvider
                 @Override
                 public void done(IJobChangeEvent event) {
                     UIUtils.asyncExec(() -> {
+                        // A close, input replacement or refresh supersedes this load.
+                        // Its late completion must not reload a disposed/other editor.
+                        if (editor.isDisposed() || editor.getEditorInput() != element || sourceRevision.get() != revision) {
+                            return;
+                        }
+                        sourceText = loadedSource[0];
                         editor.setInput(editor.getEditorInput());
                         editor.reloadSyntaxRules();
                     });

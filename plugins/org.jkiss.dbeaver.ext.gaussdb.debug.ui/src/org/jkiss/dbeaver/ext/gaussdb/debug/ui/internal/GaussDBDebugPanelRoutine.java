@@ -323,10 +323,8 @@ public class GaussDBDebugPanelRoutine implements DBGConfigurationPanel {
         if (selectedRoutine == null) {
             return false;
         }
-        if (GaussDBDebugSessionSettings.requiresConsent(selectedRoutine) && !sessionSettingsConsent.getSelection()) {
-            container.setWarningMessage(GaussDBDebugMessages.session_settings_required);
-            return false;
-        }
+        // A valid saved configuration may be launched without editing it. The launch
+        // guard asks for this run's acknowledgement if the checkbox was not selected.
         List<PostgreProcedureParameter> parameters = selectedRoutine.getInputParameters();
         try {
             GaussDBDebugArguments.build(parameters, parameters.stream().map(parameterValues::get).toList(),
