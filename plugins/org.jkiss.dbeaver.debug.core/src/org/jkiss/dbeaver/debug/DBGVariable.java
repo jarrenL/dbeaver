@@ -19,13 +19,33 @@
 
 package org.jkiss.dbeaver.debug;
 
+import org.jkiss.code.Nullable;
+
+import java.util.List;
+
 public interface DBGVariable<T> {
 
     T getVal();
 
     String getName();
 
+    /** Optional scope for variables with the same name, such as distinct database packages. */
+    @Nullable
+    default String getScopeName() {
+        return null;
+    }
+
     DBGVariableType getType();
+
+    /** Server type name, when the provider exposes a more specific type. */
+    default String getDataTypeName() {
+        return getType().toString();
+    }
+
+    /** Child values from the same suspended-frame snapshot; expanding them performs no database operation. */
+    default List<? extends DBGVariable<?>> getChildren() {
+        return List.of();
+    }
 
     int getLineNumber();
 

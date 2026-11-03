@@ -18,6 +18,8 @@ PL/SQL 调试与 Package 用于 O/Oracle 模式；M 模式用于基础数据库�
 
 GaussDB 内置驱动默认关闭“Thread safe driver”选项，使同一 JDBC 连接上的语句执行和结果读取互斥，避免并发展开、刷新多个 Schema 或 Package 时触发驱动内部的并发异常。不同连接仍可并行执行。这是客户端选项，不修改数据库会话参数；若旧工作区或自定义驱动曾手动启用该选项，请在“数据库 → 驱动管理器 → 编辑驱动”中取消勾选后重新连接。
 
+调试暂停时，`refcursor` / `sys_refcursor` 可显示服务端已返回的游标状态摘要，并展开查看、监视 `%ISOPEN`、`%FOUND`、`%NOTFOUND`、`%ROWCOUNT`。这些状态只读；查看不会执行 `FETCH` 或推进游标。当前不提供暂停期间的游标结果行、列结构或原 SQL 预览。
+
 Free multi-platform database tool for developers, SQL programmers, database administrators and analysts.  
 
 * Has a lot of <a href="https://github.com/dbeaver/dbeaver/wiki">features</a> including schema editor, SQL editor, data editor, AI integration, ER diagrams, data export/import/migration, SQL execution plans, database administration tools, database dashboards, Spatial data viewer, proxy and SSH tunnelling, custom database drivers editor, etc.

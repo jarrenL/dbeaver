@@ -365,6 +365,37 @@ public final class Bot implements IStartup {
             }
             return;
         }
+        if (args[0].equals("variable-snapshot")) {
+            Object[] context = new Object[1];
+            display.syncExec(() -> context[0] = org.eclipse.debug.ui.DebugUITools.getDebugContext());
+            if (!(context[0] instanceof org.eclipse.debug.core.model.IStackFrame frame)) {
+                throw new AssertionError("Select a paused stack frame first: " + context[0]);
+            }
+            out.println("frame=" + frame.getName());
+            for (var variable : frame.getVariables()) {
+                var value = variable.getValue();
+                out.println("variable " + variable.getName() + " type=" + variable.getReferenceTypeName()
+                    + " writable=" + variable.supportsValueModification() + " value=" + value.getValueString());
+                for (var child : value.getVariables()) {
+                    out.println(" child " + child.getName() + " type=" + child.getReferenceTypeName()
+                        + " writable=" + child.supportsValueModification() + " value=" + child.getValue().getValueString());
+                }
+            }
+            return;
+        }
+        if (args[0].equals("watch-snapshot")) {
+            for (var expression : org.eclipse.debug.core.DebugPlugin.getDefault().getExpressionManager().getExpressions()) {
+                var value = expression.getValue();
+                out.println("watch " + expression.getExpressionText() + " value="
+                    + (value == null ? "<unavailable>" : value.getValueString()));
+                if (value != null && value.hasVariables()) {
+                    for (var child : value.getVariables()) {
+                        out.println(" child " + child.getName() + "=" + child.getValue().getValueString());
+                    }
+                }
+            }
+            return;
+        }
         if (args[0].equals("debug-snapshot")) {
             Object[] context = new Object[2];
             display.syncExec(() -> {
@@ -508,6 +539,65 @@ public final class Bot implements IStartup {
                 else throw new IllegalArgumentException(widget.getClass().getName());
             }
             case "expand" -> new SWTBotTreeItem((TreeItem) widget).expand();
+            case "native-expand" -> {
+                // Virtual debug trees must receive native expansion events, including
+                // their lazy child-count updates, rather than just setExpanded(true).
+                display.syncExec(() -> {
+                    TreeItem item = (TreeItem) widget;
+                    item.getParent().setSelection(item);
+                    item.getParent().setFocus();
+                });
+                for (int key : new int[] {SWT.ARROW_LEFT, SWT.ARROW_RIGHT}) {
+                    postKey(KeyStroke.getInstance(0, key), SWT.KeyDown);
+                    postKey(KeyStroke.getInstance(0, key), SWT.KeyUp);
+                }
+            }
+            case "tree-diagnostics" -> display.syncExec(() -> {
+                TreeItem item = (TreeItem) widget;
+                Object element = item.getData();
+                out.println("tree-item text=" + item.getText() + " expanded=" + item.getExpanded()
+                    + " itemCount=" + item.getItemCount() + " data="
+                    + (element == null ? "null" : element.getClass().getName()));
+                try {
+                    org.eclipse.debug.core.model.IValue value = null;
+                    if (element instanceof org.eclipse.debug.core.model.IVariable variable) {
+                        value = variable.getValue();
+                    } else if (element instanceof org.eclipse.debug.core.model.IExpression expression) {
+                        value = expression.getValue();
+                    }
+                    if (value != null) {
+                        out.println("item-value " + value.getValueString() + " variables=" + value.getVariables().length);
+                        for (var child : value.getVariables()) out.println("item-child " + child.getName());
+                    }
+                    var provider = org.eclipse.debug.internal.ui.viewers.model.ViewerAdapterService.getContentProvider(element);
+                    out.println("provider=" + (provider == null ? "null" : provider.getClass().getName()));
+                    if (provider != null) {
+                        var context = new org.eclipse.debug.internal.ui.viewers.model.provisional.PresentationContext(
+                            args.length > 2 ? args[2] : org.eclipse.debug.ui.IDebugUIConstants.ID_EXPRESSION_VIEW);
+                        Class<?> current = provider.getClass();
+                        java.lang.reflect.Method count = null;
+                        java.lang.reflect.Method children = null;
+                        while (current != null) {
+                            for (var method : current.getDeclaredMethods()) {
+                                if (count == null && method.getName().equals("getChildCount")) count = method;
+                                if (children == null && method.getName().equals("getChildren")) children = method;
+                            }
+                            current = current.getSuperclass();
+                        }
+                        if (count != null) {
+                            count.setAccessible(true);
+                            out.println("provider-count=" + count.invoke(provider, element, context, null));
+                        }
+                        if (children != null) {
+                            children.setAccessible(true);
+                            Object[] values = (Object[]) children.invoke(provider, element, 0, 20, context, null);
+                            out.println("provider-children=" + (values == null ? "null" : values.length));
+                        }
+                    }
+                } catch (Exception e) {
+                    throw new IllegalStateException("Read-only variable-tree diagnostics failed", e);
+                }
+            });
             case "double" -> new SWTBotTreeItem((TreeItem) widget).doubleClick();
             case "check" -> new SWTBotTreeItem((TreeItem) widget).check();
             case "uncheck" -> new SWTBotTreeItem((TreeItem) widget).uncheck();
@@ -1072,7 +1162,12 @@ public final class Bot implements IStartup {
         if (widget instanceof TreeItem t) {
             out.println(indent + " checked=" + t.getChecked());
             for (int i = 1; i < t.getParent().getColumnCount(); i++) out.println(indent + " column" + i + "=" + t.getText(i));
-            for (TreeItem child : t.getItems()) dump(child, indent + " ", out);
+            // Lazy debug trees keep a single placeholder below a collapsed node.
+            // Reading its text/data before expansion triggers SWT.SetData and can
+            // turn that placeholder into a seemingly complete one-child subtree.
+            if (t.getExpanded()) {
+                for (TreeItem child : t.getItems()) dump(child, indent + " ", out);
+            }
         }
         if (widget instanceof Tree t) for (TreeItem child : t.getItems()) dump(child, indent + " ", out);
         if (widget instanceof Table t) for (TableItem row : t.getItems()) {

@@ -13,7 +13,7 @@ package org.jkiss.dbeaver.debug.core.model;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.model.*;
 
-/** Evaluates database watch expressions as variable names in the selected stack frame. */
+/** Evaluates variable names and exposed cursor attributes in the selected stack-frame snapshot. */
 public class DatabaseWatchExpressionDelegate implements IWatchExpressionDelegate {
     @Override
     public void evaluateExpression(
@@ -28,10 +28,36 @@ public class DatabaseWatchExpressionDelegate implements IWatchExpressionDelegate
             return;
         }
         try {
-            for (IVariable variable : frame.getVariables()) {
+            IVariable[] variables = frame.getVariables();
+            for (IVariable variable : variables) {
                 if (variableName.equals(variable.getName())) {
                     listener.watchEvaluationFinished(DatabaseWatchExpressionResult.success(expression, variable.getValue()));
                     return;
+                }
+            }
+            int attributeStart = variableName.lastIndexOf('%');
+            if (attributeStart > 0 && isCursorAttribute(variableName.substring(attributeStart))) {
+                String cursorName = variableName.substring(0, attributeStart);
+                String attributeName = variableName.substring(attributeStart);
+                IVariable cursor = null;
+                for (IVariable variable : variables) {
+                    if (cursorName.equals(variable.getName())) {
+                        if (cursor != null) {
+                            listener.watchEvaluationFinished(DatabaseWatchExpressionResult.error(
+                                expression, "Cursor '" + cursorName + "' is ambiguous in this stack frame"));
+                            return;
+                        }
+                        cursor = variable;
+                    }
+                }
+                if (cursor != null && cursor.getValue().hasVariables()) {
+                    for (IVariable child : cursor.getValue().getVariables()) {
+                        if (attributeName.equalsIgnoreCase(child.getName())) {
+                            listener.watchEvaluationFinished(
+                                DatabaseWatchExpressionResult.success(expression, child.getValue()));
+                            return;
+                        }
+                    }
                 }
             }
             listener.watchEvaluationFinished(DatabaseWatchExpressionResult.error(
@@ -39,6 +65,11 @@ public class DatabaseWatchExpressionDelegate implements IWatchExpressionDelegate
         } catch (DebugException e) {
             listener.watchEvaluationFinished(DatabaseWatchExpressionResult.error(expression, e));
         }
+    }
+
+    private static boolean isCursorAttribute(String name) {
+        return "%ISOPEN".equalsIgnoreCase(name) || "%FOUND".equalsIgnoreCase(name)
+            || "%NOTFOUND".equalsIgnoreCase(name) || "%ROWCOUNT".equalsIgnoreCase(name);
     }
 
     private record DatabaseWatchExpressionResult(

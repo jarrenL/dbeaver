@@ -119,8 +119,11 @@ public class DebugUIEventListener implements IDebugEventSetListener {
             }
             try {
                 if (show) {
-                    activePage.showView(IDebugUIConstants.ID_VARIABLE_VIEW);
-                    activePage.showView(IDebugUIConstants.ID_BREAKPOINT_VIEW);
+                    // Keep the selected view (notably Expressions) visible. Activating
+                    // sibling views after each step hides it, stopping Eclipse's
+                    // watch-context updates and leaving its last result on screen.
+                    ensureDebugView(activePage, IDebugUIConstants.ID_VARIABLE_VIEW);
+                    ensureDebugView(activePage, IDebugUIConstants.ID_BREAKPOINT_VIEW);
                 } else {
                     hideView(activePage, IDebugUIConstants.ID_VARIABLE_VIEW);
                     hideView(activePage, IDebugUIConstants.ID_BREAKPOINT_VIEW);
@@ -129,6 +132,12 @@ public class DebugUIEventListener implements IDebugEventSetListener {
                 log.log(e.getStatus());
             }
         });
+    }
+
+    private void ensureDebugView(IWorkbenchPage page, String viewId) throws CoreException {
+        if (page.findView(viewId) == null) {
+            page.showView(viewId, null, IWorkbenchPage.VIEW_CREATE);
+        }
     }
 
     private void hideView(IWorkbenchPage activePage, String viewId) {

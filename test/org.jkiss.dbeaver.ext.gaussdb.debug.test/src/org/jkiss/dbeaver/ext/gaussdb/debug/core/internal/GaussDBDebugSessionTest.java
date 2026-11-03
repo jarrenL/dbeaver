@@ -599,6 +599,73 @@ class GaussDBDebugSessionTest {
         assertTrue(packageVariable.isReadOnly(), "constants must remain read-only");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"refcursor", "sys_refcursor", "REFCURSOR"})
+    void currentFrameCursorCannotBePassedToSetVar(String dataType) throws Exception {
+        var variable = new GaussDBDebugVariable("rows_cursor", dataType, "portal_1", null, false, 0);
+
+        assertTrue(variable.isReadOnly());
+        assertThrows(DBGException.class, () -> session.setVariableVal(variable, "another_portal"));
+
+        assertEquals("portal_1", variable.getVal());
+        verifyNoInteractions(connection);
+    }
+
+    @Test
+    void debuggerResultIsNormalizedBeforeTheVariableWindowReceivesIt() throws Exception {
+        JDBCStatement locals = mock(JDBCStatement.class);
+        JDBCResultSet result = mock(JDBCResultSet.class);
+        when(connection.createStatement()).thenReturn(locals);
+        when(locals.executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)")).thenReturn(result);
+        when(result.next()).thenReturn(true, true, false);
+        when(result.getString("varname")).thenReturn("rows_cursor", "current_id");
+        when(result.getString("vartype")).thenReturn("refcursor", "integer");
+        when(result.getString("value")).thenReturn(
+            "{name:\tportal_1\nis_open:\tt\nfound:\tt\nnot_found:\tf\nrow_count:\t1}", "42");
+
+        var variables = session.getVariables(null);
+
+        assertEquals(2, variables.size());
+        assertEquals("(ROWCOUNT=1, ISOPEN=true, FOUND=true, NOTFOUND=false)", variables.getFirst().getVal());
+        assertTrue(variables.getFirst().isReadOnly());
+        assertTrue(variables.getFirst().getChildren().stream().anyMatch(
+            child -> "%ROWCOUNT".equals(child.getName()) && "1".equals(child.getVal())));
+        assertFalse(variables.get(1).isReadOnly());
+        assertEquals("42", variables.get(1).getVal());
+        assertThrows(DBGException.class, () -> session.setVariableVal(variables.getFirst().getChildren().getFirst(), "9"));
+        verify(connection, never()).prepareStatement(anyString());
+        verify(locals).executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)");
+        verify(locals).close();
+        verifyNoMoreInteractions(locals);
+    }
+
+    @Test
+    void readingCursorStatusAgainReturnsANewSnapshotAndPreservesThePriorStop() throws Exception {
+        JDBCStatement locals = mock(JDBCStatement.class);
+        JDBCResultSet opened = mock(JDBCResultSet.class);
+        JDBCResultSet fetched = mock(JDBCResultSet.class);
+        when(connection.createStatement()).thenReturn(locals);
+        when(locals.executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)")).thenReturn(opened, fetched);
+        for (JDBCResultSet row : List.of(opened, fetched)) {
+            when(row.next()).thenReturn(true, false);
+            when(row.getString("varname")).thenReturn("rows_cursor");
+            when(row.getString("vartype")).thenReturn("refcursor");
+        }
+        when(opened.getString("value")).thenReturn(
+            "{name:\tportal_1\nis_open:\tt\nfound:\tf\nnot_found:\tf\nrow_count:\t0}");
+        when(fetched.getString("value")).thenReturn(
+            "{name:\tportal_1\nis_open:\tt\nfound:\tt\nnot_found:\tf\nrow_count:\t1}");
+
+        var beforeFetch = session.getVariables(null).getFirst();
+        var afterFetch = session.getVariables(null).getFirst();
+
+        assertNotSame(beforeFetch, afterFetch);
+        assertEquals("(ROWCOUNT=0, ISOPEN=true, FOUND=false, NOTFOUND=false)", beforeFetch.getVal());
+        assertEquals("(ROWCOUNT=1, ISOPEN=true, FOUND=true, NOTFOUND=false)", afterFetch.getVal());
+        assertThrows(UnsupportedOperationException.class, () -> beforeFetch.getChildren().clear());
+        verify(locals, times(2)).executeQuery("SELECT * FROM DBE_PLDEBUGGER.info_locals(0)");
+    }
+
     private JDBCResultSet localVariableResult(String value) throws SQLException {
         JDBCStatement locals = mock(JDBCStatement.class);
         JDBCResultSet result = mock(JDBCResultSet.class);

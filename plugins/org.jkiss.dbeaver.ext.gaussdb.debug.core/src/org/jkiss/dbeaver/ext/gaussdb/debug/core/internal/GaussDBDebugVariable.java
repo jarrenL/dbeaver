@@ -5,6 +5,8 @@
  */
 package org.jkiss.dbeaver.ext.gaussdb.debug.core.internal;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.debug.DBGVariable;
 import org.jkiss.dbeaver.debug.DBGVariableType;
 
@@ -59,7 +61,23 @@ public class GaussDBDebugVariable implements DBGVariable<String> {
     @Override
     public boolean isReadOnly() {
         // set_var has no frame selector and always writes the currently executing frame.
-        return constant || frameNumber != 0;
+        // A cursor value is a target-session portal, not an editable scalar expression.
+        return constant || frameNumber != 0 || isCursorType(dataType);
+    }
+
+    @NotNull
+    @Override
+    public String getDataTypeName() {
+        return dataType == null || dataType.isBlank() ? getType().toString() : dataType;
+    }
+
+    public static boolean isCursorType(@Nullable String dataType) {
+        if (dataType == null) {
+            return false;
+        }
+        String type = dataType.trim();
+        return "refcursor".equalsIgnoreCase(type) || "sys_refcursor".equalsIgnoreCase(type)
+            || "pg_catalog.refcursor".equalsIgnoreCase(type) || "pg_catalog.sys_refcursor".equalsIgnoreCase(type);
     }
 
     public String getDataType() {
@@ -67,6 +85,12 @@ public class GaussDBDebugVariable implements DBGVariable<String> {
     }
 
     public String getPackageName() {
+        return packageName;
+    }
+
+    @Nullable
+    @Override
+    public String getScopeName() {
         return packageName;
     }
 }

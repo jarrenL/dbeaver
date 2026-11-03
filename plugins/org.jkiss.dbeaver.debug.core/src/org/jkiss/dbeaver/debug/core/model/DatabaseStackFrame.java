@@ -167,18 +167,18 @@ public class DatabaseStackFrame extends DatabaseDebugElement implements IStackFr
         try {
             int frameLN = dbgStackFrame.getLineNumber();
             variables.clear();
-            Map<String, DBGVariable<?>> filtered = new LinkedHashMap<>();
+            Map<VariableIdentity, DBGVariable<?>> filtered = new LinkedHashMap<>();
             for (DBGVariable<?> dbgVariable : dbgVariables) {
-                String name = dbgVariable.getName();
-                DBGVariable<?> existing = filtered.get(name);
+                VariableIdentity identity = new VariableIdentity(dbgVariable.getName(), dbgVariable.getScopeName());
+                DBGVariable<?> existing = filtered.get(identity);
                 if (existing == null) {
-                    filtered.put(name, dbgVariable);
+                    filtered.put(identity, dbgVariable);
                 } else {
                     int existingLN = existing.getLineNumber();
                     int currentLN = dbgVariable.getLineNumber();
                     int delta = currentLN - existingLN;
                     if (delta >= 0) {
-                        filtered.put(name, dbgVariable);
+                        filtered.put(identity, dbgVariable);
                     } else {
                         String pattern = "Already have {0} and ignored {1} for frame at {2}";
                         String message = NLS.bind(pattern, new Object[]{existing, dbgVariable, frameLN});
@@ -194,6 +194,9 @@ public class DatabaseStackFrame extends DatabaseDebugElement implements IStackFr
         } finally {
             refreshVariables = false;
         }
+    }
+
+    private record VariableIdentity(String name, String scopeName) {
     }
 
     @Override

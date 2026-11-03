@@ -28,10 +28,12 @@ import org.jkiss.dbeaver.utils.GeneralUtils;
 public class DatabaseVariable extends DatabaseDebugElement implements IVariable {
 
     private final DBGVariable<?> dbgVariable;
+    private final DatabaseValue value;
 
     public DatabaseVariable(IDatabaseDebugTarget target, DBGVariable<?> variable) {
         super(target);
         this.dbgVariable = variable;
+        this.value = new DatabaseValue(target, variable);
     }
 
     @Override
@@ -66,7 +68,7 @@ public class DatabaseVariable extends DatabaseDebugElement implements IVariable 
 
     @Override
     public IValue getValue() throws DebugException {
-        return new DatabaseValue(getDatabaseDebugTarget(), dbgVariable);
+        return value;
     }
 
     @Override
@@ -76,7 +78,7 @@ public class DatabaseVariable extends DatabaseDebugElement implements IVariable 
 
     @Override
     public String getReferenceTypeName() throws DebugException {
-        return dbgVariable.getType().toString();
+        return dbgVariable.getDataTypeName();
     }
 
     @Override

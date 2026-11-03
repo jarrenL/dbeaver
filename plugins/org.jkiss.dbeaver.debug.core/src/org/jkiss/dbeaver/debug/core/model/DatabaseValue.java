@@ -23,44 +23,57 @@ import org.eclipse.debug.core.model.IValue;
 import org.eclipse.debug.core.model.IVariable;
 import org.jkiss.dbeaver.debug.DBGVariable;
 
+import java.util.List;
+
 public class DatabaseValue extends DatabaseDebugElement implements IValue {
 
-    private DBGVariable<?> dbgVariable;
+    private final DBGVariable<?> dbgVariable;
+    private final List<? extends DBGVariable<?>> children;
+    private volatile IVariable[] variables;
 
     public DatabaseValue(IDatabaseDebugTarget target, DBGVariable<?> dbgObject) {
         super(target);
         this.dbgVariable = dbgObject;
-        // TODO Auto-generated constructor stub
+        this.children = List.copyOf(dbgObject.getChildren());
     }
 
     @Override
     public String getReferenceTypeName() throws DebugException {
-        // TODO Auto-generated method stub
-        return null;
+        return dbgVariable.getDataTypeName();
     }
 
     @Override
     public String getValueString() throws DebugException {
-        // TODO Auto-generated method stub
         return String.valueOf(dbgVariable.getVal());
     }
 
     @Override
     public boolean isAllocated() throws DebugException {
-        // TODO Auto-generated method stub
         return false;
     }
 
     @Override
     public IVariable[] getVariables() throws DebugException {
-        // TODO Auto-generated method stub
-        return null;
+        IVariable[] snapshot = variables;
+        if (snapshot == null) {
+            synchronized (this) {
+                snapshot = variables;
+                if (snapshot == null) {
+                    // Eclipse loads ranges asynchronously. Keep each child wrapper stable for
+                    // this suspended-frame snapshot, including across separate range requests.
+                    snapshot = children.stream()
+                        .map(child -> new DatabaseVariable(getDatabaseDebugTarget(), child))
+                        .toArray(IVariable[]::new);
+                    variables = snapshot;
+                }
+            }
+        }
+        return snapshot.clone();
     }
 
     @Override
     public boolean hasVariables() throws DebugException {
-        // TODO Auto-generated method stub
-        return false;
+        return !children.isEmpty();
     }
 
 }

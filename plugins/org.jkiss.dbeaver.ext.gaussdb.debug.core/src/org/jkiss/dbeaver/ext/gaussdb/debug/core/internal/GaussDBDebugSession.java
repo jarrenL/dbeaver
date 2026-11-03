@@ -577,7 +577,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         acquireController();
         try {
             int frame = stack == null ? 0 : stack.getLevel();
-            List<DBGVariable<?>> variables = new ArrayList<>();
+            List<GaussDBDebugVariable> variables = new ArrayList<>();
             try (JDBCSession session = controllerConnection.openSession(new VoidProgressMonitor(), DBCExecutionPurpose.UTIL, "Read local variables");
                  Statement statement = session.createStatement();
                  ResultSet result = statement.executeQuery("SELECT * FROM " + API + "info_locals(" + frame + ")")) {
@@ -589,7 +589,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
             } catch (SQLException e) {
                 throw sqlError("Unable to read GaussDB local variables", e);
             }
-            return variables;
+            return GaussDBCursorVariables.aggregate(variables);
         } finally {
             controllerLock.unlock();
         }
