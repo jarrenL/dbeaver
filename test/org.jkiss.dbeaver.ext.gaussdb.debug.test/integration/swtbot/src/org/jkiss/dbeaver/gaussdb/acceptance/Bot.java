@@ -106,7 +106,17 @@ public final class Bot implements IStartup {
                 out.println("launch name=" + name + " terminated=" + launch.isTerminated());
                 for (var target : launch.getDebugTargets()) {
                     out.println("target name=" + target.getName() + " terminated=" + target.isTerminated()
-                        + " suspended=" + target.isSuspended());
+                        + " suspended=" + target.isSuspended() + " canResume=" + target.canResume());
+                    if (target instanceof org.jkiss.dbeaver.debug.core.model.IDatabaseDebugTarget databaseTarget
+                        && databaseTarget.getSession() instanceof org.jkiss.dbeaver.debug.jdbc.DBGJDBCSession session) {
+                        out.println("session attached=" + session.isAttached() + " done=" + session.isDone()
+                            + " waiting=" + session.isWaiting() + " transactionPending=" + session.isTransactionCompletionPending());
+                        if (args.length > 1 && args[1].equals("stack") && !session.isWaiting()) {
+                            for (var frame : session.getStack()) {
+                                out.println("protocol-frame=" + frame.getName() + " line=" + frame.getLineNumber());
+                            }
+                        }
+                    }
                     if (!target.isTerminated()) targets++;
                 }
                 for (var process : launch.getProcesses()) {

@@ -57,6 +57,11 @@ public interface DBGSession {
 
     void execStepReturn() throws DBGException;
 
+    /** Whether the provider can accept another resume request in its current state. */
+    default boolean canResume() {
+        return true;
+    }
+
     void resume() throws DBGException;
 
     void suspend() throws DBGException;

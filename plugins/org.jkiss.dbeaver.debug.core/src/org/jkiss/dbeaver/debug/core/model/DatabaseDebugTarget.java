@@ -59,10 +59,11 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
     private String name;
     private String defaultName = DebugCoreMessages.DatabaseDebugTarget_name_default;
 
-    private boolean suspended = false;
-    private boolean terminated = false;
+    private volatile boolean suspended = false;
+    private volatile boolean terminated = false;
+    private volatile long resumeEventSequence;
 
-    private DBGSession session;
+    private volatile DBGSession session;
 
     public DatabaseDebugTarget(String modelIdentifier, ILaunch launch, IProcess process, DBGController controller) {
         super(null);
@@ -253,7 +254,9 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public boolean canResume() {
-        return thread != null && !terminated && suspended;
+        DBGSession currentSession = session;
+        return thread != null && !terminated && suspended && currentSession != null
+            && currentSession.canResume() && !currentSession.isTransactionCompletionPending();
     }
 
     @Override
@@ -268,18 +271,33 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
 
     @Override
     public void resume() throws DebugException {
-        suspended = false;
+        DBGSession currentSession = session;
+        if (currentSession == null || !canResume()) {
+            // A queued UI action may outlive the paused frame it was created for.
+            return;
+        }
+        long previousResumeSequence = resumeEventSequence;
         try {
-            session.resume();
+            currentSession.resume();
         } catch (DBGException e) {
             log.error(e);
             throw new DebugException(
                 GeneralUtils.makeErrorStatus(NLS.bind("Error resuming {0} - {1}", getName(), e.getMessage())));
         }
-        if (thread.isSuspended()) {
-            thread.resumedByTarget();
+        if (session == currentSession && !terminated && suspended && resumeEventSequence == previousResumeSequence) {
+            // Legacy providers may not publish RESUME themselves. Do not overwrite
+            // a newer SUSPEND from a provider whose command already completed.
+            resumed(DebugEvent.CLIENT_REQUEST);
         }
-        fireResumeEvent(DebugEvent.CLIENT_REQUEST);
+    }
+
+    private void resumed(int detail) {
+        if (terminated) {
+            return;
+        }
+        suspended = false;
+        thread.resumedByTarget(detail);
+        fireResumeEvent(detail);
     }
 
     @Override
@@ -493,6 +511,10 @@ public class DatabaseDebugTarget extends DatabaseDebugElement implements IDataba
     @Override
     public void handleDebugEvent(DBGEvent event) {
         int kind = event.getKind();
+        if (DBGEvent.RESUME == kind) {
+            resumeEventSequence++;
+            resumed(event.getDetails());
+        }
         if (DBGEvent.SUSPEND == kind) {
             suspended(event.getDetails());
         }

@@ -76,7 +76,9 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
 
     @Override
     public void resume() throws DebugException {
-        aboutToResume(DebugEvent.CLIENT_REQUEST, false);
+        if (!canResume()) {
+            return;
+        }
         getDebugTarget().resume();
     }
 
@@ -219,6 +221,10 @@ public class DatabaseThread extends DatabaseDebugElement implements IThread {
 
     public void resumedByTarget() {
         aboutToResume(DebugEvent.CLIENT_REQUEST, false);
+    }
+
+    public void resumedByTarget(int detail) {
+        aboutToResume(detail, detail == DebugEvent.STEP_INTO || detail == DebugEvent.STEP_OVER || detail == DebugEvent.STEP_RETURN);
     }
 
     public void setStepping(boolean stepping) {

@@ -453,7 +453,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
                         if (terminateOnExecutionError(response)) {
                             return DebugUtils.newErrorStatus("GaussDB routine execution failed; the debug session was terminated");
                         }
-                        if (isExecutionFinished(response)) {
+                        if (isExecutionFinished(response) && isWholeInvocationFinished(monitor)) {
                             controlFinished = true;
                             done = true;
                             // The target JDBC response can arrive later. Whichever side
@@ -499,6 +499,31 @@ public class GaussDBDebugSession extends DBGJDBCSession {
         }
     }
 
+    boolean isWholeInvocationFinished(DBRProgressMonitor monitor) throws DBGException {
+        if (!targetSucceeded) {
+            try {
+                // The same marker is returned at the end of a nested procedure.
+                // A remaining stack (including recursive frames with the same OID)
+                // means that the caller is still paused and can be continued.
+                if (!getStack().isEmpty() && !targetSucceeded) {
+                    return false;
+                }
+            } catch (DBGException e) {
+                if (!(e.getCause() instanceof SQLException sqlError) || !"D0005".equals(sqlError.getSQLState())) {
+                    throw e;
+                }
+                // GaussDB closes the controller's attachment at the outermost end.
+                // Its target JDBC reply may arrive later; confirm that reply rather
+                // than treating an arbitrary controller failure as completion.
+            }
+        }
+        awaitTarget(monitor);
+        if (!targetSucceeded) {
+            throw new DBGException("GaussDB debug target did not complete successfully");
+        }
+        return true;
+    }
+
     private void awaitTarget(DBRProgressMonitor monitor) throws DBGException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         try {
@@ -514,7 +539,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     }
 
     boolean terminateOnExecutionError(String response) {
-        if (response == null || !response.contains("[EXECUTION HAS ERROR OCCURRED!]")) {
+        if (response == null || !"[EXECUTION HAS ERROR OCCURRED!]".equals(response.trim())) {
             return false;
         }
         // GaussDB 507 rejects even abort() in its runtime-error wait. Termination must
@@ -933,6 +958,11 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     }
 
     @Override
+    public boolean canResume() {
+        return canStepInto();
+    }
+
+    @Override
     public void suspend() throws DBGException {
         throw new DBGException("DBE_PLDEBUGGER does not support asynchronous pause");
     }
@@ -1063,7 +1093,7 @@ public class GaussDBDebugSession extends DBGJDBCSession {
     }
 
     static boolean isExecutionFinished(String response) {
-        return response != null && response.contains(FINISHED);
+        return response != null && FINISHED.equals(response.trim());
     }
 
     private void turnOff(DBRProgressMonitor monitor) throws DBGException {
