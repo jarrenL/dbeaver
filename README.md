@@ -10,9 +10,12 @@
 
 本仓库提供基于 DBeaver 26.1.5 的 GaussDB 适配实现与交付文档。
 
+当前交付修订为 `20261105-r2`，应用构建仍为已验证的 `26.1.5.20261105r1`。本次更新操作手册 V1.9，增加数据库连接全过程的 13 张真实界面截图，并在华为云生态仓 Release 提供完整增强源码及匹配的 `dbeaver-common` 源码。
+
 - **[图形界面使用说明书（在线阅读，含截图）](GAUSSDB_GUI_OPERATION_MANUAL_20260922.md)**：安装、连接、调试入口、断点、变量、调用栈、事务及包编译的逐步操作。
-- [存储过程调试与 Package 管理操作手册（Word 版）](GaussDB_DBeaver_调试与Package操作手册_20261014.docx)：适合下载、打印和离线使用。
+- [存储过程调试与 Package 管理操作手册（Word 版）](GaussDB_DBeaver_调试与Package操作手册_20261105.docx)：适合下载、打印和离线使用。
 - [软件下载及版本附件](https://github.com/jarrenL/dbeaver/releases)。
+- [华为云生态仓交付页](https://github.com/huaweicloud-samples/database-gaussdb-ecosystem/releases/tag/dbeaver-gaussdb-26.1.5-kylin-x86_64-20261105-r2)：提供客户端、独立 Word 手册、完整增强源码及校验文件；应选择明确命名的 `enhanced-source` 附件，Release 默认的 Source code 下载对应生态仓自身目录。
 
 PL/SQL 调试与 Package 用于 O/Oracle 模式；M 模式用于基础数据库操作。Package 基础能力要求服务端提供 `gs_package`；有 `DBE_PLDEVELOPER.GS_ERRORS` 时可显示服务端精确诊断，无该诊断但有 `GS_SOURCE` 时会使用已保存源码重放编译并显示直接错误，只有错误标记可唯一可靠匹配时才给出“近似”位置，否则行号显示 `-`。分布式回退不会后台设置私有会话参数。安装、使用步骤、功能边界和验收方法统一以上述操作手册为准。以下为上游 DBeaver 项目介绍。
 

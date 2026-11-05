@@ -2,11 +2,11 @@
 
 更新日期：2026-11-05。适用于数据库开发、测试及运维人员。本文可直接在代码仓库在线阅读，无需下载 HTML 文件。
 
-适用版本：DBeaver 26.1.5 GaussDB 适配版（构建标识 `26.1.5.20261105r1`）。源码版本见发布页的构建清单；适用条件和验证范围见第 14 节。
+适用版本：DBeaver 26.1.5 GaussDB 适配版，应用构建 `26.1.5.20261105r1`，交付修订 `20261105-r2`。本轮补充连接指导和图示，文档版本为 V1.9；应用二进制构建保持不变。源码版本见发布页的构建清单；适用条件和验证范围见第 14 节。
 
-华为云生态仓发布页（完整地址）：https://github.com/huaweicloud-samples/database-gaussdb-ecosystem/releases/tag/dbeaver-gaussdb-26.1.5-kylin-x86_64-20261105-r1
+华为云生态仓发布页（完整地址）：https://github.com/huaweicloud-samples/database-gaussdb-ecosystem/releases/tag/dbeaver-gaussdb-26.1.5-kylin-x86_64-20261105-r2
 
-jarrenL 发布页（完整地址）：https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-x86_64-beta-20261105-r1
+jarrenL 发布页（完整地址）：https://github.com/jarrenL/dbeaver/releases/tag/gaussdb-2615-x86_64-beta-20261105-r2
 
 **重要：PL/SQL 调试、包管理测 O/Oracle 兼容库；M 模式只测连接、对象浏览、SQL 和表数据操作。不要在 M 库找 PL/SQL 调试入口。** Package 基础能力要求服务端提供 `gs_package`。错误定位分为“服务端结构化精确诊断”和“已保存源码重放诊断”两级，是否可用由目标服务器实际能力决定；客户端不能使不支持 Package 的服务器突然支持 Package。
 
@@ -66,21 +66,139 @@ DBeaver 安装在用户登录使用的麒麟图形桌面云里，连接远端 Ga
 
 ## 3. 新建连接及基础功能测试（T01、T02）
 
-### T01：连接与模式确认
+### T01：从零新建连接并确认模式
 
-1. 点击 **数据库 → 新建数据库连接**，搜索 `GaussDB`。
-2. O 模式优先选择 **GaussDB Native**。不要用 Generic 或 PostgreSQL 条目代替，否则不会得到 GaussDB 专用调试面板。
-3. 在驱动设置的“库/Libraries”页，添加供应商提供的匹配 JDBC jar；驱动类、URL 协议必须匹配：Native 对应 `com.huawei.gaussdb.jdbc.Driver` 和 `jdbc:gaussdb:`。不要把 `org.postgresql.Driver` 的 jar 强塞进 Native 配置。
-4. 输入实际服务器地址、端口、数据库、账号和密码，点击“测试连接”，成功后“完成”。分布式连接 DBA 提供的 CN/服务入口，不用 DN 连接冒充完整集群连接。
-5. 右键该连接 → **SQL 编辑器 → 新建 SQL 脚本**。确认编辑器顶部绑定的是这个连接和目标数据库，逐条执行：
+本节从尚未创建连接的客户端开始。先准备 DBA 提供的数据库主机地址、端口、数据库名、数据库用户名和密码、兼容模式，以及匹配的官方 JDBC jar；若要求 SSL/TLS，还需准备指定的连接方式和证书。连接服务器前，麒麟桌面必须能访问该地址与端口。数据库名、schema 名和桌面云登录账号是不同概念，不可互相代填。
+
+连接图 C01～C09 来自通过转译运行的麒麟 V10 x86_64 容器，实际连接 GaussDB 507 O/Oracle 兼容演示库。截图用于说明控件位置；`host.docker.internal:55452`、`dbv_connect_20261105` 和 `manual_demo` 是演示环境信息，请替换为 DBA 提供的实际地址、数据库、账号和 schema。
+
+#### T01.1 打开连接向导并选对驱动
+
+1. 在 DBeaver 顶部点击 **数据库 → 新建数据库连接**。这里创建的是客户端连接配置，不是在服务器创建数据库。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-menu.png)
+
+连接图 C01：打开顶部“数据库”菜单，选择“新建数据库连接”。也可使用界面显示的快捷键 Shift+Ctrl+N。
+
+2. 在驱动选择页搜索 `GaussDB`，O/Oracle 兼容库选择 **GaussDB 原生驱动（GaussDB Native）**，再点“下一步”。不要选择 PostgreSQL 或 Generic 代替本手册的专用驱动；GaussDB M 条目用于 M 兼容库，不用于本节的 O 模式 PL/SQL 调试。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-driver.png)
+
+连接图 C02：按名称选择“GaussDB 原生驱动（GaussDB Native）”，再点右下“下一步”。排序可能变化，不按第几个图标判断，也不把 M 兼容条目作为本节入口。
+
+3. 驱动条目不会改变服务器已有数据库的兼容模式。目标库实际是否为 O/Oracle 模式，仍须在连接后查询确认。
+
+#### T01.2 在内网添加官方 JDBC 驱动
+
+1. 将供应商或 DBA 提供的匹配 JDBC jar 复制到**当前麒麟桌面能够读取的本地目录**。文件选择框读取的是运行 DBeaver 的桌面文件系统，不是 GaussDB 服务器目录。
+2. 在连接设置页右下方点击 **编辑驱动设置**，进入驱动编辑器顶部的 **库/Libraries** 页。若内网弹出在线下载提示，先取消在线下载，按本节添加本地文件。
+3. 先检查库列表。GaussDB Native 不应混入 PostgreSQL 驱动 jar；同一驱动类的多个旧版本 jar 也可能导致加载错误版本。确认后，仅移除本驱动库列表中的冲突项或重复旧版，保留供应商明确要求的依赖。不要删除整个驱动定义或随意删除其他驱动的文件。
+4. 点击 **添加文件/Add File**，选中已准备的官方 GaussDB JDBC jar，确认后检查列表中出现了该文件。路径必须在后续启动时仍存在；不要把 jar 留在会自动清理的临时目录。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-driver-libraries.png)
+
+连接图 C03a：在“库”页使用右侧“添加文件”。左侧最终显示已添加的 gaussdbjdbc.jar；图中的本地目录仅为示例，客户使用自己保存官方 jar 的稳定目录。
+
+5. 检查驱动类和 URL 协议。GaussDB Native 对应 `com.huawei.gaussdb.jdbc.Driver` 和 `jdbc:gaussdb:`。不能只把 PostgreSQL jar 的显示名称改成 GaussDB 来代替。确认驱动设置后返回连接主页。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-driver-settings.png)
+
+连接图 C03b：切换顶部“设置”页，核对“类名”为 com.huawei.gaussdb.jdbc.Driver，URL 模板使用 jdbc:gaussdb:。默认端口不代表客户数据库的实际端口。
+
+驱动定义可能由多个已有连接共用。已有正常连接时，修改前记录其库列表和使用范围；需要并行使用不同版本时，为连接准备独立的驱动定义后再调整，不直接替换所有连接共用的 jar。
+
+#### T01.3 填写连接字段及密码保存选项
+
+在“主要”页选择“主机”连接方式，再逐项填写 DBA 提供的信息；上方灰色 URL 随字段自动生成。截图中的地址、端口、数据库名和用户名只用于演示，客户环境应填写自己的实际值。
+
+| 字段 | 填写方法 |
+| --- | --- |
+| 主机/Host | 数据库服务地址或 DNS 名称；分布式填写 DBA 提供的 CN/统一服务入口，不以 DN 直连代替完整集群连接 |
+| 端口/Port | 数据库服务监听端口；不要填 SSH 端口，也不要直接照抄截图中的演示端口 |
+| 数据库/Database | 已存在且允许账号连接的数据库名，不是 schema 名 |
+| 用户名/User | 数据库账号，不是麒麟系统或桌面云登录账号 |
+| 密码/Password | 对应该数据库账号的密码；注意大小写和输入法，保持密码掩码显示 |
+| 保存密码/Save password | 按企业安全策略决定是否勾选；不保存时，后续连接按提示重新输入。保存密码不是修改数据库密码 |
+
+![连接操作图示](docs/gaussdb/images/manual/connection-fields.png)
+
+连接图 C04a：在“主要”页填写主机、端口、数据库、用户名和密码。示例未勾选“保存密码”；左下为“测试连接”，右下为“完成”及“编辑驱动设置”等入口。
+
+如果 DBA 要求 SSL/TLS，请先在连接的 SSL 设置中按要求配置模式、CA 或客户端证书，再测试连接。不能因为演示截图未展开 SSL 页，就推断客户环境不需要 SSL；遇到证书错误时也不要直接关闭校验来取得“成功”。其他高级参数保持原配置，除非 DBA 提供了明确要求。
+
+#### T01.4 测试连接并完成向导
+
+1. 点击连接主页的 **测试连接/Test Connection**，等待结果。测试或展开连接时若出现“身份验证”窗口，输入数据库账号和密码，再点“确定”；未保存密码时，再次提示输入属于正常流程。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-authentication.png)
+
+连接图 C04b：未保存密码时可能出现此身份验证窗口。输入数据库凭据后点“确定”，不要填写桌面云登录账号；密码保持掩码。
+
+2. 成功对话框应显示“已连接”、服务器信息和驱动名称。核对后点击“确定”关闭结果框；服务器内核完整版本以后面的 `SELECT version()` 结果为准。若驱动版本文字无法识别，记录原文并核对官方 jar 的版本说明，不把该文本当作客户端版本。测试失败时，先按本节末尾排查，不把“已经创建配置”当作“数据库连接成功”。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-success.png)
+
+连接图 C05：“已连接”表示本次测试成功。服务器完整版本还应通过 SQL 查询确认；驱动版本如不能识别，保留原文并核对官方 jar 信息。关闭此窗口后还需点击连接向导的“完成”。
+
+3. 点击 **完成/Finish** 保存连接。若随后再次提示输入密码，按刚才的密码保存选择处理；不要为消除提示而更改服务器认证。 如需设置便于识别的连接显示名，可用主页右下的“连接详情（名称、类型…）”；本例显示名为“GaussDB O 模式演示”，显示名不会改变数据库的兼容模式。
+4. 在数据库导航器展开刚创建的连接 → 数据库（如显示）→ 模式/Schemas → 目标 schema。若能连接但看不到对象，先核对数据库、schema、权限和导航过滤器；空列表不一定表示数据库没有对象。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-navigation.png)
+
+连接图 C06：已完成并展开演示连接，定位到数据库 dbv_connect_20261105 → 模式 → manual_demo → 表 → connection_check。客户应展开自己的目标库与 schema。
+
+#### T01.5 打开 SQL 编辑器核对实际目标
+
+1. 在数据库导航器中**右键刚创建的连接**，选择 **SQL 编辑器 → 新建 SQL 编辑器**。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-sql-menu.png)
+
+连接图 C07：右键连接，进入“SQL 编辑器”子菜单，点击“新建 SQL 编辑器”。不要误选只会打开已有编辑器的其他条目。
+
+2. 确认编辑器顶部绑定的是该连接和目标数据库，再逐条执行以下查询。每次把光标放在待执行语句中，使用菜单 **执行 SQL 语句** 或界面显示的对应快捷键，不把三个结果混成同一项检查。
 
 ```sql
-SELECT version();
-SELECT current_database(), current_user;
+SELECT version() AS server_version;
+SELECT current_database() AS database_name, current_user AS user_name;
 SELECT name, setting FROM pg_settings WHERE name = 'sql_compatibility';
 ```
 
-预期：连接成功，版本、用户、库名正确，记录实际模式。O 模式名称在不同版本可能呈现为 O/A/ORA；不凭连接名字中的“Oracle”判断。
+3. 在下方结果页分别记录服务器完整版本、当前数据库、当前用户和 `sql_compatibility`。O 模式名称在不同版本可能呈现为 O/A/ORA，不凭连接显示名称中的“Oracle”判断。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-version.png)
+
+连接图 C08a：版本查询得到完整 GaussDB Kernel 507.0.0 信息，结果位于下方表格；需要时选中单元格，在右侧数值查看器阅读完整文本。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-context.png)
+
+连接图 C08b：数据库名与当前用户分别显示在 database_name、user_name 列。示例二者同名，实际环境不要求相同，须分别核对。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-mode.png)
+
+连接图 C08c：sql_compatibility 的 setting 返回 A，表示本演示库处于 Oracle 兼容模式；以实际查询值和 DBA 确认为准。
+
+4. 如果查询失败或兼容模式没有返回结果，保留原始错误和结果，请 DBA 核对目标版本与模式。连接测试成功只证明本次连接建立成功，不等于已经具备 PL/SQL 调试角色、Package 权限或全部对象访问权限。
+
+预期：连接配置保存成功；能展开目标 schema；SQL 查询得到的数据库、用户和模式与 DBA 提供的信息一致。后续所有调试与 Package 操作都继续使用这条已经核对的 O 模式连接。
+
+#### T01.6 连接失败和日志收集
+
+| 现象 | 先检查什么 |
+| --- | --- |
+| 找不到驱动类、Driver class not found | 是否选择 GaussDB Native；库列表中的 jar 是否存在、可读、匹配驱动类；是否混入其他驱动或多个冲突版本 |
+| 连接被拒绝、超时、无法解析主机 | 主机、数据库端口、桌面到数据库的网络路径、DNS 和服务入口是否正确；请 DBA 或网络维护人员核对服务及访问规则 |
+| 用户名或密码错误、认证失败 | 数据库账号、密码、数据库名及服务器允许的认证方式；不要用授予超级用户或关闭认证替代排查 |
+| SSL、证书或主机名校验错误 | DBA 要求的 SSL 模式、证书文件、证书有效期和连接主机名是否匹配；保留原文，不直接关闭证书校验 |
+| 测试成功但导航树没有对象 | 当前数据库、schema、账号对象权限、导航过滤器及刷新状态 |
+| 目标数据库或兼容模式与预期不符 | 连接主页数据库字段和 SQL 编辑器顶部连接是否正确；以 SQL 查询结果为准，不以配置名称为准 |
+
+发生错误时，展开错误对话框的 **详细信息/Details**，保留完整错误、SQLSTATE（若有）、发生时间、客户端构建、数据库版本和 JDBC 版本。不要只截取第一行“连接失败”。密码、私钥和完整证书内容不应放进截图或日志说明。
+
+需要进一步排查时，在 **窗口 → 显示视图 → 其他** 中搜索 **错误日志/Error Log**，打开后选中对应时间的记录，查看并复制详细信息。日志用于保留客户端异常，不等于数据库服务器审计日志；服务器端认证或网络原因仍需 DBA 配合确认。
+
+![连接操作图示](docs/gaussdb/images/manual/connection-error-log.png)
+
+连接图 C09：底部“错误日志”窗格用于查看工作空间异常。本图当前没有错误记录，仅示意窗格位置；故障时按发生时间选择对应记录，查看详细信息。
 
 ### T02：M 模式基础能力
 

@@ -40,7 +40,7 @@ for (const [source, destination] of [
   ['LICENSE.md', 'LICENSE.md'],
   ['README.md', 'README.md'],
   ['GAUSSDB_GUI_OPERATION_MANUAL_20260922.md', 'GAUSSDB_GUI_OPERATION_MANUAL_20260922.md'],
-  ['GaussDB_DBeaver_调试与Package操作手册_20261014.docx', 'GaussDB_DBeaver_Debug_and_Package_Manual_20261014.docx'],
+  ['GaussDB_DBeaver_调试与Package操作手册_20261105.docx', 'GaussDB_DBeaver_Debug_and_Package_Manual_20261105.docx'],
 ]) {
   fs.copyFileSync(path.join(root, source), path.join(payload, destination));
 }
@@ -48,7 +48,11 @@ const manualImageOutput = path.join(payload, 'docs/gaussdb/images/manual');
 fs.mkdirSync(manualImageOutput, {recursive: true});
 for (const manualImage of ['language-config.png', 'debug-source.png', 'debug-step-variables.png', 'call-stack.png',
   'debug-transaction-choice.png', 'package-compile-menu.png', 'package-errors.png', 'package-error-location.png',
-  'package-delete-confirm.png']) {
+  'package-delete-confirm.png', 'routine-source-entry.png', 'object-parameter-debug.png',
+  'connection-menu.png', 'connection-driver.png', 'connection-driver-settings.png', 'connection-driver-libraries.png',
+  'connection-fields.png', 'connection-authentication.png', 'connection-success.png', 'connection-navigation.png',
+  'connection-sql-menu.png', 'connection-version.png', 'connection-context.png', 'connection-mode.png',
+  'connection-error-log.png']) {
   fs.copyFileSync(path.join(root, 'docs/gaussdb/images/manual', manualImage), path.join(manualImageOutput, manualImage));
 }
 fs.copyFileSync(path.join(import.meta.dirname, 'README.md'), path.join(payload, 'WINDOWS-PREVIEW.md'));

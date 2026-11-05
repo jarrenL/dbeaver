@@ -1,6 +1,6 @@
 # GaussDB 适配版 DBeaver：麒麟 V10 服务器版
 
-本目录为交付构建说明；客户操作步骤见仓库根目录 `GAUSSDB_GUI_OPERATION_MANUAL_20260922.md` 和 `GaussDB_DBeaver_调试与Package操作手册_20261014.docx`。仅有候选目录不代表已完成发布。
+本目录为交付构建说明；客户操作步骤见仓库根目录 `GAUSSDB_GUI_OPERATION_MANUAL_20260922.md` 和 `GaussDB_DBeaver_调试与Package操作手册_20261105.docx`。交付修订 `20261105-r2` 更新连接图示和源码交付，应用二进制仍为已验证的 `26.1.5.20261105r1`。仅有候选目录不代表已完成发布。
 
 ## 平台范围
 

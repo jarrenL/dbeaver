@@ -58,11 +58,15 @@ mkdir -p "$manual_image_output"
 for manual_image in language-config.png debug-source.png debug-step-variables.png call-stack.png \
     debug-transaction-choice.png package-compile-menu.png package-errors.png \
     package-error-location.png package-delete-confirm.png routine-source-entry.png \
-    object-parameter-debug.png; do
+    object-parameter-debug.png connection-menu.png connection-driver.png \
+    connection-driver-settings.png connection-driver-libraries.png connection-fields.png \
+    connection-authentication.png connection-success.png connection-navigation.png \
+    connection-sql-menu.png connection-version.png connection-context.png \
+    connection-mode.png connection-error-log.png; do
     cp "$repository_root/docs/gaussdb/images/manual/$manual_image" "$manual_image_output/$manual_image"
 done
-cp "$repository_root/GaussDB_DBeaver_调试与Package操作手册_20261014.docx" \
-    "$delivery_output/GaussDB_DBeaver_调试与Package操作手册_20261014.docx"
+cp "$repository_root/GaussDB_DBeaver_调试与Package操作手册_20261105.docx" \
+    "$delivery_output/GaussDB_DBeaver_调试与Package操作手册_20261105.docx"
 cp "$script_directory/README.zh-CN.md" "$delivery_output/README-KYLIN.zh-CN.md"
 cp "$script_directory/THIRD-PARTY-SOURCES.md" "$delivery_output/THIRD-PARTY-SOURCES.md"
 printf '%s\n' "architecture=$delivery_arch" 'swt_source=v4973r12' 'launcher_source=R4_37' \

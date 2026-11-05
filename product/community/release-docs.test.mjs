@@ -5,14 +5,15 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const manual = fs.readFileSync(path.join(root, 'GAUSSDB_GUI_OPERATION_MANUAL_20260922.md'), 'utf8');
-const wordManual = 'GaussDB_DBeaver_调试与Package操作手册_20261014.docx';
+const wordManual = 'GaussDB_DBeaver_调试与Package操作手册_20261105.docx';
 const manualImages = [...manual.matchAll(/!\[[^\]]*]\((docs\/gaussdb\/images\/[^)]+)\)/g)]
     .map(match => match[1]);
 
 test('customer manual points to the current release and build', () => {
-    assert.match(manual, /gaussdb-2615-20261014/);
-    assert.match(manual, /202610140553/);
-    assert.doesNotMatch(manual, /gaussdb-2615-20260922/);
+    assert.match(manual, /gaussdb-2615-x86_64-beta-20261105-r2/);
+    assert.match(manual, /dbeaver-gaussdb-26\.1\.5-kylin-x86_64-20261105-r2/);
+    assert.match(manual, /26\.1\.5\.20261105r1/);
+    assert.match(manual, /应用二进制构建保持不变/);
 });
 
 test('current Word manual exists and obsolete release metadata is absent', () => {
@@ -23,14 +24,29 @@ test('current Word manual exists and obsolete release metadata is absent', () =>
 });
 
 test('customer manual documents both Kylin architectures without cross-architecture claims', () => {
-    assert.match(manual, /KylinV10-x86_64/);
-    assert.match(manual, /KylinV10-aarch64/);
+    assert.match(manual, /麒麟 x86_64/);
+    assert.match(manual, /麒麟 ARM64\/aarch64/);
     assert.match(manual, /Windows ARM64、macOS 和 LoongArch 安装包不在本次发布范围/);
 });
 
 test('every image referenced by the customer manual exists in source', () => {
     assert.deepEqual(manualImages, [
         'docs/gaussdb/images/manual/language-config.png',
+        'docs/gaussdb/images/manual/connection-menu.png',
+        'docs/gaussdb/images/manual/connection-driver.png',
+        'docs/gaussdb/images/manual/connection-driver-libraries.png',
+        'docs/gaussdb/images/manual/connection-driver-settings.png',
+        'docs/gaussdb/images/manual/connection-fields.png',
+        'docs/gaussdb/images/manual/connection-authentication.png',
+        'docs/gaussdb/images/manual/connection-success.png',
+        'docs/gaussdb/images/manual/connection-navigation.png',
+        'docs/gaussdb/images/manual/connection-sql-menu.png',
+        'docs/gaussdb/images/manual/connection-version.png',
+        'docs/gaussdb/images/manual/connection-context.png',
+        'docs/gaussdb/images/manual/connection-mode.png',
+        'docs/gaussdb/images/manual/connection-error-log.png',
+        'docs/gaussdb/images/manual/routine-source-entry.png',
+        'docs/gaussdb/images/manual/object-parameter-debug.png',
         'docs/gaussdb/images/manual/debug-source.png',
         'docs/gaussdb/images/manual/debug-step-variables.png',
         'docs/gaussdb/images/manual/call-stack.png',
