@@ -7,15 +7,19 @@ package org.jkiss.dbeaver.ext.gaussdb.debug.core;
 
 import org.jkiss.dbeaver.debug.DBGException;
 import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreProcedureParameter;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameterKind;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** Builds typed positional arguments without interpolating user input or default expressions. */
 public final class GaussDBDebugArguments {
+    private static final Pattern TYPE_MODIFIERS = Pattern.compile("(?:\\(\\s*\\d+(?:\\s*,\\s*-?\\d+)?\\s*\\))?(?:\\[\\])*");
+
     public enum Mode { VALUE, NULL, DEFAULT }
 
     public record Plan(@NotNull String sql, @NotNull List<String> values) {
@@ -52,12 +56,12 @@ public final class GaussDBDebugArguments {
                 if (omitted) {
                     throw new DBGException("Enter defaulted input parameters explicitly when followed by an OUT parameter");
                 }
-                arguments.add("NULL::" + parameter.getFullTypeName());
+                arguments.add("NULL::" + getCastTypeName(parameter));
             } else {
                 if (inputIndex++ >= bound.values().size()) {
                     omitted = true;
                 } else {
-                    arguments.add("?::" + parameter.getFullTypeName());
+                    arguments.add("?::" + getCastTypeName(parameter));
                 }
             }
         }
@@ -99,9 +103,43 @@ public final class GaussDBDebugArguments {
             if (!boundValues.isEmpty()) {
                 sql.append(',');
             }
-            sql.append("?::").append(parameter.getFullTypeName());
+            sql.append("?::").append(getCastTypeName(parameter));
             boundValues.add(mode == Mode.NULL ? null : values.get(i));
         }
         return new Plan(sql.toString(), boundValues);
+    }
+
+    @NotNull
+    private static String getCastTypeName(@NotNull PostgreProcedureParameter parameter) throws DBGException {
+        // Procedure parameters already resolve pg_proc's argument type OID. Use that
+        // object's schema, which may differ from the routine's schema or search_path.
+        var type = parameter.getParameterType();
+        if (type == null || type.getParentObject() == null) {
+            throw new DBGException("Type metadata is unavailable for parameter " + parameter.getName());
+        }
+        String fullTypeName = parameter.getFullTypeName();
+        String schemaName = type.getParentObject().getName();
+        if (PostgreConstants.CATALOG_SCHEMA_NAME.equals(schemaName)) {
+            // Built-in aliases can be SQL syntax such as "double precision". Keep
+            // their existing spelling and length/precision modifiers intact.
+            return fullTypeName;
+        }
+        String typeName = type.getTypeName();
+        if (!fullTypeName.startsWith(typeName)) {
+            throw new DBGException("Inconsistent type metadata for parameter " + parameter.getName());
+        }
+        String modifiers = fullTypeName.substring(typeName.length());
+        if (!TYPE_MODIFIERS.matcher(modifiers).matches()) {
+            throw new DBGException("Unsupported type modifiers for parameter " + parameter.getName());
+        }
+        // Catalog names are raw identifiers, even when the name itself contains
+        // double quotes. Always escape and quote each part separately. Array and
+        // domain types keep the identity of their own OID instead of a base type.
+        return quoteTypeIdentifier(schemaName) + "." + quoteTypeIdentifier(type.getName()) + modifiers;
+    }
+
+    @NotNull
+    private static String quoteTypeIdentifier(@NotNull String name) {
+        return '"' + name.replace("\"", "\"\"") + '"';
     }
 }

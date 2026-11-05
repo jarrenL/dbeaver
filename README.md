@@ -20,6 +20,10 @@ GaussDB 内置驱动默认关闭“Thread safe driver”选项，使同一 JDBC 
 
 调试暂停时，`refcursor` / `sys_refcursor` 可显示服务端已返回的游标状态摘要，并展开查看、监视 `%ISOPEN`、`%FOUND`、`%NOTFOUND`、`%ROWCOUNT`。这些状态只读；查看不会执行 `FETCH` 或推进游标。当前不提供暂停期间的游标结果行、列结构或原 SQL 预览。
 
+调试参数使用 JDBC 绑定，并按参数类型 OID 对应的实际 Schema 限定自定义类型。`CREATE TYPE ... AS (...)` 复合类型可按服务端文本格式输入，例如 `(1,张三)`，字段含逗号时输入 `(2,"Alice, Jr.")`；整对象为空应选择 **SQL NULL**。这些流程已在通过指令转译运行的麒麟 V10 x86_64 容器图形客户端与 GaussDB 507 O 模式验证；不代表任意对象、数组或客户整机均已验收。
+
+调试完成后的选择只处理调试连接中的**剩余事务**，默认回滚。过程及其调用对象已执行 `COMMIT` 的变更无法撤销；此处提交或回滚也不保存或撤销源码修改。修改源码应先结束调试，再从导航树打开对象的“源”页，保存成功后重新启动调试。
+
 Free multi-platform database tool for developers, SQL programmers, database administrators and analysts.  
 
 * Has a lot of <a href="https://github.com/dbeaver/dbeaver/wiki">features</a> including schema editor, SQL editor, data editor, AI integration, ER diagrams, data export/import/migration, SQL execution plans, database administration tools, database dashboards, Spatial data viewer, proxy and SSH tunnelling, custom database drivers editor, etc.

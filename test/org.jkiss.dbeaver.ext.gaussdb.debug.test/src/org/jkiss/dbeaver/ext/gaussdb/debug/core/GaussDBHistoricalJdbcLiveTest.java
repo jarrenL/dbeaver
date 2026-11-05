@@ -2061,7 +2061,12 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
     }
 
     private PostgreProcedureParameter parameter(String type, DBSProcedureParameterKind kind) {
+        var schema = mock(PostgreSchema.class);
+        when(schema.getName()).thenReturn("pg_catalog");
+        var dataType = mock(org.jkiss.dbeaver.ext.postgresql.model.PostgreDataType.class);
+        when(dataType.getParentObject()).thenReturn(schema);
         var p = mock(PostgreProcedureParameter.class);
+        when(p.getParameterType()).thenReturn(dataType);
         when(p.getFullTypeName()).thenReturn(type);
         when(p.getParameterKind()).thenReturn(kind);
         return p;
@@ -4258,12 +4263,8 @@ class GaussDBHistoricalJdbcLiveTest extends org.jkiss.junit.DBeaverUnitTest {
         inIsolatedSchema((connection, schema) -> {
             execute(connection, "CREATE PROCEDURE " + schema + ".p(p_id IN numeric, p_result OUT varchar) "
                 + "AS BEGIN p_result := 'id=' || p_id; END;");
-            var input = mock(PostgreProcedureParameter.class);
-            when(input.getFullTypeName()).thenReturn("numeric");
-            when(input.getParameterKind()).thenReturn(org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameterKind.IN);
-            var output = mock(PostgreProcedureParameter.class);
-            when(output.getFullTypeName()).thenReturn("varchar");
-            when(output.getParameterKind()).thenReturn(org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameterKind.OUT);
+            var input = parameter("numeric", DBSProcedureParameterKind.IN);
+            var output = parameter("varchar", DBSProcedureParameterKind.OUT);
             var plan = GaussDBDebugArguments.buildProcedure(List.of(input, output), List.of("111"), List.of("VALUE"));
             // Use the production argument builder, including positional OUT placeholders.
             try (var statement = connection.prepareStatement("CALL " + schema + ".p(" + plan.sql() + ")")) {

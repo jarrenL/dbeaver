@@ -57,7 +57,8 @@ manual_image_output="$delivery_output/docs/gaussdb/images/manual"
 mkdir -p "$manual_image_output"
 for manual_image in language-config.png debug-source.png debug-step-variables.png call-stack.png \
     debug-transaction-choice.png package-compile-menu.png package-errors.png \
-    package-error-location.png package-delete-confirm.png; do
+    package-error-location.png package-delete-confirm.png routine-source-entry.png \
+    object-parameter-debug.png; do
     cp "$repository_root/docs/gaussdb/images/manual/$manual_image" "$manual_image_output/$manual_image"
 done
 cp "$repository_root/GaussDB_DBeaver_调试与Package操作手册_20261014.docx" \
